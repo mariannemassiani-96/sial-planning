@@ -1,12 +1,12 @@
 "use client";
 import { useState } from "react";
-import { TYPES_MENUISERIE, ZONES, C, hm, fmtDate, calcTempsType, dateDemarrage } from "@/lib/sial-data";
+import { TYPES_MENUISERIE, ZONES, C, hm, fmtDate, calcTempsType, calcCheminCritique, dateDemarrage } from "@/lib/sial-data";
 import { H, Card } from "@/components/ui";
 
 const inp = { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, padding: "7px 11px", color: C.text, fontSize: 13, width: "100%", outline: "none" };
 
 const emptyLigne = { type: "ob1_pvc", quantite: 1, coloris: "blanc", hs_nb_profils: "", hs_t_coupe: "", hs_t_montage: "", hs_t_vitrage: "", hs_op_montage: "jp", hs_op_vitrage: "quentin", hs_notes: "" };
-const emptyVitrage = { composition: "4/16/4", surface_m2: "" };
+const emptyVitrage = { composition: "4/16/4", quantite: "1", surface_m2: "" };
 const empty = {
   num_commande: "", client: "", ref_chantier: "",
   zone: ZONES[0], priorite: "normale",
@@ -14,6 +14,8 @@ const empty = {
   date_alu: "", date_pvc: "", date_accessoires: "",
   date_panneau_porte: "", date_volet_roulant: "",
   date_livraison_souhaitee: "",
+  aucun_vitrage: false,
+  cmd_alu_passee: false, cmd_pvc_passee: false, cmd_accessoires_passee: false,
   lignes: [{ ...emptyLigne }],
   vitrages: [{ ...emptyVitrage }],
 };
@@ -33,16 +35,15 @@ export default function SaisieCommande({ onAjouter }: { onAjouter: (cmd: any) =>
   const premiereLigne = f.lignes?.[0] || emptyLigne;
   const tm = TYPES_MENUISERIE[premiereLigne.type];
   const dd = dateDemarrage({ date_alu: f.date_alu, date_pvc: f.date_pvc, date_accessoires: f.date_accessoires });
-  const dlAuto = () => { if (!dd) return ""; const d = new Date(dd); d.setDate(d.getDate() + 42); return d.toISOString().split("T")[0]; };
-  const dlReelle = () => {
-    const dates = [dlAuto(), f.date_panneau_porte, f.date_volet_roulant].filter(Boolean);
-    if (!dates.length) return "";
-    return new Date(Math.max(...dates.map(d => new Date(d).getTime()))).toISOString().split("T")[0];
-  };
-
   const isHS = premiereLigne.type === "hors_standard";
   const hsTemps = isHS ? { nb_profils: premiereLigne.hs_nb_profils, t_coupe: premiereLigne.hs_t_coupe, t_montage: premiereLigne.hs_t_montage, t_vitrage: premiereLigne.hs_t_vitrage, operateur_montage: premiereLigne.hs_op_montage || "jp", operateur_vitrage: premiereLigne.hs_op_vitrage || "quentin", notes: premiereLigne.hs_notes } : null;
   const qteTotale = f.lignes.reduce((s, l) => s + (parseInt(String(l.quantite)) || 0), 0);
+  const dlAuto = () => {
+    if (!dd) return "";
+    const cc = calcCheminCritique({ type: premiereLigne.type, quantite: qteTotale, hsTemps, date_alu: f.date_alu, date_pvc: f.date_pvc, date_accessoires: f.date_accessoires, date_panneau_porte: f.date_panneau_porte, date_volet_roulant: f.date_volet_roulant });
+    return cc?.dateLivraisonAuPlusTot || "";
+  };
+  const dlReelle = dlAuto;
   const t = calcTempsType(premiereLigne.type, qteTotale, hsTemps);
 
   const groupes: Record<string, Record<string, Array<{ k: string; v: any }>>> = { PVC: { frappe: [] }, ALU: { frappe: [], porte: [], coulissant: [], glandage: [] } };
@@ -104,7 +105,13 @@ export default function SaisieCommande({ onAjouter }: { onAjouter: (cmd: any) =>
               <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: 8, alignItems: "end" }}>
                 <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>TYPE</label>{selectType(lg.type, v => setLigne(i, "type", v))}</div>
                 <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>QTÉ</label><input type="number" min={1} style={inp} value={lg.quantite} onChange={e => setLigne(i, "quantite", Math.max(1, parseInt(e.target.value) || 1))} /></div>
-                <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>COLORIS</label><select style={inp} value={lg.coloris} onChange={e => setLigne(i, "coloris", e.target.value)}><option value="blanc">Blanc</option><option value="laque">Laqué</option><option value="bois">Bois</option><option value="ral">RAL</option></select></div>
+                <div>
+                  <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>COLORIS</label>
+                  <input list="coloris-list" style={inp} value={lg.coloris} onChange={e => setLigne(i, "coloris", e.target.value)} placeholder="ex: Blanc, RAL 7016…" />
+                  <datalist id="coloris-list">
+                    <option value="Blanc" /><option value="Blanc laqué" /><option value="Bois" /><option value="Gris anthracite" /><option value="Noir" /><option value="Aluminium" /><option value="Sable" /><option value="RAL 7016" /><option value="RAL 9005" /><option value="RAL 9010" /><option value="Bicolore" />
+                  </datalist>
+                </div>
                 <button onClick={() => delLigne(i)} disabled={f.lignes.length === 1} style={{ padding: "6px 10px", background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 }}>✕</button>
               </div>
               {tmLg && !isHSLg && <div style={{ marginTop: 4, fontSize: 9, color: C.muted }} className="mono">{tmLg.profils_total} profils · {tmLg.dormant} dorm. · {tmLg.ouvrants} ouv.</div>}
@@ -123,27 +130,69 @@ export default function SaisieCommande({ onAjouter }: { onAjouter: (cmd: any) =>
 
       <div style={{ padding: 10, background: C.bg, borderRadius: 5, border: `1px solid ${C.border}`, marginBottom: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <div style={{ fontSize: 10, color: C.teal, fontWeight: 700 }}>VITRAGES ISOLANTS (m²)</div>
-          <button onClick={addVitrage} style={{ padding: "3px 10px", background: C.teal + "33", border: `1px solid ${C.teal}`, borderRadius: 4, color: C.teal, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>+ Composition</button>
-        </div>
-        {f.vitrages.map((vg, i) => (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 8, marginBottom: 6, alignItems: "end" }}>
-            <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>COMPOSITION</label><select style={inp} value={vg.composition} onChange={e => setVitrage(i, "composition", e.target.value)}>{["4/16/4", "4/12/4", "4/20/4", "44.2/16/4 feuilleté", "VSG feuilleté", "Contrôle solaire", "Autre"].map(c => <option key={c}>{c}</option>)}</select></div>
-            <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>SURFACE (m²)</label><input type="number" min={0} step={0.01} style={{ ...inp, color: C.teal, fontWeight: 700 }} value={vg.surface_m2} onChange={e => setVitrage(i, "surface_m2", e.target.value)} placeholder="ex: 3.60" /></div>
-            <button onClick={() => delVitrage(i)} disabled={f.vitrages.length === 1} style={{ padding: "6px 10px", background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 }}>✕</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ fontSize: 10, color: C.teal, fontWeight: 700 }}>VITRAGES ISOLANTS (m²)</div>
+            <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 10, color: f.aucun_vitrage ? C.orange : C.sec }}>
+              <input type="checkbox" checked={f.aucun_vitrage} onChange={e => set("aucun_vitrage", e.target.checked)} />
+              Aucun vitrage
+            </label>
           </div>
-        ))}
-        <div style={{ marginTop: 6, fontSize: 10, color: C.muted }}>
-          Total : <span className="mono" style={{ color: C.teal, fontWeight: 700 }}>{Math.round(f.vitrages.reduce((s, v) => s + (parseFloat(v.surface_m2) || 0), 0) * 100) / 100} m²</span>
+          {!f.aucun_vitrage && <button onClick={addVitrage} style={{ padding: "3px 10px", background: C.teal + "33", border: `1px solid ${C.teal}`, borderRadius: 4, color: C.teal, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>+ Composition</button>}
         </div>
+        {f.aucun_vitrage ? (
+          <div style={{ fontSize: 11, color: C.orange, padding: "6px 0" }}>Sans vitrage isolant — fourni ou non applicable.</div>
+        ) : (
+          <>
+            {f.vitrages.map((vg, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 0.6fr 1fr auto", gap: 8, marginBottom: 6, alignItems: "end" }}>
+                <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>COMPOSITION</label><select style={inp} value={vg.composition} onChange={e => setVitrage(i, "composition", e.target.value)}>{["4/16/4", "4/12/4", "4/20/4", "44.2/16/4 feuilleté", "VSG feuilleté", "Contrôle solaire", "Autre"].map(c => <option key={c}>{c}</option>)}</select></div>
+                <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>QTÉ</label><input type="number" min={1} style={{ ...inp, color: C.purple, fontWeight: 700 }} value={vg.quantite} onChange={e => setVitrage(i, "quantite", e.target.value)} placeholder="1" /></div>
+                <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>SURFACE TOTALE (m²)</label><input type="number" min={0} step={0.01} style={{ ...inp, color: C.teal, fontWeight: 700 }} value={vg.surface_m2} onChange={e => setVitrage(i, "surface_m2", e.target.value)} placeholder="ex: 3.60" /></div>
+                <button onClick={() => delVitrage(i)} disabled={f.vitrages.length === 1} style={{ padding: "6px 10px", background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 }}>✕</button>
+              </div>
+            ))}
+            <div style={{ marginTop: 6, fontSize: 10, color: C.muted }}>
+              Total : <span className="mono" style={{ color: C.teal, fontWeight: 700 }}>{Math.round(f.vitrages.reduce((s, v) => s + (parseFloat(v.surface_m2) || 0), 0) * 100) / 100} m²</span>
+              <span style={{ marginLeft: 12 }}>{f.vitrages.reduce((s, v) => s + (parseInt(v.quantite) || 0), 0)} unité(s)</span>
+            </div>
+          </>
+        )}
       </div>
 
       <div style={{ marginTop: 10, padding: 12, background: C.bg, borderRadius: 6, border: `1px solid ${C.border}` }}>
         <div style={{ fontSize: 10, color: C.teal, fontWeight: 700, marginBottom: 8 }}>DATES RÉCEPTION MATIÈRES</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-          {tm?.mat === "ALU" && <div><label style={{ fontSize: 10, color: C.cyan, display: "block", marginBottom: 3 }}>Profilés ALU</label><input type="date" style={{ ...inp, borderColor: C.cyan + "66" }} value={f.date_alu} onChange={e => set("date_alu", e.target.value)} /></div>}
-          {(tm?.mat === "PVC" || ["coulissant", "glandage"].includes(tm?.famille || "")) && <div><label style={{ fontSize: 10, color: C.blue, display: "block", marginBottom: 3 }}>Profilés PVC</label><input type="date" style={{ ...inp, borderColor: C.blue + "66" }} value={f.date_pvc} onChange={e => set("date_pvc", e.target.value)} /></div>}
-          <div><label style={{ fontSize: 10, color: C.orange, display: "block", marginBottom: 3 }}>Accessoires</label><input type="date" style={{ ...inp, borderColor: C.orange + "66" }} value={f.date_accessoires} onChange={e => set("date_accessoires", e.target.value)} /></div>
+          {tm?.mat === "ALU" && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                <label style={{ fontSize: 10, color: C.cyan }}>Profilés ALU</label>
+                <button type="button" onClick={() => set("cmd_alu_passee", !f.cmd_alu_passee)} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, border: `1px solid ${f.cmd_alu_passee ? C.green : C.red}`, background: "none", color: f.cmd_alu_passee ? C.green : C.red, cursor: "pointer", fontWeight: 700 }}>
+                  {f.cmd_alu_passee ? "✓ Passée" : "⚠ À passer"}
+                </button>
+              </div>
+              <input type="date" style={{ ...inp, borderColor: C.cyan + "66" }} value={f.date_alu} onChange={e => set("date_alu", e.target.value)} />
+            </div>
+          )}
+          {(tm?.mat === "PVC" || ["coulissant", "glandage"].includes(tm?.famille || "")) && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                <label style={{ fontSize: 10, color: C.blue }}>Profilés PVC</label>
+                <button type="button" onClick={() => set("cmd_pvc_passee", !f.cmd_pvc_passee)} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, border: `1px solid ${f.cmd_pvc_passee ? C.green : C.red}`, background: "none", color: f.cmd_pvc_passee ? C.green : C.red, cursor: "pointer", fontWeight: 700 }}>
+                  {f.cmd_pvc_passee ? "✓ Passée" : "⚠ À passer"}
+                </button>
+              </div>
+              <input type="date" style={{ ...inp, borderColor: C.blue + "66" }} value={f.date_pvc} onChange={e => set("date_pvc", e.target.value)} />
+            </div>
+          )}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+              <label style={{ fontSize: 10, color: C.orange }}>Accessoires</label>
+              <button type="button" onClick={() => set("cmd_accessoires_passee", !f.cmd_accessoires_passee)} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, border: `1px solid ${f.cmd_accessoires_passee ? C.green : C.red}`, background: "none", color: f.cmd_accessoires_passee ? C.green : C.red, cursor: "pointer", fontWeight: 700 }}>
+                {f.cmd_accessoires_passee ? "✓ Passée" : "⚠ À passer"}
+              </button>
+            </div>
+            <input type="date" style={{ ...inp, borderColor: C.orange + "66" }} value={f.date_accessoires} onChange={e => set("date_accessoires", e.target.value)} />
+          </div>
         </div>
         {dd && <div style={{ marginTop: 6, fontSize: 11, color: C.sec }}>Démarrage fab : <span style={{ color: C.teal, fontWeight: 600 }} className="mono">{fmtDate(dd)}</span></div>}
       </div>

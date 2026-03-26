@@ -12,12 +12,12 @@ import SaisieCommande from "@/components/tabs/SaisieCommande";
 import PlanningCrise from "@/components/tabs/PlanningCrise";
 import Carnet from "@/components/tabs/Carnet";
 import PlanningCalendrier from "@/components/tabs/PlanningCalendrier";
-import ResumeCommandes from "@/components/tabs/ResumeCommandes";
 import PlanningLivraison from "@/components/tabs/PlanningLivraison";
+import Dashboard from "@/components/tabs/Dashboard";
 
 export default function HomePage() {
   const { data: session } = useSession();
-  const [ong, setOng] = useState("nomenclature");
+  const [ong, setOng] = useState("dashboard");
   const [commandes, setCommandes] = useState<CommandeCC[]>([]);
   const [stocks, setStocks] = useState<Record<string, { actuel: number }>>({});
 
@@ -38,16 +38,16 @@ export default function HomePage() {
   const critiques = commandes.some(c => calcCheminCritique(c)?.critique);
 
   const nav = [
-    { id: "nomenclature", l: "📐 Nomenclature" },
-    { id: "simulateur", l: "🎯 Simulateur" },
-    { id: "charge", l: "📊 Charge semaine" },
-    { id: "stocks", l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
+    { id: "dashboard", l: "🏠 Tableau de bord", alert: critiques },
     { id: "saisie", l: "➕ Commande" },
+    { id: "carnet", l: `📂 Carnet (${commandes.length})` },
+    { id: "crise", l: `🚨 Crise${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
     { id: "calendrier", l: "📅 Planning" },
     { id: "livraison", l: "🚚 Livraisons" },
-    { id: "resume", l: "📋 Résumé" },
-    { id: "crise", l: `🚨 Crise${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
-    { id: "carnet", l: `📂 Carnet (${commandes.length})` },
+    { id: "charge", l: "📊 Charge" },
+    { id: "stocks", l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
+    { id: "nomenclature", l: "📐 Nomenclature" },
+    { id: "simulateur", l: "🎯 Simulateur" },
   ];
 
   const addCommande = (cmd: CommandeCC) => { setCommandes(p => [...p, cmd]); setOng("carnet"); };
@@ -89,16 +89,16 @@ export default function HomePage() {
       </div>
 
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: 20 }}>
-        {ong === "nomenclature" && <Nomenclature />}
-        {ong === "simulateur" && <Simulateur />}
-        {ong === "charge" && <ChargeSemaine commandes={commandes} />}
-        {ong === "stocks" && <StocksTampons stocksTampons={stocks} onUpdate={updateStock} />}
+        {ong === "dashboard" && <Dashboard commandes={commandes} stocks={stocks} onNav={setOng} />}
         {ong === "saisie" && <SaisieCommande onAjouter={addCommande} />}
+        {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} />}
+        {ong === "crise" && <PlanningCrise commandes={commandes} />}
         {ong === "calendrier" && <PlanningCalendrier commandes={commandes} />}
         {ong === "livraison" && <PlanningLivraison commandes={commandes} />}
-        {ong === "resume" && <ResumeCommandes commandes={commandes} />}
-        {ong === "crise" && <PlanningCrise commandes={commandes} />}
-        {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} />}
+        {ong === "charge" && <ChargeSemaine commandes={commandes} />}
+        {ong === "stocks" && <StocksTampons stocksTampons={stocks} onUpdate={updateStock} />}
+        {ong === "nomenclature" && <Nomenclature />}
+        {ong === "simulateur" && <Simulateur />}
       </div>
     </div>
   );

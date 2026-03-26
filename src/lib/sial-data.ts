@@ -314,9 +314,25 @@ export function calcCheminCritique(cmd: CommandeCC) {
   }> = [];
   let cursor = dd;
 
+  // Commande vitrage ISULA dès le démarrage fab (délai livraison ISULA)
+  const dateCmdVitrage = dd;
+
   const tCoupe = t.par_poste.coupe || 0;
-  const finCoupe = tCoupe > 0 ? addWorkMinutes(cursor, Math.round(tCoupe / 3)) : cursor;
-  etapes.push({ id:"coupe", label:"Coupe / Soudure", debut:cursor, fin:finCoupe, duree_min:Math.round(tCoupe/3), qui:"Julien · Laurent · Mateo", couleur:"#42A5F5" });
+  // Modèle parallèle : LMT partagé ÷3, puis spécialités en parallèle
+  // Julien = double-tête, Mateo = renfort, Laurent = soudure PVC / poinçon ALU
+  const tLMT_p  = (tm.lmt || 0) * T.coupe_profil * cmd.quantite;
+  const tDT_p   = (tm.dt  || 0) * 1.5            * cmd.quantite;
+  const tRenf_p = (tm.renfort || 0) * 2           * cmd.quantite;
+  const nbCadresP = 1 + tm.ouvrants;
+  const isFrappeP = tm.famille === "frappe" || tm.famille === "porte";
+  const tSoud_p = tm.mat === "PVC" && isFrappeP
+    ? T.soudure_cadre * nbCadresP * cmd.quantite
+    : (!( tm.mat === "PVC") && isFrappeP ? T.poincon_assemblage_alu * nbCadresP * cmd.quantite : 0);
+  const tCoupeEff = tm.famille === "hors_standard"
+    ? tCoupe
+    : tLMT_p / 3 + Math.max(tDT_p, tRenf_p, tSoud_p);
+  const finCoupe = tCoupeEff > 0 ? addWorkMinutes(cursor, Math.round(tCoupeEff)) : cursor;
+  etapes.push({ id:"coupe", label:"Coupe / Soudure", debut:cursor, fin:finCoupe, duree_min:Math.round(tCoupeEff), qui:"Julien · Laurent · Mateo", couleur:"#42A5F5" });
 
   cursor = addWorkMinutes(finCoupe, TAMPON_MIN);
 
@@ -324,7 +340,6 @@ export function calcCheminCritique(cmd: CommandeCC) {
   const nbOpMontage = tm.famille === "hors_standard" ? 1 : tm.famille === "frappe" || tm.famille === "porte" ? 2 : 1;
   const finMontage = tMontage > 0 ? addWorkMinutes(cursor, Math.round(tMontage / nbOpMontage)) : cursor;
   const quiMontage = tm.famille === "coulissant" || tm.famille === "glandage" ? "Alain" : tm.famille === "hors_standard" ? "Jean-Pierre (HS)" : "Michel · Jean-François";
-  const dateCmdVitrage = cursor;
   etapes.push({ id:"montage", label:"Montage", debut:cursor, fin:finMontage, duree_min:Math.round(tMontage/nbOpMontage), qui:quiMontage, couleur:"#FFA726" });
 
   cursor = addWorkMinutes(finMontage, TAMPON_MIN);
