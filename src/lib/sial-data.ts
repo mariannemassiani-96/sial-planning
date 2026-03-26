@@ -245,7 +245,7 @@ export const EQUIPE = [
   { id:"jp",        nom:"Jean-Pierre",   poste:"hors_std",   h:36, vendrediOff:false, remplace:["frappes","coulissant","vitrage_ov"], note:"Sur-mesure / Luxe / Hors-normes · HORS PÉRIMÈTRE planning standard" },
 ];
 
-export const ZONES = ["Bastia Nord","Bastia Centre","Cap Corse","Balagne","Corte / Centre","Ajaccio","Sud Corse"];
+export const ZONES = ["SIAL","Porto-Vecchio","Balagne","Ajaccio","Plaine Orientale","Continent","Sur chantier","Autre"];
 
 export const TAMPONS_OFFICIELS = {
   coupe_livraison: 15,
