@@ -141,7 +141,7 @@ export default function HomePage() {
           </div>
         ) : (
           <>
-            {ong === "dashboard" && <Dashboard commandes={commandes} stocks={stocks} onNav={setOng} />}
+            {ong === "dashboard" && <Dashboard commandes={commandes} stocks={stocks} onNav={setOng} onRefresh={fetchAll} />}
             {ong === "saisie" && <SaisieCommande key={String(cmdEdit?.id || "new")} onAjouter={addCommande} commande={cmdEdit} onModifier={modifCommande} />}
             {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} onEdit={editCommande} />}
             {ong === "crise" && <PlanningCrise commandes={commandes} />}

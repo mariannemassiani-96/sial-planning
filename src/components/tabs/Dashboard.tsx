@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import { calcCheminCritique, C, fmtDate, CommandeCC, STOCKS_DEF } from "@/lib/sial-data";
 import { H } from "@/components/ui";
 
@@ -6,9 +7,38 @@ interface Props {
   commandes: CommandeCC[];
   stocks: Record<string, { actuel: number }>;
   onNav: (tab: string) => void;
+  onRefresh: () => void;
 }
 
-export default function Dashboard({ commandes, stocks, onNav }: Props) {
+export default function Dashboard({ commandes, stocks, onNav, onRefresh }: Props) {
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
+
+  const importFromLocalStorage = async () => {
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const raw = localStorage.getItem("sial_v8_cmd");
+      if (!raw) { setImportResult("Aucune commande trouvée dans l'ancien stockage local."); setImporting(false); return; }
+      const cmds: CommandeCC[] = JSON.parse(raw);
+      if (!cmds.length) { setImportResult("Le stockage local est vide."); setImporting(false); return; }
+      let ok = 0, err = 0;
+      for (const cmd of cmds) {
+        try {
+          const res = await fetch("/api/commandes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cmd) });
+          if (res.ok) ok++; else err++;
+        } catch { err++; }
+      }
+      localStorage.removeItem("sial_v8_cmd");
+      setImportResult(`✓ ${ok} commande(s) importée(s)${err > 0 ? ` · ${err} erreur(s)` : ""}. Données supprimées du stockage local.`);
+      onRefresh();
+    } catch {
+      setImportResult("Erreur lors de la lecture du stockage local.");
+    }
+    setImporting(false);
+  };
+
+  const hasLocalData = typeof window !== "undefined" && !!localStorage.getItem("sial_v8_cmd");
   const today = new Date().toISOString().split("T")[0];
   const in7 = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
 
@@ -168,6 +198,24 @@ export default function Dashboard({ commandes, stocks, onNav }: Props) {
           </div>
         )}
       </div>
+
+      {/* Import localStorage */}
+      {(hasLocalData || importResult) && (
+        <div style={{ background: C.s1, border: `1px solid ${C.yellow}`, borderRadius: 8, padding: 14, marginBottom: 14 }}>
+          <div style={{ fontSize: 10, color: C.yellow, fontWeight: 700, letterSpacing: "0.08em", marginBottom: 8 }}>IMPORT ANCIEN STOCKAGE LOCAL</div>
+          <div style={{ fontSize: 12, color: C.sec, marginBottom: 10 }}>
+            Des commandes ont été trouvées dans l&apos;ancien stockage de ce navigateur. Cliquez pour les importer en base de données partagée.
+          </div>
+          {importResult && (
+            <div style={{ marginBottom: 8, fontSize: 12, color: importResult.startsWith("✓") ? C.green : C.red, fontWeight: 600 }}>{importResult}</div>
+          )}
+          {!importResult && (
+            <button onClick={importFromLocalStorage} disabled={importing} style={{ padding: "7px 16px", background: C.yellow + "33", border: `1px solid ${C.yellow}`, borderRadius: 5, color: C.yellow, fontSize: 12, fontWeight: 700, cursor: importing ? "wait" : "pointer" }}>
+              {importing ? "Import en cours…" : "⬆ Importer les commandes du navigateur"}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Accès rapide */}
       <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 14 }}>
