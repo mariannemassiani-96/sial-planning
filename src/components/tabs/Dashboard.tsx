@@ -16,6 +16,19 @@ export default function Dashboard({ commandes, stocks, onNav }: Props) {
   const critiques = chemins.filter(x => x.cc?.critique);
   const enRetard  = chemins.filter(x => x.cc?.enRetard && !x.cc?.critique);
   const livSemaine = commandes.filter(c => c.date_livraison_souhaitee && c.date_livraison_souhaitee <= in7 && c.date_livraison_souhaitee >= today);
+
+  type AlerteAchat = { cmd: CommandeCC; matiere: string; probleme: "non_passee" | "sans_date" };
+  const alertesAchats: AlerteAchat[] = [];
+  commandes.forEach(c => {
+    const cmd = c as any;
+    if (cmd.cmd_alu_passee === false)               alertesAchats.push({ cmd: c, matiere: "Profilés ALU",   probleme: "non_passee" });
+    if (cmd.cmd_pvc_passee === false)               alertesAchats.push({ cmd: c, matiere: "Profilés PVC",   probleme: "non_passee" });
+    if (cmd.cmd_accessoires_passee === false)       alertesAchats.push({ cmd: c, matiere: "Accessoires",    probleme: "non_passee" });
+    if (cmd.cmd_alu_passee === true && !cmd.date_alu)          alertesAchats.push({ cmd: c, matiere: "Profilés ALU",   probleme: "sans_date" });
+    if (cmd.cmd_pvc_passee === true && !cmd.date_pvc)          alertesAchats.push({ cmd: c, matiere: "Profilés PVC",   probleme: "sans_date" });
+    if (cmd.cmd_accessoires_passee === true && !cmd.date_accessoires) alertesAchats.push({ cmd: c, matiere: "Accessoires", probleme: "sans_date" });
+  });
+
   const ruptures = Object.entries(STOCKS_DEF).filter(([id, st]) => {
     const a = parseFloat(String(stocks[id]?.actuel)) || 0;
     return a > 0 && a < st.min;
@@ -42,11 +55,12 @@ export default function Dashboard({ commandes, stocks, onNav }: Props) {
       <H c={C.orange}>Tableau de bord</H>
 
       {/* KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10, marginBottom: 20 }}>
         <KPI val={commandes.length} label="Commandes" color={C.blue} onClick={() => onNav("carnet")} />
         <KPI val={critiques.length} label="Critiques" color={C.red} onClick={critiques.length > 0 ? () => onNav("crise") : undefined} />
         <KPI val={enRetard.length} label="En retard" color={C.orange} onClick={enRetard.length > 0 ? () => onNav("crise") : undefined} />
         <KPI val={livSemaine.length} label="Livraisons ≤7j" color={C.teal} onClick={livSemaine.length > 0 ? () => onNav("livraison") : undefined} />
+        <KPI val={alertesAchats.length} label="Achats en attente" color={alertesAchats.length > 0 ? C.yellow : C.green} />
         <KPI val={ruptures.length} label="Ruptures stock" color={ruptures.length > 0 ? C.red : C.green} onClick={ruptures.length > 0 ? () => onNav("stocks") : undefined} />
       </div>
 
@@ -127,6 +141,32 @@ export default function Dashboard({ commandes, stocks, onNav }: Props) {
             })
           )}
         </div>
+      </div>
+
+      {/* Alertes achats matières */}
+      <div style={{ background: C.s1, border: `1px solid ${alertesAchats.length > 0 ? C.yellow : C.border}`, borderRadius: 8, padding: 14, marginBottom: 14 }}>
+        <div style={{ fontSize: 10, color: alertesAchats.length > 0 ? C.yellow : C.sec, fontWeight: 700, letterSpacing: "0.08em", marginBottom: alertesAchats.length > 0 ? 10 : 0 }}>
+          ACHATS MATIÈRES{alertesAchats.length === 0 ? " — Tout est en ordre" : ""}
+        </div>
+        {alertesAchats.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            {alertesAchats.map((a, i) => {
+              const cmd = a.cmd as any;
+              const color = a.probleme === "non_passee" ? C.red : C.orange;
+              const label = a.probleme === "non_passee" ? "Commande non passée" : "Passée — date de réception manquante";
+              return (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: color + "11", border: `1px solid ${color}44`, borderRadius: 5 }}>
+                  <div>
+                    <span className="mono" style={{ fontSize: 10, color: C.orange }}>{cmd.num_commande || "—"}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, marginLeft: 6 }}>{a.cmd.client}</span>
+                    <span style={{ fontSize: 10, color: C.sec, marginLeft: 6 }}>{a.matiere}</span>
+                  </div>
+                  <span style={{ fontSize: 9, fontWeight: 700, color, whiteSpace: "nowrap", marginLeft: 8 }}>{label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Accès rapide */}
