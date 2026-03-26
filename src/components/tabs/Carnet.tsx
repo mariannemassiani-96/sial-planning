@@ -2,7 +2,7 @@
 import { TYPES_MENUISERIE, C, CFAM, calcTempsType, calcCheminCritique, dateDemarrage, hm, fmtDate, CommandeCC } from "@/lib/sial-data";
 import { H, Bdg, Card } from "@/components/ui";
 
-export default function Carnet({ commandes, onDelete }: { commandes: CommandeCC[]; onDelete: (id: any) => void }) {
+export default function Carnet({ commandes, onDelete, onEdit }: { commandes: CommandeCC[]; onDelete: (id: any) => void; onEdit: (cmd: CommandeCC) => void }) {
   const sorted = [...commandes].sort((a, b) => new Date(a.date_livraison_souhaitee || "").getTime() - new Date(b.date_livraison_souhaitee || "").getTime());
 
   return (
@@ -53,6 +53,7 @@ export default function Carnet({ commandes, onDelete }: { commandes: CommandeCC[
                 <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: jc }}>J{jr >= 0 ? `-${jr}` : `+${Math.abs(jr)}`}</div>
                 <div style={{ fontSize: 9, color: C.sec }}>{fmtDate(c.date_livraison_souhaitee)}</div>
               </div>
+              <button onClick={() => onEdit(c)} style={{ background: "none", border: `1px solid ${C.blue}`, borderRadius: 3, color: C.blue, cursor: "pointer", padding: "3px 7px", fontSize: 11, marginRight: 4 }}>✎</button>
               <button onClick={() => { if (window.confirm(`Supprimer ${cmd.num_commande || c.client} ?`)) onDelete(c.id); }} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 3, color: C.sec, cursor: "pointer", padding: "3px 7px", fontSize: 11 }}>✕</button>
             </div>
           </Card>

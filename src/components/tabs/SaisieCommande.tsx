@@ -22,8 +22,28 @@ const empty = {
 
 type FormType = typeof empty;
 
-export default function SaisieCommande({ onAjouter }: { onAjouter: (cmd: any) => void }) {
-  const [f, setF] = useState<FormType>(empty);
+function cmdToForm(cmd: any): FormType {
+  const lignes = cmd.lignes?.length > 0
+    ? cmd.lignes
+    : [{ ...emptyLigne, type: cmd.type || "ob1_pvc", quantite: cmd.quantite || 1 }];
+  const vitrages = cmd.vitrages?.length > 0
+    ? cmd.vitrages.map((v: any) => ({ composition: v.composition || "4/16/4", quantite: String(v.quantite || "1"), surface_m2: v.surface_m2 || "" }))
+    : [{ ...emptyVitrage }];
+  return {
+    num_commande: cmd.num_commande || "", client: cmd.client || "", ref_chantier: cmd.ref_chantier || "",
+    zone: cmd.zone || ZONES[0], priorite: cmd.priorite || "normale",
+    semaine_theorique: cmd.semaine_theorique || "", semaine_atteignable: cmd.semaine_atteignable || "",
+    date_alu: cmd.date_alu || "", date_pvc: cmd.date_pvc || "", date_accessoires: cmd.date_accessoires || "",
+    date_panneau_porte: cmd.date_panneau_porte || "", date_volet_roulant: cmd.date_volet_roulant || "",
+    date_livraison_souhaitee: cmd.date_livraison_souhaitee || "",
+    aucun_vitrage: cmd.aucun_vitrage || false,
+    cmd_alu_passee: cmd.cmd_alu_passee || false, cmd_pvc_passee: cmd.cmd_pvc_passee || false, cmd_accessoires_passee: cmd.cmd_accessoires_passee || false,
+    lignes, vitrages,
+  };
+}
+
+export default function SaisieCommande({ onAjouter, commande, onModifier }: { onAjouter: (cmd: any) => void; commande?: any; onModifier?: (cmd: any) => void }) {
+  const [f, setF] = useState<FormType>(commande ? cmdToForm(commande) : empty);
   const set = (k: keyof FormType, v: any) => setF(p => ({ ...p, [k]: v }));
   const setLigne = (i: number, k: string, v: any) => setF(p => { const l = [...p.lignes]; l[i] = { ...l[i], [k]: v }; return { ...p, lignes: l }; });
   const addLigne = () => setF(p => ({ ...p, lignes: [...p.lignes, { ...emptyLigne }] }));
@@ -66,13 +86,14 @@ export default function SaisieCommande({ onAjouter }: { onAjouter: (cmd: any) =>
     if (!f.client || !f.num_commande) return;
     const premType = f.lignes[0]?.type || "ob1_pvc";
     const premHS = f.lignes[0]?.type === "hors_standard" ? { nb_profils: f.lignes[0].hs_nb_profils, t_coupe: f.lignes[0].hs_t_coupe, t_montage: f.lignes[0].hs_t_montage, t_vitrage: f.lignes[0].hs_t_vitrage, operateur_montage: f.lignes[0].hs_op_montage || "jp", operateur_vitrage: f.lignes[0].hs_op_vitrage || "quentin" } : null;
-    onAjouter({ ...f, id: Date.now(), type: premType, quantite: qteTotale, hsTemps: premHS, date_livraison_souhaitee: f.date_livraison_souhaitee || dlReelle() || dlAuto() });
+    const result = { ...f, id: commande?.id || Date.now(), type: premType, quantite: qteTotale, hsTemps: premHS, date_livraison_souhaitee: f.date_livraison_souhaitee || dlReelle() || dlAuto() };
+    if (commande && onModifier) { onModifier(result); } else { onAjouter(result); }
     setF(empty);
   };
 
   return (
     <Card>
-      <H c={C.orange}>Nouvelle commande</H>
+      <H c={commande ? C.blue : C.orange}>{commande ? `Modifier — ${commande.num_commande || commande.client}` : "Nouvelle commande"}</H>
       <div style={{ padding: 10, background: C.bg, borderRadius: 5, border: `1px solid ${C.border}`, marginBottom: 10 }}>
         <div style={{ fontSize: 10, color: C.orange, fontWeight: 700, marginBottom: 8 }}>IDENTIFICATION</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
@@ -230,8 +251,8 @@ export default function SaisieCommande({ onAjouter }: { onAjouter: (cmd: any) =>
         {dlReelle() && !f.date_livraison_souhaitee && <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>Auto : {fmtDate(dlReelle())}</div>}
       </div>
 
-      <button onClick={submit} style={{ marginTop: 12, width: "100%", padding: "9px 0", background: "#E65100", border: "none", borderRadius: 5, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: "0.06em" }}>
-        + AJOUTER COMMANDE
+      <button onClick={submit} style={{ marginTop: 12, width: "100%", padding: "9px 0", background: commande ? C.blue : "#E65100", border: "none", borderRadius: 5, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: "0.06em" }}>
+        {commande ? "✓ ENREGISTRER LES MODIFICATIONS" : "+ AJOUTER COMMANDE"}
       </button>
     </Card>
   );

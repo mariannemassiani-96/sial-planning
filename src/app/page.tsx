@@ -19,6 +19,7 @@ export default function HomePage() {
   const { data: session } = useSession();
   const [ong, setOng] = useState("dashboard");
   const [commandes, setCommandes] = useState<CommandeCC[]>([]);
+  const [cmdEdit, setCmdEdit] = useState<CommandeCC | null>(null);
   const [stocks, setStocks] = useState<Record<string, { actuel: number }>>({});
 
   useEffect(() => {
@@ -52,6 +53,8 @@ export default function HomePage() {
 
   const addCommande = (cmd: CommandeCC) => { setCommandes(p => [...p, cmd]); setOng("carnet"); };
   const delCommande = (id: any) => setCommandes(p => p.filter(x => x.id !== id));
+  const editCommande = (cmd: CommandeCC) => { setCmdEdit(cmd); setOng("saisie"); };
+  const modifCommande = (cmd: CommandeCC) => { setCommandes(p => p.map(x => x.id === cmd.id ? cmd : x)); setCmdEdit(null); setOng("carnet"); };
   const updateStock = (id: string, v: { actuel: string }) => setStocks(p => ({ ...p, [id]: { actuel: parseFloat(v.actuel) || 0 } }));
 
   return (
@@ -82,7 +85,7 @@ export default function HomePage() {
 
       <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, paddingLeft: 16, background: C.s1, overflowX: "auto" }}>
         {nav.map(o => (
-          <button key={o.id} onClick={() => setOng(o.id)} style={{ padding: "10px 14px", background: "none", border: "none", borderBottom: `2px solid ${ong === o.id ? C.orange : "transparent"}`, color: ong === o.id ? C.text : o.alert ? C.red : C.sec, fontSize: 12, fontWeight: ong === o.id ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap" }}>
+          <button key={o.id} onClick={() => { if (o.id !== "saisie") setCmdEdit(null); setOng(o.id); }} style={{ padding: "10px 14px", background: "none", border: "none", borderBottom: `2px solid ${ong === o.id ? C.orange : "transparent"}`, color: ong === o.id ? C.text : o.alert ? C.red : C.sec, fontSize: 12, fontWeight: ong === o.id ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap" }}>
             {o.l}
           </button>
         ))}
@@ -90,8 +93,8 @@ export default function HomePage() {
 
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: 20 }}>
         {ong === "dashboard" && <Dashboard commandes={commandes} stocks={stocks} onNav={setOng} />}
-        {ong === "saisie" && <SaisieCommande onAjouter={addCommande} />}
-        {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} />}
+        {ong === "saisie" && <SaisieCommande key={String(cmdEdit?.id || "new")} onAjouter={addCommande} commande={cmdEdit} onModifier={modifCommande} />}
+        {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} onEdit={editCommande} />}
         {ong === "crise" && <PlanningCrise commandes={commandes} />}
         {ong === "calendrier" && <PlanningCalendrier commandes={commandes} />}
         {ong === "livraison" && <PlanningLivraison commandes={commandes} />}
