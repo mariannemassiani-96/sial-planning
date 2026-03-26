@@ -1,0 +1,12 @@
+{
+  "name": "SIAL+ISULA Planning",
+  "short_name": "SIAL Planning",
+  "description": "Planning Industriel Groupe VISTA — Menuiserie PVC/ALU",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0D1B2A",
+  "theme_color": "#0D1B2A",
+  "icons": [
+    { "src": "/favicon.ico", "sizes": "64x64", "type": "image/x-icon" }
+  ]
+}

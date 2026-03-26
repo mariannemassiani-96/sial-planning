@@ -1,0 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Barlow:wght@400;500;600;700;800&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background: #0D1B2A;
+  color: #DCE8F5;
+  font-family: 'Barlow', sans-serif;
+  min-height: 100vh;
+}
+
+.mono {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: #0D1B2A; }
+::-webkit-scrollbar-thumb { background: #1E3A5F; border-radius: 3px; }
+
+input, select, textarea, button {
+  font-family: 'Barlow', sans-serif;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: 1px solid #42A5F5;
+}

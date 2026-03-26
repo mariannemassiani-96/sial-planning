@@ -1,0 +1,50 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  nom       String
+  role      String   @default("OPERATEUR")
+  createdAt DateTime @default(now())
+}
+
+model Commande {
+  id                      String   @id @default(cuid())
+  num_commande            String
+  client                  String
+  ref_chantier            String?
+  zone                    String   @default("Bastia Nord")
+  priorite                String   @default("normale")
+  semaine_theorique       String?
+  semaine_atteignable     String?
+  date_alu                String?
+  date_pvc                String?
+  date_accessoires        String?
+  date_panneau_porte      String?
+  date_volet_roulant      String?
+  date_livraison_souhaitee String?
+  type                    String
+  quantite                Int
+  hsTemps                 Json?
+  lignes                  Json?
+  vitrages                Json?
+  avancement              Int      @default(0)
+  statut                  String   @default("en_attente")
+  notes                   String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model StockTampon {
+  id      String @id
+  actuel  Float  @default(0)
+  updatedAt DateTime @updatedAt
+}
