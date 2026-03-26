@@ -55,7 +55,7 @@ export default function PlanningLivraison({ commandes }: { commandes: CommandeCC
 
   // ── Week days ───────────────────────────────────────────────────────
   const monday   = getMondayOf(new Date(anchor));
-  const weekDays = Array.from({ length: 7 }, (_, i) => {
+  const weekDays = Array.from({ length: 5 }, (_, i) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     return d.toISOString().split("T")[0];
@@ -81,7 +81,7 @@ export default function PlanningLivraison({ commandes }: { commandes: CommandeCC
 
   // ── Nav label ───────────────────────────────────────────────────────
   const navLabel = view === "semaine"
-    ? `Sem. du ${fmtDate(weekDays[0])} au ${fmtDate(weekDays[6])}`
+    ? `Sem. du ${fmtDate(weekDays[0])} au ${fmtDate(weekDays[4])}`
     : view === "jour"
     ? fmtDate(anchor)
     : `${MOIS_FR[month]} ${year}`;
@@ -199,18 +199,17 @@ export default function PlanningLivraison({ commandes }: { commandes: CommandeCC
 
       {/* ════════════ VUE SEMAINE ════════════ */}
       {view === "semaine" && (
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:6 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6 }}>
           {weekDays.map(day => {
-            const isToday   = day === today;
-            const isWeekend = new Date(day).getDay() === 0 || new Date(day).getDay() === 6;
-            const dow       = new Date(day).getDay();
-            const delivs    = filtered.filter(x => {
+            const isToday = day === today;
+            const dow     = new Date(day).getDay();
+            const delivs  = filtered.filter(x => {
               const d = (x.cmd as any).date_livraison_souhaitee || x.livSouhaitee;
               return sameDay(d, day);
             }).sort((a,b) => (a.cc?.critique?0:1) - (b.cc?.critique?0:1));
 
             return (
-              <div key={day} style={{ background: isWeekend ? C.s2 : C.s1, border:`1px solid ${isToday?C.green:C.border}`, borderRadius:6, padding:8, opacity: isWeekend ? 0.6 : 1 }}>
+              <div key={day} style={{ background: C.s1, border:`1px solid ${isToday?C.green:C.border}`, borderRadius:6, padding:8 }}>
                 <div style={{ marginBottom:8, textAlign:"center" }}>
                   <div style={{ fontSize:10, color: isToday?C.green:C.sec, fontWeight: isToday?700:400 }}>
                     {JOURS_FR[dow===0?6:dow-1]}
@@ -224,8 +223,7 @@ export default function PlanningLivraison({ commandes }: { commandes: CommandeCC
                     </div>
                   )}
                 </div>
-                {isWeekend && <div style={{ fontSize:9, color:C.muted, textAlign:"center" }}>Week-end</div>}
-                {!isWeekend && delivs.length === 0 && <div style={{ fontSize:10, color:C.muted, textAlign:"center" }}>—</div>}
+                {delivs.length === 0 && <div style={{ fontSize:10, color:C.muted, textAlign:"center" }}>—</div>}
                 {delivs.map((x, i) => {
                   const retardColor = x.cc?.critique ? C.red : x.cc?.enRetard ? C.orange : C.green;
                   const tm = TYPES_MENUISERIE[x.c.type];

@@ -266,8 +266,14 @@ export function fmtDate(d?: string | null): string {
   return new Date(d).toLocaleDateString("fr-FR");
 }
 
-export function addWorkdays(dateStr: string, days: number): string {
+export function nextWorkday(dateStr: string): string {
   const d = new Date(dateStr);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  return d.toISOString().split("T")[0];
+}
+
+export function addWorkdays(dateStr: string, days: number): string {
+  const d = new Date(nextWorkday(dateStr));
   let added = 0;
   while (added < days) {
     d.setDate(d.getDate() + 1);
@@ -283,8 +289,9 @@ export function addWorkMinutes(dateStr: string, minutes: number): string {
 
 export function dateDemarrage(cmd: { date_alu?: string | null; date_pvc?: string | null; date_accessoires?: string | null }): string {
   const dates = [cmd.date_alu, cmd.date_pvc, cmd.date_accessoires].filter(Boolean).map(d => new Date(d!));
-  if (!dates.length) return new Date().toISOString().split("T")[0];
-  return new Date(Math.max(...dates.map(d => d.getTime()))).toISOString().split("T")[0];
+  if (!dates.length) return nextWorkday(new Date().toISOString().split("T")[0]);
+  const max = new Date(Math.max(...dates.map(d => d.getTime()))).toISOString().split("T")[0];
+  return nextWorkday(max);
 }
 
 export interface CommandeCC extends CommandeCalc {
