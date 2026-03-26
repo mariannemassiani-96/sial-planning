@@ -11,6 +11,8 @@ import StocksTampons from "@/components/tabs/StocksTampons";
 import SaisieCommande from "@/components/tabs/SaisieCommande";
 import PlanningCrise from "@/components/tabs/PlanningCrise";
 import Carnet from "@/components/tabs/Carnet";
+import PlanningCalendrier from "@/components/tabs/PlanningCalendrier";
+import ResumeCommandes from "@/components/tabs/ResumeCommandes";
 
 export default function HomePage() {
   const { data: session } = useSession();
@@ -40,7 +42,9 @@ export default function HomePage() {
     { id: "charge", l: "📊 Charge semaine" },
     { id: "stocks", l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
     { id: "saisie", l: "➕ Commande" },
-    { id: "crise", l: `🚨 Planning Crise${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
+    { id: "calendrier", l: "📅 Planning" },
+    { id: "resume", l: "📋 Résumé" },
+    { id: "crise", l: `🚨 Crise${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
     { id: "carnet", l: `📂 Carnet (${commandes.length})` },
   ];
 
@@ -88,6 +92,8 @@ export default function HomePage() {
         {ong === "charge" && <ChargeSemaine commandes={commandes} />}
         {ong === "stocks" && <StocksTampons stocksTampons={stocks} onUpdate={updateStock} />}
         {ong === "saisie" && <SaisieCommande onAjouter={addCommande} />}
+        {ong === "calendrier" && <PlanningCalendrier commandes={commandes} />}
+        {ong === "resume" && <ResumeCommandes commandes={commandes} />}
         {ong === "crise" && <PlanningCrise commandes={commandes} />}
         {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} />}
       </div>
