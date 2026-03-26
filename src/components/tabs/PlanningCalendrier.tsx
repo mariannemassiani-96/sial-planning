@@ -25,6 +25,9 @@ const POSTES = [
 const JOURS_FR = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 const MOIS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
+function localStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
 function getMondayOf(d: Date): Date {
   const date = new Date(d);
   const day = date.getDay();
@@ -39,7 +42,7 @@ function isBetween(date: string, start: string, end: string): boolean {
 }
 
 export default function PlanningCalendrier({ commandes }: { commandes: CommandeCC[] }) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = localStr(new Date());
   const [view, setView]   = useState<ViewMode>("semaine");
   const [poste, setPoste] = useState<PosteFilter>("tous");
   const [anchor, setAnchor] = useState(today);
@@ -51,20 +54,20 @@ export default function PlanningCalendrier({ commandes }: { commandes: CommandeC
 
   // ── Navigation helpers ──────────────────────────────────────────────
   const navigate = (delta: number) => {
-    const d = new Date(anchor);
+    const d = new Date(anchor + "T00:00:00");
     if (view === "semaine") d.setDate(d.getDate() + delta * 7);
     else if (view === "jour") d.setDate(d.getDate() + delta);
     else { d.setMonth(d.getMonth() + delta); d.setDate(1); }
-    setAnchor(d.toISOString().split("T")[0]);
+    setAnchor(localStr(d));
   };
   const goToday = () => setAnchor(today);
 
   // ── Week days (Mon–Fri) ─────────────────────────────────────────────
-  const monday = getMondayOf(new Date(anchor));
+  const monday = getMondayOf(new Date(anchor + "T00:00:00"));
   const weekDays = Array.from({ length: 5 }, (_, i) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
-    return d.toISOString().split("T")[0];
+    return localStr(d);
   });
 
   // ── Month grid ─────────────────────────────────────────────────────
@@ -79,7 +82,7 @@ export default function PlanningCalendrier({ commandes }: { commandes: CommandeC
     const startDow = first.getDay() === 0 ? 6 : first.getDay() - 1;
     for (let i = 0; i < startDow; i++) days.push(null);
     for (let d = 1; d <= last.getDate(); d++) {
-      days.push(new Date(year, month, d).toISOString().split("T")[0]);
+      days.push(localStr(new Date(year, month, d)));
     }
     const weeks: (string | null)[][] = [];
     for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));

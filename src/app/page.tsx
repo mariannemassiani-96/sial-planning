@@ -14,6 +14,7 @@ import Carnet from "@/components/tabs/Carnet";
 import PlanningCalendrier from "@/components/tabs/PlanningCalendrier";
 import PlanningLivraison from "@/components/tabs/PlanningLivraison";
 import Dashboard from "@/components/tabs/Dashboard";
+import PlanningRH from "@/components/tabs/PlanningRH";
 
 export default function HomePage() {
   const { data: session, status } = useSession();
@@ -53,6 +54,7 @@ export default function HomePage() {
     { id: "calendrier", l: "📅 Planning" },
     { id: "livraison", l: "🚚 Livraisons" },
     { id: "charge", l: "📊 Charge" },
+    { id: "rh", l: "👥 Équipe" },
     { id: "stocks", l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
     { id: "nomenclature", l: "📐 Nomenclature" },
     { id: "simulateur", l: "🎯 Simulateur" },
@@ -148,6 +150,7 @@ export default function HomePage() {
             {ong === "calendrier" && <PlanningCalendrier commandes={commandes} />}
             {ong === "livraison" && <PlanningLivraison commandes={commandes} />}
             {ong === "charge" && <ChargeSemaine commandes={commandes} />}
+            {ong === "rh" && <PlanningRH commandes={commandes} />}
             {ong === "stocks" && <StocksTampons stocksTampons={stocks} onUpdate={updateStock} />}
             {ong === "nomenclature" && <Nomenclature />}
             {ong === "simulateur" && <Simulateur />}

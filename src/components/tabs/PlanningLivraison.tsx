@@ -2,12 +2,27 @@
 import { useState, useMemo } from "react";
 import { calcCheminCritique, C, CFAM, fmtDate, CommandeCC, TYPES_MENUISERIE, ZONES, JOURS_FERIES, isWorkday } from "@/lib/sial-data";
 import { H, Bdg } from "@/components/ui";
+import { openPrintWindow, fmtDatePrint } from "@/lib/print-utils";
+
+const ZONE_COLOR: Record<string, string> = {
+  "Porto-Vecchio":    "#FFA726",
+  "Ajaccio":          "#42A5F5",
+  "Balagne":          "#FFCA28",
+  "SIAL":             "#EF5350",
+  "Continent":        "#66BB6A",
+  "Plaine Orientale": "#CE93D8",
+  "Sur chantier":     "#4DB6AC",
+  "Autre":            "#6B8BAD",
+};
 
 type ViewMode = "semaine" | "jour" | "mois";
 
 const JOURS_FR  = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
 const MOIS_FR   = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
+function localStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
 function getMondayOf(d: Date): Date {
   const date = new Date(d);
   const day = date.getDay();
@@ -24,7 +39,7 @@ function sameMonth(dateStr: string, year: number, month: number) {
 }
 
 export default function PlanningLivraison({ commandes }: { commandes: CommandeCC[] }) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = localStr(new Date());
   const [view,   setView]   = useState<ViewMode>("semaine");
   const [anchor, setAnchor] = useState(today);
   const [zone,   setZone]   = useState("toutes");
@@ -46,19 +61,19 @@ export default function PlanningLivraison({ commandes }: { commandes: CommandeCC
 
   // ── Navigation ──────────────────────────────────────────────────────
   const navigate = (delta: number) => {
-    const d = new Date(anchor);
+    const d = new Date(anchor + "T00:00:00");
     if (view === "semaine") d.setDate(d.getDate() + delta * 7);
     else if (view === "jour") d.setDate(d.getDate() + delta);
     else { d.setMonth(d.getMonth() + delta); d.setDate(1); }
-    setAnchor(d.toISOString().split("T")[0]);
+    setAnchor(localStr(d));
   };
 
   // ── Week days ───────────────────────────────────────────────────────
-  const monday   = getMondayOf(new Date(anchor));
+  const monday   = getMondayOf(new Date(anchor + "T00:00:00"));
   const weekDays = Array.from({ length: 5 }, (_, i) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
-    return d.toISOString().split("T")[0];
+    return localStr(d);
   });
 
   // ── Month grid ──────────────────────────────────────────────────────
@@ -73,7 +88,7 @@ export default function PlanningLivraison({ commandes }: { commandes: CommandeCC
     const startDow = first.getDay() === 0 ? 6 : first.getDay() - 1;
     for (let i = 0; i < startDow; i++) days.push(null);
     for (let d = 1; d <= last.getDate(); d++)
-      days.push(new Date(year, month, d).toISOString().split("T")[0]);
+      days.push(localStr(new Date(year, month, d)));
     const weeks: (string | null)[][] = [];
     for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
     return weeks;
@@ -112,8 +127,9 @@ export default function PlanningLivraison({ commandes }: { commandes: CommandeCC
       : null;
     const jc = jr === null ? C.sec : jr < 0 ? C.red : jr < 7 ? C.orange : C.green;
 
+    const zoneColor = ZONE_COLOR[cmd.zone] || C.sec;
     return (
-      <div style={{ marginBottom:6, padding:"8px 10px", background:C.bg, borderRadius:5, border:`1px solid ${C.border}`, borderLeft:`3px solid ${retardColor}` }}>
+      <div style={{ marginBottom:6, padding:"8px 10px", background:C.bg, borderRadius:5, border:`1px solid ${zoneColor}44`, borderLeft:`4px solid ${zoneColor}` }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", marginBottom:3 }}>
@@ -124,7 +140,7 @@ export default function PlanningLivraison({ commandes }: { commandes: CommandeCC
               <Bdg t={`×${c.quantite}`} c={C.sec} sz={9}/>
             </div>
             <div style={{ display:"flex", gap:10, fontSize:10, color:C.sec, flexWrap:"wrap" }}>
-              {cmd.zone && <span>{cmd.zone}</span>}
+              {cmd.zone && <span style={{ color: zoneColor, fontWeight: 600 }}>{cmd.zone}</span>}
               {showDate && livSouhaitee && (
                 <span>Livraison : <span className="mono" style={{ color:C.text }}>{fmtDate(livSouhaitee)}</span></span>
               )}
@@ -149,9 +165,64 @@ export default function PlanningLivraison({ commandes }: { commandes: CommandeCC
     );
   }
 
+  const handlePrint = () => {
+    const periodDelivs = filtered.filter(x => {
+      const d = (x.cmd as any).date_livraison_souhaitee || x.livSouhaitee;
+      if (view === "semaine") return sameWeek(d, weekDays);
+      if (view === "jour")    return sameDay(d, anchor);
+      return d && sameMonth(d, year, month);
+    }).sort((a,b) => {
+      const da = (a.cmd as any).date_livraison_souhaitee || a.livSouhaitee;
+      const db = (b.cmd as any).date_livraison_souhaitee || b.livSouhaitee;
+      return new Date(da).getTime() - new Date(db).getTime();
+    });
+
+    const header = `
+      <div class="header">
+        <div class="header-left">
+          <h1>SIAL <span>+</span> ISULA &nbsp;|&nbsp; Planning de livraison</h1>
+          <div class="subtitle">${navLabel}${zone!=="toutes"?" — Zone : "+zone:""}</div>
+        </div>
+        <div class="header-right">
+          <div>${periodDelivs.length} livraison(s)</div>
+          <div>${stats.critiques} critique(s) · ${stats.retards} en retard</div>
+        </div>
+      </div>`;
+
+    const rows = periodDelivs.map(x => {
+      const { cmd, c, cc, livSouhaitee } = x;
+      const tm = TYPES_MENUISERIE[c.type];
+      const zc = ZONE_COLOR[cmd.zone] || "#888";
+      const jr = livSouhaitee ? Math.round((new Date(livSouhaitee).getTime()-Date.now())/86400000) : null;
+      const retardCol = cc?.critique ? "crit" : cc?.enRetard ? "warn" : "ok";
+      return `<tr>
+        <td class="mono" style="white-space:nowrap">${cmd.num_commande||"—"}</td>
+        <td><b>${c.client}</b>${cmd.ref_chantier?`<br/><span style="font-size:9px;color:#666">${cmd.ref_chantier}</span>`:""}</td>
+        <td><span class="badge" style="border-color:${zc};color:${zc}">${cmd.zone||"—"}</span></td>
+        <td>${tm?.label||c.type} ×${c.quantite}</td>
+        <td class="mono center">${fmtDatePrint(livSouhaitee)}</td>
+        <td class="mono center">${cc?.dateLivraisonAuPlusTot ? fmtDatePrint(cc.dateLivraisonAuPlusTot) : "—"}</td>
+        <td class="center">${jr!==null?`J${jr>=0?`-${jr}`:`+${Math.abs(jr)}`}`:"—"}</td>
+        <td class="center"><span class="${retardCol}">${cc?.enRetard?`+${cc.retardJours}j`:"OK"}</span></td>
+      </tr>`;
+    }).join("");
+
+    const table = rows ? `<table>
+      <thead><tr><th>N° Cmd</th><th>Client</th><th>Zone</th><th>Type</th><th>Livraison</th><th>Au + tôt</th><th>J-</th><th>État</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>` : `<p style="color:#666;margin-top:12px">Aucune livraison sur cette période.</p>`;
+
+    openPrintWindow(`Planning Livraison — ${navLabel}`, header+table);
+  };
+
   return (
     <div>
       <H c={C.green}>Planning de livraison</H>
+      <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
+        {Object.entries(ZONE_COLOR).map(([z, col]) => (
+          <span key={z} style={{ fontSize:10, padding:"2px 8px", borderRadius:3, background:col+"22", border:`1px solid ${col}55`, color:col, fontWeight:600 }}>{z}</span>
+        ))}
+      </div>
 
       {/* Controls */}
       <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
@@ -176,6 +247,7 @@ export default function PlanningLivraison({ commandes }: { commandes: CommandeCC
         <span style={{ fontSize:13, fontWeight:600, color:C.text, minWidth:280, textAlign:"center" }}>{navLabel}</span>
         <button onClick={() => navigate(1)}  style={{ padding:"4px 12px", background:C.s1, border:`1px solid ${C.border}`, borderRadius:4, color:C.text, cursor:"pointer", fontSize:14 }}>→</button>
         <button onClick={() => setAnchor(today)} style={{ padding:"4px 10px", background:C.green+"22", border:`1px solid ${C.green}44`, borderRadius:4, color:C.green, cursor:"pointer", fontSize:11, fontWeight:600 }}>{"Aujourd'hui"}</button>
+        <button onClick={handlePrint} style={{ marginLeft:"auto", padding:"4px 14px", background:"#000", color:"#fff", border:"none", borderRadius:4, cursor:"pointer", fontSize:11, fontWeight:700 }}>🖨️ Imprimer</button>
       </div>
 
       {/* Stats de la période */}

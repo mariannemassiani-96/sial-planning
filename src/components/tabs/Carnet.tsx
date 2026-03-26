@@ -41,11 +41,13 @@ export default function Carnet({ commandes, onDelete, onEdit }: { commandes: Com
                   {cmd.aucun_vitrage && <span style={{ color: C.orange }}>Sans vitrage</span>}
                   {cmd.vitrages?.length > 0 && !cmd.aucun_vitrage && <span style={{ color: C.teal }}>{Math.round(cmd.vitrages.reduce((s: number, v: any) => s + (parseFloat(v.surface_m2) || 0), 0) * 100) / 100}m² vit.</span>}
                 </div>
-                {(cmd.date_alu || cmd.date_pvc || cmd.date_accessoires) && (
+                {(cmd.cmd_alu_necessaire || cmd.cmd_pvc_necessaire || cmd.cmd_accessoires_necessaire || cmd.cmd_panneau_necessaire || cmd.cmd_volet_necessaire) && (
                   <div style={{ fontSize: 9, display: "flex", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
-                    {cmd.date_alu && <span style={{ color: cmd.cmd_alu_passee ? C.green : C.red }}>{cmd.cmd_alu_passee ? "✓" : "⚠"} ALU {fmtDate(cmd.date_alu)}</span>}
-                    {cmd.date_pvc && <span style={{ color: cmd.cmd_pvc_passee ? C.green : C.red }}>{cmd.cmd_pvc_passee ? "✓" : "⚠"} PVC {fmtDate(cmd.date_pvc)}</span>}
-                    {cmd.date_accessoires && <span style={{ color: cmd.cmd_accessoires_passee ? C.green : C.red }}>{cmd.cmd_accessoires_passee ? "✓" : "⚠"} Access. {fmtDate(cmd.date_accessoires)}</span>}
+                    {cmd.cmd_alu_necessaire && <span style={{ color: cmd.cmd_alu_passee ? C.green : C.red }}>{cmd.cmd_alu_passee ? "✓" : "⚠"} ALU{cmd.date_alu ? " "+fmtDate(cmd.date_alu) : ""}</span>}
+                    {cmd.cmd_pvc_necessaire && <span style={{ color: cmd.cmd_pvc_passee ? C.green : C.red }}>{cmd.cmd_pvc_passee ? "✓" : "⚠"} PVC{cmd.date_pvc ? " "+fmtDate(cmd.date_pvc) : ""}</span>}
+                    {cmd.cmd_accessoires_necessaire && <span style={{ color: cmd.cmd_accessoires_passee ? C.green : C.red }}>{cmd.cmd_accessoires_passee ? "✓" : "⚠"} Access.{cmd.date_accessoires ? " "+fmtDate(cmd.date_accessoires) : ""}</span>}
+                    {cmd.cmd_panneau_necessaire && <span style={{ color: cmd.cmd_panneau_passee ? C.green : C.red }}>{cmd.cmd_panneau_passee ? "✓" : "⚠"} Panneau{cmd.date_panneau_porte ? " "+fmtDate(cmd.date_panneau_porte) : ""}</span>}
+                    {cmd.cmd_volet_necessaire && <span style={{ color: cmd.cmd_volet_passee ? C.green : C.red }}>{cmd.cmd_volet_passee ? "✓" : "⚠"} Volet{cmd.date_volet_roulant ? " "+fmtDate(cmd.date_volet_roulant) : ""}</span>}
                   </div>
                 )}
               </div>

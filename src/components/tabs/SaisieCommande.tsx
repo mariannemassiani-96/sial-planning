@@ -16,6 +16,9 @@ const empty = {
   date_livraison_souhaitee: "",
   aucun_vitrage: false,
   cmd_alu_passee: false, cmd_pvc_passee: false, cmd_accessoires_passee: false,
+  cmd_panneau_passee: false, cmd_volet_passee: false,
+  cmd_alu_necessaire: false, cmd_pvc_necessaire: false, cmd_accessoires_necessaire: false,
+  cmd_panneau_necessaire: false, cmd_volet_necessaire: false,
   lignes: [{ ...emptyLigne }],
   vitrages: [{ ...emptyVitrage }],
 };
@@ -38,6 +41,10 @@ function cmdToForm(cmd: any): FormType {
     date_livraison_souhaitee: cmd.date_livraison_souhaitee || "",
     aucun_vitrage: cmd.aucun_vitrage || false,
     cmd_alu_passee: cmd.cmd_alu_passee || false, cmd_pvc_passee: cmd.cmd_pvc_passee || false, cmd_accessoires_passee: cmd.cmd_accessoires_passee || false,
+    cmd_panneau_passee: cmd.cmd_panneau_passee || false, cmd_volet_passee: cmd.cmd_volet_passee || false,
+    cmd_alu_necessaire: cmd.cmd_alu_necessaire || false, cmd_pvc_necessaire: cmd.cmd_pvc_necessaire || false,
+    cmd_accessoires_necessaire: cmd.cmd_accessoires_necessaire || false,
+    cmd_panneau_necessaire: cmd.cmd_panneau_necessaire || false, cmd_volet_necessaire: cmd.cmd_volet_necessaire || false,
     lignes, vitrages,
   };
 }
@@ -53,7 +60,6 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
   const delVitrage = (i: number) => setF(p => ({ ...p, vitrages: p.vitrages.filter((_, j) => j !== i) }));
 
   const premiereLigne = f.lignes?.[0] || emptyLigne;
-  const tm = TYPES_MENUISERIE[premiereLigne.type];
   const dd = dateDemarrage({ date_alu: f.date_alu, date_pvc: f.date_pvc, date_accessoires: f.date_accessoires });
   const isHS = premiereLigne.type === "hors_standard";
   const hsTemps = isHS ? { nb_profils: premiereLigne.hs_nb_profils, t_coupe: premiereLigne.hs_t_coupe, t_montage: premiereLigne.hs_t_montage, t_vitrage: premiereLigne.hs_t_vitrage, operateur_montage: premiereLigne.hs_op_montage || "jp", operateur_vitrage: premiereLigne.hs_op_vitrage || "quentin", notes: premiereLigne.hs_notes } : null;
@@ -138,7 +144,7 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
               {tmLg && !isHSLg && <div style={{ marginTop: 4, fontSize: 9, color: C.muted }} className="mono">{tmLg.profils_total} profils · {tmLg.dormant} dorm. · {tmLg.ouvrants} ouv.</div>}
               {isHSLg && (
                 <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
-                  {[{ l: "Nb profils", k: "hs_nb_profils" }, { l: "Tps coupe(min)", k: "hs_t_coupe" }, { l: "Tps montage(min)", k: "hs_t_montage" }, { l: "Tps vitrage(min)", k: "hs_t_vitrage" }].map(x => (
+                  {[{ l: "Nb profils", k: "hs_nb_profils" }, { l: "Coupe total (min)", k: "hs_t_coupe" }, { l: "Montage total (min)", k: "hs_t_montage" }, { l: "Vitrage total (min)", k: "hs_t_vitrage" }].map(x => (
                     <div key={x.k}><label style={{ fontSize: 8, color: C.purple, display: "block", marginBottom: 2 }}>{x.l}</label><input type="number" min={0} style={{ ...inp, fontSize: 11, padding: "4px 6px" }} value={(lg as any)[x.k] || ""} onChange={e => setLigne(i, x.k, e.target.value)} /></div>
                   ))}
                   <div><label style={{ fontSize: 8, color: C.purple, display: "block", marginBottom: 2 }}>Op. vitrage</label><select style={{ ...inp, fontSize: 11, padding: "4px 6px" }} value={lg.hs_op_vitrage || "quentin"} onChange={e => setLigne(i, "hs_op_vitrage", e.target.value)}>{[{ id: "quentin", l: "Quentin" }, { id: "michel", l: "Michel" }, { id: "jf", l: "Jean-François" }, { id: "jp", l: "Jean-Pierre" }, { id: "bruno", l: "Bruno" }].map(o => <option key={o.id} value={o.id}>{o.l}</option>)}</select></div>
@@ -181,55 +187,44 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
       </div>
 
       <div style={{ marginTop: 10, padding: 12, background: C.bg, borderRadius: 6, border: `1px solid ${C.border}` }}>
-        <div style={{ fontSize: 10, color: C.teal, fontWeight: 700, marginBottom: 8 }}>DATES RÉCEPTION MATIÈRES</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-          {tm?.mat === "ALU" && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-                <label style={{ fontSize: 10, color: C.cyan }}>Profilés ALU</label>
-                <button type="button" onClick={() => set("cmd_alu_passee", !f.cmd_alu_passee)} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, border: `1px solid ${f.cmd_alu_passee ? C.green : C.red}`, background: "none", color: f.cmd_alu_passee ? C.green : C.red, cursor: "pointer", fontWeight: 700 }}>
-                  {f.cmd_alu_passee ? "✓ Passée" : "⚠ À passer"}
-                </button>
+        <div style={{ fontSize: 10, color: C.teal, fontWeight: 700, marginBottom: 10 }}>ACHATS MATIÈRES</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {[
+            { id: "alu",         label: "Profilés ALU",      color: C.cyan,   necKey: "cmd_alu_necessaire",         passeeKey: "cmd_alu_passee",         dateKey: "date_alu" },
+            { id: "pvc",         label: "Profilés PVC",      color: C.blue,   necKey: "cmd_pvc_necessaire",         passeeKey: "cmd_pvc_passee",         dateKey: "date_pvc" },
+            { id: "accessoires", label: "Accessoires",       color: C.orange, necKey: "cmd_accessoires_necessaire", passeeKey: "cmd_accessoires_passee", dateKey: "date_accessoires" },
+            { id: "panneau",     label: "Panneau porte",     color: C.yellow, necKey: "cmd_panneau_necessaire",     passeeKey: "cmd_panneau_passee",     dateKey: "date_panneau_porte" },
+            { id: "volet",       label: "Volet roulant",     color: C.purple, necKey: "cmd_volet_necessaire",       passeeKey: "cmd_volet_passee",       dateKey: "date_volet_roulant" },
+          ].map(({ id, label, color, necKey, passeeKey, dateKey }) => {
+            const nec   = (f as any)[necKey]   as boolean;
+            const pass  = (f as any)[passeeKey] as boolean;
+            const date  = (f as any)[dateKey]  as string;
+            return (
+              <div key={id} style={{ padding: "8px 10px", background: C.s1, borderRadius: 5, border: `1px solid ${nec ? color + "99" : C.border}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: nec ? 6 : 0 }}>
+                  <span style={{ fontSize: 10, color: nec ? color : C.muted, fontWeight: 600 }}>{label}</span>
+                  <button type="button" onClick={() => set(necKey as keyof FormType, !nec)} style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, border: `1px solid ${nec ? color : C.border}`, background: nec ? color + "22" : "none", color: nec ? color : C.sec, cursor: "pointer", fontWeight: 700 }}>
+                    {nec ? "✓ Nécessaire" : "Non requis"}
+                  </button>
+                </div>
+                {nec && (
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="date" style={{ ...inp, flex: 1, fontSize: 11, padding: "4px 6px", borderColor: color + "66" }} value={date} onChange={e => set(dateKey as keyof FormType, e.target.value)} />
+                    <button type="button" onClick={() => set(passeeKey as keyof FormType, !pass)} style={{ fontSize: 9, padding: "4px 8px", borderRadius: 3, border: `1px solid ${pass ? C.green : C.red}`, background: "none", color: pass ? C.green : C.red, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
+                      {pass ? "✓ Commandé" : "À commander"}
+                    </button>
+                  </div>
+                )}
               </div>
-              <input type="date" style={{ ...inp, borderColor: C.cyan + "66" }} value={f.date_alu} onChange={e => set("date_alu", e.target.value)} />
-            </div>
-          )}
-          {(tm?.mat === "PVC" || ["coulissant", "glandage"].includes(tm?.famille || "")) && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-                <label style={{ fontSize: 10, color: C.blue }}>Profilés PVC</label>
-                <button type="button" onClick={() => set("cmd_pvc_passee", !f.cmd_pvc_passee)} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, border: `1px solid ${f.cmd_pvc_passee ? C.green : C.red}`, background: "none", color: f.cmd_pvc_passee ? C.green : C.red, cursor: "pointer", fontWeight: 700 }}>
-                  {f.cmd_pvc_passee ? "✓ Passée" : "⚠ À passer"}
-                </button>
-              </div>
-              <input type="date" style={{ ...inp, borderColor: C.blue + "66" }} value={f.date_pvc} onChange={e => set("date_pvc", e.target.value)} />
-            </div>
-          )}
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-              <label style={{ fontSize: 10, color: C.orange }}>Accessoires</label>
-              <button type="button" onClick={() => set("cmd_accessoires_passee", !f.cmd_accessoires_passee)} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, border: `1px solid ${f.cmd_accessoires_passee ? C.green : C.red}`, background: "none", color: f.cmd_accessoires_passee ? C.green : C.red, cursor: "pointer", fontWeight: 700 }}>
-                {f.cmd_accessoires_passee ? "✓ Passée" : "⚠ À passer"}
-              </button>
-            </div>
-            <input type="date" style={{ ...inp, borderColor: C.orange + "66" }} value={f.date_accessoires} onChange={e => set("date_accessoires", e.target.value)} />
-          </div>
+            );
+          })}
         </div>
-        {dd && <div style={{ marginTop: 6, fontSize: 11, color: C.sec }}>Démarrage fab : <span style={{ color: C.teal, fontWeight: 600 }} className="mono">{fmtDate(dd)}</span></div>}
-      </div>
-
-      <div style={{ marginTop: 10, padding: 12, background: C.bg, borderRadius: 6, border: `1px solid ${C.border}` }}>
-        <div style={{ fontSize: 10, color: C.yellow, fontWeight: 700, marginBottom: 8 }}>MATIÈRES OPTIONNELLES</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <div><label style={{ fontSize: 10, color: C.yellow, display: "block", marginBottom: 3 }}>Panneau porte d&apos;entrée</label><input type="date" style={{ ...inp, borderColor: C.yellow + "66" }} value={f.date_panneau_porte} onChange={e => set("date_panneau_porte", e.target.value)} /></div>
-          <div><label style={{ fontSize: 10, color: C.yellow, display: "block", marginBottom: 3 }}>Volet roulant</label><input type="date" style={{ ...inp, borderColor: C.yellow + "66" }} value={f.date_volet_roulant} onChange={e => set("date_volet_roulant", e.target.value)} /></div>
-        </div>
-        {(f.date_panneau_porte || f.date_volet_roulant) && <div style={{ marginTop: 6, fontSize: 11, color: C.yellow }}>Livraison impossible avant {fmtDate(dlReelle())}</div>}
+        {dd && <div style={{ marginTop: 8, fontSize: 11, color: C.sec }}>Démarrage fab estimé : <span style={{ color: C.teal, fontWeight: 600 }} className="mono">{fmtDate(dd)}</span></div>}
       </div>
 
       {t && (
         <div style={{ marginTop: 10, padding: 10, background: C.bg, borderRadius: 5, border: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: 10, color: C.sec, marginBottom: 8 }}>TEMPS DE FABRICATION</div>
+          <div style={{ fontSize: 10, color: C.sec, marginBottom: 8 }}>TEMPS DE FABRICATION{isHS ? " (totaux saisis)" : ` (calculés · ${qteTotale} pièce${qteTotale > 1 ? "s" : ""})`}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 }}>
             {(Object.entries(t.par_poste) as [string, number][]).filter(([, v]) => v > 0).map(([p, v]) => (
               <div key={p} style={{ textAlign: "center" }}>

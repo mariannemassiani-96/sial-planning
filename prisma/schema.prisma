@@ -40,6 +40,13 @@ model Commande {
   cmd_alu_passee          Boolean  @default(false)
   cmd_pvc_passee          Boolean  @default(false)
   cmd_accessoires_passee  Boolean  @default(false)
+  cmd_panneau_passee      Boolean  @default(false)
+  cmd_volet_passee        Boolean  @default(false)
+  cmd_alu_necessaire      Boolean  @default(false)
+  cmd_pvc_necessaire      Boolean  @default(false)
+  cmd_accessoires_necessaire Boolean @default(false)
+  cmd_panneau_necessaire  Boolean  @default(false)
+  cmd_volet_necessaire    Boolean  @default(false)
   avancement              Int      @default(0)
   statut                  String   @default("en_attente")
   notes                   String?
@@ -50,5 +57,12 @@ model Commande {
 model StockTampon {
   id      String @id
   actuel  Float  @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model PlanningRH {
+  semaine   String   @id
+  plan      Json
+  valide    Boolean  @default(false)
   updatedAt DateTime @updatedAt
 }

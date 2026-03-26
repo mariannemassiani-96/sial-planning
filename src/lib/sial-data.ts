@@ -113,16 +113,16 @@ export function calcTempsType(typeId: string, quantite = 1, hsTemps?: HsTemps | 
   if (!tm) return null;
 
   if (tm.famille === "hors_standard" && hsTemps) {
-    const q = quantite;
+    // Pour le hors standard, les temps saisis sont des totaux commande (pas par pièce)
     const pp = {
-      coupe:      Math.round((parseFloat(String(hsTemps.t_coupe)) || 0) * q),
+      coupe:      Math.round(parseFloat(String(hsTemps.t_coupe))   || 0),
       coulissant: 0,
-      frappes:    Math.round((parseFloat(String(hsTemps.t_montage)) || 0) * q),
-      vitrage_ov: Math.round((parseFloat(String(hsTemps.t_vitrage)) || 0) * q),
+      frappes:    Math.round(parseFloat(String(hsTemps.t_montage)) || 0),
+      vitrage_ov: Math.round(parseFloat(String(hsTemps.t_vitrage)) || 0),
     };
     return {
       typeId, label: tm.label, mat: tm.mat, famille: "hors_standard", quantite,
-      profils_total: Math.round((parseFloat(String(hsTemps.nb_profils)) || 0) * q),
+      profils_total: Math.round(parseFloat(String(hsTemps.nb_profils)) || 0),
       ouvrants_masques: 0,
       par_poste: pp,
       tTotal: Object.values(pp).reduce((s, v) => s + v, 0),
@@ -388,8 +388,8 @@ export function calcCheminCritique(cmd: CommandeCC) {
 
   cursor = addWorkMinutes(finMontage, TAMPON_MIN);
 
-  const tVitrageReel = tm.famille === "frappe" || tm.famille === "porte" || tm.famille === "hors_standard"
-    ? Math.round((parseFloat(String(cmd.hsTemps?.t_vitrage)) || 10) * cmd.quantite)
+  const tVitrageReel = tm.famille === "hors_standard"
+    ? Math.round(parseFloat(String(cmd.hsTemps?.t_vitrage)) || 0)
     : t.par_poste.vitrage_ov || 0;
   const finVitrage = tVitrageReel > 0 ? addWorkMinutes(cursor, tVitrageReel) : cursor;
   const quiVitrage = cmd.hsTemps?.operateur_vitrage

@@ -51,12 +51,18 @@ export default function Dashboard({ commandes, stocks, onNav, onRefresh }: Props
   const alertesAchats: AlerteAchat[] = [];
   commandes.forEach(c => {
     const cmd = c as any;
-    if (cmd.cmd_alu_passee === false)               alertesAchats.push({ cmd: c, matiere: "Profilés ALU",   probleme: "non_passee" });
-    if (cmd.cmd_pvc_passee === false)               alertesAchats.push({ cmd: c, matiere: "Profilés PVC",   probleme: "non_passee" });
-    if (cmd.cmd_accessoires_passee === false)       alertesAchats.push({ cmd: c, matiere: "Accessoires",    probleme: "non_passee" });
-    if (cmd.cmd_alu_passee === true && !cmd.date_alu)          alertesAchats.push({ cmd: c, matiere: "Profilés ALU",   probleme: "sans_date" });
-    if (cmd.cmd_pvc_passee === true && !cmd.date_pvc)          alertesAchats.push({ cmd: c, matiere: "Profilés PVC",   probleme: "sans_date" });
-    if (cmd.cmd_accessoires_passee === true && !cmd.date_accessoires) alertesAchats.push({ cmd: c, matiere: "Accessoires", probleme: "sans_date" });
+    const ITEMS = [
+      { nec: "cmd_alu_necessaire",         pass: "cmd_alu_passee",         date: "date_alu",          label: "Profilés ALU" },
+      { nec: "cmd_pvc_necessaire",         pass: "cmd_pvc_passee",         date: "date_pvc",          label: "Profilés PVC" },
+      { nec: "cmd_accessoires_necessaire", pass: "cmd_accessoires_passee", date: "date_accessoires",  label: "Accessoires" },
+      { nec: "cmd_panneau_necessaire",     pass: "cmd_panneau_passee",     date: "date_panneau_porte",label: "Panneau porte" },
+      { nec: "cmd_volet_necessaire",       pass: "cmd_volet_passee",       date: "date_volet_roulant",label: "Volet roulant" },
+    ];
+    ITEMS.forEach(({ nec, pass, date, label }) => {
+      if (!cmd[nec]) return;
+      if (!cmd[pass]) alertesAchats.push({ cmd: c, matiere: label, probleme: "non_passee" });
+      else if (!cmd[date]) alertesAchats.push({ cmd: c, matiere: label, probleme: "sans_date" });
+    });
   });
 
   const ruptures = Object.entries(STOCKS_DEF).filter(([id, st]) => {
