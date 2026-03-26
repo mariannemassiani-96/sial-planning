@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
-import { calcCheminCritique, C, CFAM, fmtDate, CommandeCC, TYPES_MENUISERIE, ZONES } from "@/lib/sial-data";
+import { calcCheminCritique, C, CFAM, fmtDate, CommandeCC, TYPES_MENUISERIE, ZONES, JOURS_FERIES, isWorkday } from "@/lib/sial-data";
 import { H, Bdg } from "@/components/ui";
 
 type ViewMode = "semaine" | "jour" | "mois";
@@ -284,22 +284,24 @@ export default function PlanningLivraison({ commandes }: { commandes: CommandeCC
             <div key={wi} style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:2, marginBottom:2 }}>
               {week.map((day, di) => {
                 if (!day) return <div key={di} style={{ minHeight:80, background:C.s2, borderRadius:4 }} />;
-                const isToday   = day === today;
-                const isWeekend = di >= 5;
+                const isToday      = day === today;
+                const isNonWorking = !isWorkday(day);
+                const isFerie      = !!JOURS_FERIES[day];
                 const delivs    = filtered.filter(x => {
                   const d = (x.cmd as any).date_livraison_souhaitee || x.livSouhaitee;
                   return sameDay(d, day);
                 });
                 const hasCritique = delivs.some(x => x.cc?.critique);
                 const hasRetard   = delivs.some(x => x.cc?.enRetard && !x.cc?.critique);
-                const borderCol   = hasCritique ? C.red : hasRetard ? C.orange : delivs.length > 0 ? C.green : isToday ? C.green : C.border;
+                const borderCol   = hasCritique ? C.red : hasRetard ? C.orange : delivs.length > 0 ? C.green : isFerie ? C.purple : isToday ? C.green : C.border;
 
                 return (
                   <div key={di}
                     onClick={() => { setView("jour"); setAnchor(day); }}
-                    style={{ minHeight:80, background: isToday?C.green+"22":isWeekend?C.s2:C.s1, borderRadius:4, border:`1px solid ${borderCol}`, padding:5, cursor:"pointer" }}>
-                    <div style={{ fontSize:11, fontWeight: isToday?700:400, color: isToday?C.green:isWeekend?C.muted:C.sec, marginBottom:4 }}>
+                    style={{ minHeight:80, background: isToday?C.green+"22":isFerie?C.purple+"22":isNonWorking?C.s2:C.s1, borderRadius:4, border:`1px solid ${borderCol}`, padding:5, cursor:"pointer" }}>
+                    <div style={{ fontSize:11, fontWeight: isToday||isFerie?700:400, color: isToday?C.green:isFerie?C.purple:isNonWorking?C.muted:C.sec, marginBottom:2 }}>
                       {new Date(day).getDate()}
+                      {isFerie && <div style={{ fontSize:7, color:C.purple }}>{JOURS_FERIES[day]}</div>}
                     </div>
                     {delivs.length > 0 && (
                       <div>

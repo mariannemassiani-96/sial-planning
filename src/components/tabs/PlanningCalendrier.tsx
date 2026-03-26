@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
-import { calcCheminCritique, C, fmtDate, CommandeCC, TYPES_MENUISERIE } from "@/lib/sial-data";
+import { calcCheminCritique, C, fmtDate, CommandeCC, TYPES_MENUISERIE, JOURS_FERIES, isWorkday } from "@/lib/sial-data";
 import { H, Bdg } from "@/components/ui";
 
 type ViewMode = "semaine" | "jour" | "mois";
@@ -145,12 +145,14 @@ export default function PlanningCalendrier({ commandes }: { commandes: CommandeC
           <div style={{ display:"grid", gridTemplateColumns:"170px repeat(5,1fr)", minWidth:600 }}>
             <div style={{ padding:"7px 10px", background:C.s2, fontSize:10, color:C.sec, fontWeight:700, borderRadius:"6px 0 0 0" }}>COMMANDE</div>
             {weekDays.map(day => {
-              const isToday = day === today;
+              const isToday  = day === today;
+              const isFerie  = !!JOURS_FERIES[day];
               const dow = new Date(day).getDay();
               return (
-                <div key={day} style={{ padding:"6px 4px", background: isToday ? C.orange+"33" : C.s2, textAlign:"center", borderLeft:`1px solid ${C.border}` }}>
-                  <div style={{ fontSize:10, color: isToday ? C.orange : C.sec, fontWeight: isToday ? 700 : 400 }}>{JOURS_FR[dow === 0 ? 6 : dow - 1]}</div>
-                  <div className="mono" style={{ fontSize:13, fontWeight:700, color: isToday ? C.orange : C.text }}>{new Date(day).getDate()}</div>
+                <div key={day} style={{ padding:"6px 4px", background: isFerie ? C.purple+"22" : isToday ? C.orange+"33" : C.s2, textAlign:"center", borderLeft:`1px solid ${C.border}` }}>
+                  <div style={{ fontSize:10, color: isFerie ? C.purple : isToday ? C.orange : C.sec, fontWeight: isToday || isFerie ? 700 : 400 }}>{JOURS_FR[dow === 0 ? 6 : dow - 1]}</div>
+                  <div className="mono" style={{ fontSize:13, fontWeight:700, color: isFerie ? C.purple : isToday ? C.orange : C.text }}>{new Date(day).getDate()}</div>
+                  {isFerie && <div style={{ fontSize:8, color:C.purple }}>{JOURS_FERIES[day]}</div>}
                 </div>
               );
             })}
@@ -171,10 +173,11 @@ export default function PlanningCalendrier({ commandes }: { commandes: CommandeC
                   {cc.enRetard && <Bdg t={`+${cc.retardJours}j`} c={retardColor} sz={8} />}
                 </div>
                 {weekDays.map(day => {
-                  const etapes = getEtapesForDay(day, cc);
+                  const etapes  = getEtapesForDay(day, cc);
                   const isToday = day === today;
+                  const isFerie = !!JOURS_FERIES[day];
                   return (
-                    <div key={day} style={{ padding:3, background: isToday ? C.orange+"11" : C.s1, borderLeft:`1px solid ${C.border}`, minHeight:50, display:"flex", flexDirection:"column", gap:2 }}>
+                    <div key={day} style={{ padding:3, background: isFerie ? C.purple+"11" : isToday ? C.orange+"11" : C.s1, borderLeft:`1px solid ${C.border}`, minHeight:50, display:"flex", flexDirection:"column", gap:2 }}>
                       {etapes.map((e, i) => (
                         <div key={i} title={`${e.label} — ${e.qui}`} style={{ background: e.couleur+"33", border:`1px solid ${e.couleur}55`, borderRadius:3, padding:"2px 4px", fontSize:9, color:e.couleur, fontWeight:600, lineHeight:1.3, cursor:"default" }}>
                           {e.label.split(" / ")[0].split(" ")[0]}
@@ -265,8 +268,9 @@ export default function PlanningCalendrier({ commandes }: { commandes: CommandeC
             <div key={wi} style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:2, marginBottom:2 }}>
               {week.map((day, di) => {
                 if (!day) return <div key={di} style={{ minHeight:72, background:C.s2, borderRadius:4 }} />;
-                const isToday  = day === today;
-                const isWeekend = di >= 5;
+                const isToday      = day === today;
+                const isNonWorking = !isWorkday(day);
+                const isFerie      = !!JOURS_FERIES[day];
                 const dayEtapes = chemins.flatMap(({ cmd, cc }) => {
                   if (!cc) return [];
                   return cc.etapes
@@ -276,9 +280,10 @@ export default function PlanningCalendrier({ commandes }: { commandes: CommandeC
                 return (
                   <div key={di}
                     onClick={() => { setView("jour"); setAnchor(day); }}
-                    style={{ minHeight:72, background: isToday ? C.orange+"22" : isWeekend ? C.s2 : C.s1, borderRadius:4, border:`1px solid ${isToday ? C.orange : C.border}`, padding:4, cursor:"pointer" }}>
-                    <div style={{ fontSize:11, fontWeight: isToday ? 700 : 400, color: isToday ? C.orange : isWeekend ? C.muted : C.sec, marginBottom:4 }}>
+                    style={{ minHeight:72, background: isToday ? C.orange+"22" : isFerie ? C.purple+"22" : isNonWorking ? C.s2 : C.s1, borderRadius:4, border:`1px solid ${isToday ? C.orange : isFerie ? C.purple : C.border}`, padding:4, cursor:"pointer" }}>
+                    <div style={{ fontSize:11, fontWeight: isToday || isFerie ? 700 : 400, color: isToday ? C.orange : isFerie ? C.purple : isNonWorking ? C.muted : C.sec, marginBottom:2 }}>
                       {new Date(day).getDate()}
+                      {isFerie && <span style={{ fontSize:7, marginLeft:3 }}>{JOURS_FERIES[day]}</span>}
                     </div>
                     <div style={{ display:"flex", flexWrap:"wrap", gap:2 }}>
                       {dayEtapes.slice(0, 5).map(({ cmd, e }, i) => (

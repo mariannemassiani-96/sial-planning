@@ -256,6 +256,41 @@ export const TAMPON_MIN = 4 * 60;
 export const TAMPON_COUPE_LIVRAISON = 15;
 export const TAMPON_VITRAGE_LIVRAISON = 4;
 
+// Jours fériés et jours non travaillés (YYYY-MM-DD)
+export const JOURS_FERIES: Record<string, string> = {
+  // 2025
+  "2025-01-01": "Jour de l'An",
+  "2025-04-21": "Lundi de Pâques",
+  "2025-05-01": "Fête du Travail",
+  "2025-05-08": "Victoire 1945",
+  "2025-05-29": "Ascension",
+  "2025-06-09": "Lundi de Pentecôte",
+  "2025-07-14": "Fête Nationale",
+  "2025-08-15": "Assomption",
+  "2025-11-01": "Toussaint",
+  "2025-11-11": "Armistice",
+  "2025-12-25": "Noël",
+  // 2026
+  "2026-01-01": "Jour de l'An",
+  "2026-04-06": "Lundi de Pâques",
+  "2026-04-13": "Férié (sem. 16)",
+  "2026-05-01": "Fête du Travail",
+  "2026-05-08": "Victoire 1945",
+  "2026-05-14": "Ascension",
+  "2026-05-25": "Lundi de Pentecôte",
+  "2026-07-14": "Fête Nationale",
+  "2026-08-15": "Assomption",
+  "2026-11-01": "Toussaint",
+  "2026-11-11": "Armistice",
+  "2026-12-25": "Noël",
+};
+
+export function isWorkday(dateStr: string): boolean {
+  const d = new Date(dateStr);
+  const dow = d.getDay();
+  return dow !== 0 && dow !== 6 && !JOURS_FERIES[dateStr];
+}
+
 export function hm(m: number): string {
   if (!m) return "0h00";
   return `${Math.floor(m / 60)}h${String(Math.round(m % 60)).padStart(2, "0")}`;
@@ -268,8 +303,9 @@ export function fmtDate(d?: string | null): string {
 
 export function nextWorkday(dateStr: string): string {
   const d = new Date(dateStr);
-  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
-  return d.toISOString().split("T")[0];
+  let s = d.toISOString().split("T")[0];
+  while (!isWorkday(s)) { d.setDate(d.getDate() + 1); s = d.toISOString().split("T")[0]; }
+  return s;
 }
 
 export function addWorkdays(dateStr: string, days: number): string {
@@ -277,7 +313,8 @@ export function addWorkdays(dateStr: string, days: number): string {
   let added = 0;
   while (added < days) {
     d.setDate(d.getDate() + 1);
-    if (d.getDay() !== 0 && d.getDay() !== 6) added++;
+    const s = d.toISOString().split("T")[0];
+    if (isWorkday(s)) added++;
   }
   return d.toISOString().split("T")[0];
 }
