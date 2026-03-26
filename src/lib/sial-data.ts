@@ -133,7 +133,7 @@ export function calcTempsType(typeId: string, quantite = 1, hsTemps?: HsTemps | 
   }
 
   const q = quantite;
-  const { mat, famille, dormant, ouvrants } = tm;
+  const { mat, famille, ouvrants } = tm;
   const isPVC = mat === "PVC";
   const isCoul = famille === "coulissant";
   const isGland = famille === "glandage";
@@ -267,7 +267,7 @@ export function fmtDate(d?: string | null): string {
 }
 
 export function addWorkdays(dateStr: string, days: number): string {
-  let d = new Date(dateStr);
+  const d = new Date(dateStr);
   let added = 0;
   while (added < days) {
     d.setDate(d.getDate() + 1);

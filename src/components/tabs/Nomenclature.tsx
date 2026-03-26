@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { TYPES_MENUISERIE, calcTempsType, T, C, CMAT, CFAM, hm } from "@/lib/sial-data";
+import { TYPES_MENUISERIE, calcTempsType, T, C, CMAT, hm } from "@/lib/sial-data";
 import { H, Bdg, Bar } from "@/components/ui";
 
 const inp = { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, padding: "7px 11px", color: C.text, fontSize: 13, outline: "none" };
