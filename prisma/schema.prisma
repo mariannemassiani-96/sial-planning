@@ -21,7 +21,7 @@ model Commande {
   num_commande            String
   client                  String
   ref_chantier            String?
-  zone                    String   @default("Bastia Nord")
+  zone                    String   @default("SIAL")
   priorite                String   @default("normale")
   semaine_theorique       String?
   semaine_atteignable     String?
@@ -36,6 +36,10 @@ model Commande {
   hsTemps                 Json?
   lignes                  Json?
   vitrages                Json?
+  aucun_vitrage           Boolean  @default(false)
+  cmd_alu_passee          Boolean  @default(false)
+  cmd_pvc_passee          Boolean  @default(false)
+  cmd_accessoires_passee  Boolean  @default(false)
   avancement              Int      @default(0)
   statut                  String   @default("en_attente")
   notes                   String?

@@ -3,6 +3,36 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
+function mapToDb(data: any) {
+  return {
+    num_commande:            data.num_commande            || "",
+    client:                  data.client                  || "",
+    ref_chantier:            data.ref_chantier            || null,
+    zone:                    data.zone                    || "SIAL",
+    priorite:                data.priorite                || "normale",
+    semaine_theorique:       data.semaine_theorique       || null,
+    semaine_atteignable:     data.semaine_atteignable     || null,
+    date_alu:                data.date_alu                || null,
+    date_pvc:                data.date_pvc                || null,
+    date_accessoires:        data.date_accessoires        || null,
+    date_panneau_porte:      data.date_panneau_porte      || null,
+    date_volet_roulant:      data.date_volet_roulant      || null,
+    date_livraison_souhaitee: data.date_livraison_souhaitee || null,
+    type:                    data.type                    || "ob1_pvc",
+    quantite:                parseInt(data.quantite)      || 1,
+    hsTemps:                 data.hsTemps                 ?? null,
+    lignes:                  data.lignes                  ?? null,
+    vitrages:                data.vitrages                ?? null,
+    aucun_vitrage:           data.aucun_vitrage           ?? false,
+    cmd_alu_passee:          data.cmd_alu_passee          ?? false,
+    cmd_pvc_passee:          data.cmd_pvc_passee          ?? false,
+    cmd_accessoires_passee:  data.cmd_accessoires_passee  ?? false,
+    notes:                   data.notes                   || null,
+    avancement:              parseInt(data.avancement)    || 0,
+    statut:                  data.statut                  || "en_attente",
+  };
+}
+
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
@@ -15,7 +45,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   const data = await req.json();
-  const cmd = await prisma.commande.update({ where: { id: params.id }, data });
+  const cmd = await prisma.commande.update({ where: { id: params.id }, data: mapToDb(data) });
   return NextResponse.json(cmd);
 }
 

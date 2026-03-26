@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { signOut } from "next-auth/react";
 import { C, TYPES_MENUISERIE, STOCKS_DEF, calcCheminCritique, CommandeCC } from "@/lib/sial-data";
@@ -16,21 +16,28 @@ import PlanningLivraison from "@/components/tabs/PlanningLivraison";
 import Dashboard from "@/components/tabs/Dashboard";
 
 export default function HomePage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [ong, setOng] = useState("dashboard");
   const [commandes, setCommandes] = useState<CommandeCC[]>([]);
   const [cmdEdit, setCmdEdit] = useState<CommandeCC | null>(null);
   const [stocks, setStocks] = useState<Record<string, { actuel: number }>>({});
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchAll = useCallback(async () => {
     try {
-      const c = localStorage.getItem("sial_v8_cmd"); if (c) setCommandes(JSON.parse(c));
-      const s = localStorage.getItem("sial_v8_st"); if (s) setStocks(JSON.parse(s));
+      const [cmdsRes, stsRes] = await Promise.all([
+        fetch("/api/commandes"),
+        fetch("/api/stocks"),
+      ]);
+      if (cmdsRes.ok) setCommandes(await cmdsRes.json());
+      if (stsRes.ok)  setStocks(await stsRes.json());
     } catch {}
+    setLoading(false);
   }, []);
 
-  useEffect(() => { try { localStorage.setItem("sial_v8_cmd", JSON.stringify(commandes)); } catch {} }, [commandes]);
-  useEffect(() => { try { localStorage.setItem("sial_v8_st", JSON.stringify(stocks)); } catch {} }, [stocks]);
+  useEffect(() => {
+    if (status === "authenticated") fetchAll();
+  }, [status, fetchAll]);
 
   const ruptures = Object.entries(STOCKS_DEF).filter(([id, st]) => {
     const a = parseFloat(String(stocks[id]?.actuel)) || 0; return a > 0 && a < st.min;
@@ -51,11 +58,46 @@ export default function HomePage() {
     { id: "simulateur", l: "🎯 Simulateur" },
   ];
 
-  const addCommande = (cmd: CommandeCC) => { setCommandes(p => [...p, cmd]); setOng("carnet"); };
-  const delCommande = (id: any) => setCommandes(p => p.filter(x => x.id !== id));
+  const addCommande = async (cmd: CommandeCC) => {
+    try {
+      const res = await fetch("/api/commandes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cmd),
+      });
+      if (res.ok) { const saved = await res.json(); setCommandes(p => [saved, ...p]); }
+    } catch {}
+    setOng("carnet");
+  };
+
+  const delCommande = async (id: any) => {
+    setCommandes(p => p.filter(x => x.id !== id));
+    try { await fetch(`/api/commandes/${id}`, { method: "DELETE" }); } catch {}
+  };
+
   const editCommande = (cmd: CommandeCC) => { setCmdEdit(cmd); setOng("saisie"); };
-  const modifCommande = (cmd: CommandeCC) => { setCommandes(p => p.map(x => x.id === cmd.id ? cmd : x)); setCmdEdit(null); setOng("carnet"); };
-  const updateStock = (id: string, v: { actuel: string }) => setStocks(p => ({ ...p, [id]: { actuel: parseFloat(v.actuel) || 0 } }));
+
+  const modifCommande = async (cmd: CommandeCC) => {
+    try {
+      const res = await fetch(`/api/commandes/${cmd.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cmd),
+      });
+      if (res.ok) { const saved = await res.json(); setCommandes(p => p.map(x => x.id === saved.id ? saved : x)); }
+    } catch {}
+    setCmdEdit(null);
+    setOng("carnet");
+  };
+
+  const updateStock = async (id: string, v: { actuel: string }) => {
+    const actuel = parseFloat(v.actuel) || 0;
+    setStocks(p => ({ ...p, [id]: { actuel } }));
+    try {
+      await fetch("/api/stocks", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, actuel }),
+      });
+    } catch {}
+  };
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg }}>
@@ -67,7 +109,7 @@ export default function HomePage() {
             <span style={{ color: C.teal }}>ISULA</span>
             <span style={{ color: C.sec, margin: "0 6px", fontWeight: 300 }}>|</span>
             <span>Planning Industriel</span>
-            <span style={{ fontSize: 11, color: C.muted, marginLeft: 6 }}>v8.2</span>
+            <span style={{ fontSize: 11, color: C.muted, marginLeft: 6 }}>v8.3</span>
           </div>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
@@ -92,16 +134,25 @@ export default function HomePage() {
       </div>
 
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: 20 }}>
-        {ong === "dashboard" && <Dashboard commandes={commandes} stocks={stocks} onNav={setOng} />}
-        {ong === "saisie" && <SaisieCommande key={String(cmdEdit?.id || "new")} onAjouter={addCommande} commande={cmdEdit} onModifier={modifCommande} />}
-        {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} onEdit={editCommande} />}
-        {ong === "crise" && <PlanningCrise commandes={commandes} />}
-        {ong === "calendrier" && <PlanningCalendrier commandes={commandes} />}
-        {ong === "livraison" && <PlanningLivraison commandes={commandes} />}
-        {ong === "charge" && <ChargeSemaine commandes={commandes} />}
-        {ong === "stocks" && <StocksTampons stocksTampons={stocks} onUpdate={updateStock} />}
-        {ong === "nomenclature" && <Nomenclature />}
-        {ong === "simulateur" && <Simulateur />}
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 60, color: C.sec }}>
+            <div style={{ fontSize: 24, marginBottom: 10 }}>⏳</div>
+            <div>Chargement des données…</div>
+          </div>
+        ) : (
+          <>
+            {ong === "dashboard" && <Dashboard commandes={commandes} stocks={stocks} onNav={setOng} />}
+            {ong === "saisie" && <SaisieCommande key={String(cmdEdit?.id || "new")} onAjouter={addCommande} commande={cmdEdit} onModifier={modifCommande} />}
+            {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} onEdit={editCommande} />}
+            {ong === "crise" && <PlanningCrise commandes={commandes} />}
+            {ong === "calendrier" && <PlanningCalendrier commandes={commandes} />}
+            {ong === "livraison" && <PlanningLivraison commandes={commandes} />}
+            {ong === "charge" && <ChargeSemaine commandes={commandes} />}
+            {ong === "stocks" && <StocksTampons stocksTampons={stocks} onUpdate={updateStock} />}
+            {ong === "nomenclature" && <Nomenclature />}
+            {ong === "simulateur" && <Simulateur />}
+          </>
+        )}
       </div>
     </div>
   );
