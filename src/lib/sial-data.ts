@@ -273,7 +273,6 @@ export const JOURS_FERIES: Record<string, string> = {
   // 2026
   "2026-01-01": "Jour de l'An",
   "2026-04-06": "Lundi de Pâques",
-  "2026-04-13": "Férié (sem. 16)",
   "2026-05-01": "Fête du Travail",
   "2026-05-08": "Victoire 1945",
   "2026-05-14": "Ascension",
