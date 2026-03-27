@@ -188,7 +188,7 @@ export default function ChargeSemaine({ commandes }: { commandes: CommandeCC[] }
         const retard = cc?.enRetard ? `<span class="${cc.critique?"crit":"warn"}">+${cc.retardJours}j</span>` : `<span class="ok">OK</span>`;
         return `<tr>
           <td class="mono" style="white-space:nowrap">${num}</td>
-          <td><b>${cmd.client}</b></td>
+          <td><b>${cmd.client}</b>${(cmd as any).ref_chantier ? `<br/><span style="font-size:9px;color:#666">${(cmd as any).ref_chantier}</span>` : ""}</td>
           <td>${TYPES_MENUISERIE[cmd.type]?.label||cmd.type}</td>
           <td class="center">${cmd.quantite}</td>
           <td class="mono">${fmtDatePrint(et?.debut)}</td>
@@ -316,7 +316,7 @@ export default function ChargeSemaine({ commandes }: { commandes: CommandeCC[] }
               return (
                 <div key={String(cmd.id)} style={{ padding:"4px 8px",background:ec+"22",border:`1px solid ${ec}44`,borderRadius:4,fontSize:10 }}>
                   <span style={{color:C.orange,fontWeight:700}}>{(cmd as any).num_commande||"—"}</span>
-                  <span style={{color:C.text,marginLeft:4}}>{cmd.client}</span>
+                  <span style={{color:C.text,marginLeft:4}}>{cmd.client}{(cmd as any).ref_chantier ? ` — ${(cmd as any).ref_chantier}` : ""}</span>
                   {activeEtape&&<span style={{color:ec,marginLeft:4,fontSize:9}}>({activeEtape.label})</span>}
                 </div>
               );

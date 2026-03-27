@@ -112,6 +112,7 @@ export default function Dashboard({ commandes, stocks, onNav, onRefresh }: Props
               <div>
                 <span className="mono" style={{ fontSize: 10, color: C.orange }}>{(cmd as any).num_commande || "—"}</span>
                 <span style={{ fontSize: 12, fontWeight: 600, marginLeft: 6 }}>{cmd.client}</span>
+                {(cmd as any).ref_chantier && <span style={{ fontSize: 10, color: C.sec, marginLeft: 4 }}>— {(cmd as any).ref_chantier}</span>}
               </div>
               <span style={{ fontSize: 10, fontWeight: 700, color: cc?.critique ? C.red : C.orange }}>
                 {cc?.critique ? `CRITIQUE +${cc.retardJours}j` : `+${cc?.retardJours}j`}
@@ -137,6 +138,7 @@ export default function Dashboard({ commandes, stocks, onNav, onRefresh }: Props
                 <div>
                   <span className="mono" style={{ fontSize: 10, color: C.orange }}>{(c as any).num_commande || "—"}</span>
                   <span style={{ fontSize: 12, fontWeight: 600, marginLeft: 6 }}>{c.client}</span>
+                  {(c as any).ref_chantier && <span style={{ fontSize: 10, color: C.sec, marginLeft: 4 }}>— {(c as any).ref_chantier}</span>}
                 </div>
                 <span className="mono" style={{ fontSize: 11, fontWeight: 700, color: rc }}>{fmtDate(c.date_livraison_souhaitee)}</span>
               </div>
@@ -153,7 +155,7 @@ export default function Dashboard({ commandes, stocks, onNav, onRefresh }: Props
             <div>
               <div style={{ fontSize: 11, color: C.sec, marginBottom: 4 }}>Commander le</div>
               <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: C.cyan }}>{fmtDate(prochainVitrage.cc!.dateCmdVitrage)}</div>
-              <div style={{ fontSize: 12, marginTop: 6, color: C.text }}>{prochainVitrage.cmd.client}</div>
+              <div style={{ fontSize: 12, marginTop: 6, color: C.text }}>{prochainVitrage.cmd.client}{(prochainVitrage.cmd as any).ref_chantier ? ` — ${(prochainVitrage.cmd as any).ref_chantier}` : ""}</div>
               <div style={{ fontSize: 10, color: C.sec }}>{(prochainVitrage.cmd as any).num_commande}</div>
             </div>
           ) : (
@@ -195,6 +197,7 @@ export default function Dashboard({ commandes, stocks, onNav, onRefresh }: Props
                   <div>
                     <span className="mono" style={{ fontSize: 10, color: C.orange }}>{cmd.num_commande || "—"}</span>
                     <span style={{ fontSize: 12, fontWeight: 600, marginLeft: 6 }}>{a.cmd.client}</span>
+                    {cmd.ref_chantier && <span style={{ fontSize: 10, color: C.sec, marginLeft: 4 }}>— {cmd.ref_chantier}</span>}
                     <span style={{ fontSize: 10, color: C.sec, marginLeft: 6 }}>{a.matiere}</span>
                   </div>
                   <span style={{ fontSize: 9, fontWeight: 700, color, whiteSpace: "nowrap", marginLeft: 8 }}>{label}</span>

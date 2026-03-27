@@ -275,7 +275,7 @@ export default function PlanningIsula({ commandes }: { commandes: CommandeCC[] }
               {demandesProchaines.map((d,i)=>(
                 <div key={i} style={{padding:"3px 8px",background:C.teal+"18",border:`1px solid ${C.teal}33`,borderRadius:4,fontSize:9}}>
                   <span style={{color:C.orange,fontWeight:700}}>{d.cmd.num_commande||"—"}</span>
-                  <span style={{color:C.text,marginLeft:4}}>{d.client}</span>
+                  <span style={{color:C.text,marginLeft:4}}>{d.client}{d.cmd.ref_chantier ? ` — ${d.cmd.ref_chantier}` : ""}</span>
                   <span style={{color:C.teal,marginLeft:4}}>{fmtDate(d.dateCmdVit)}</span>
                   {d.m2>0&&<span style={{color:C.sec,marginLeft:4}}>{d.m2}m²</span>}
                 </div>

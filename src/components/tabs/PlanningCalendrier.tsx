@@ -171,7 +171,7 @@ export default function PlanningCalendrier({ commandes }: { commandes: CommandeC
             return (
               <div key={String(cmd.id)} style={{ display:"grid", gridTemplateColumns:"170px repeat(5,1fr)", borderTop:`1px solid ${C.border}`, minWidth:600 }}>
                 <div style={{ padding:"8px 10px", background:C.s1, borderLeft:`3px solid ${retardColor}` }}>
-                  <div style={{ fontSize:12, fontWeight:700, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{cmd.client}</div>
+                  <div style={{ fontSize:12, fontWeight:700, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{cmd.client}{(cmd as any).ref_chantier ? ` — ${(cmd as any).ref_chantier}` : ""}</div>
                   <div style={{ fontSize:9, color:C.sec }} className="mono">{tm?.label} ×{cmd.quantite}</div>
                   {cc.enRetard && <Bdg t={`+${cc.retardJours}j`} c={retardColor} sz={8} />}
                 </div>
@@ -236,7 +236,7 @@ export default function PlanningCalendrier({ commandes }: { commandes: CommandeC
                     const retardColor = cc.critique ? C.red : cc.enRetard ? C.orange : C.green;
                     return (
                       <div key={String(cmd.id)} style={{ marginBottom:8, padding:8, background:C.bg, borderRadius:4, border:`1px solid ${C.border}`, borderLeft:`2px solid ${retardColor}` }}>
-                        <div style={{ fontSize:12, fontWeight:700, marginBottom:2 }}>{cmd.client}</div>
+                        <div style={{ fontSize:12, fontWeight:700, marginBottom:2 }}>{cmd.client}{(cmd as any).ref_chantier ? ` — ${(cmd as any).ref_chantier}` : ""}</div>
                         <div style={{ fontSize:10, color:C.sec }}>{tm?.label} × {cmd.quantite}</div>
                         {etape && (
                           <div style={{ fontSize:9, color:p.c, marginTop:4 }} className="mono">
@@ -290,7 +290,7 @@ export default function PlanningCalendrier({ commandes }: { commandes: CommandeC
                     </div>
                     <div style={{ display:"flex", flexWrap:"wrap", gap:2 }}>
                       {dayEtapes.slice(0, 5).map(({ cmd, e }, i) => (
-                        <div key={i} title={`${cmd.client} — ${e.label}`}
+                        <div key={i} title={`${cmd.client}${(cmd as any).ref_chantier ? ` — ${(cmd as any).ref_chantier}` : ""} · ${e.label}`}
                           style={{ width:8, height:8, borderRadius:"50%", background: ETAPE_C[e.id] || C.sec }} />
                       ))}
                       {dayEtapes.length > 5 && <div style={{ fontSize:8, color:C.muted }}>+{dayEtapes.length - 5}</div>}

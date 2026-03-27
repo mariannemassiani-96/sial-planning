@@ -301,7 +301,7 @@ export default function PlanningLivraison({ commandes }: { commandes: CommandeCC
                   const tm = TYPES_MENUISERIE[x.c.type];
                   return (
                     <div key={i} style={{ marginBottom:4, padding:"5px 6px", background:C.bg, borderRadius:4, borderLeft:`2px solid ${retardColor}` }}>
-                      <div style={{ fontSize:11, fontWeight:700, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{x.c.client}</div>
+                      <div style={{ fontSize:11, fontWeight:700, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{x.c.client}{(x.cmd as any).ref_chantier ? ` — ${(x.cmd as any).ref_chantier}` : ""}</div>
                       <div style={{ fontSize:9, color:C.sec }}>{tm?.label} ×{x.c.quantite}</div>
                       {x.cc?.enRetard && <Bdg t={`+${x.cc.retardJours}j`} c={retardColor} sz={8}/>}
                     </div>
@@ -384,7 +384,7 @@ export default function PlanningLivraison({ commandes }: { commandes: CommandeCC
                           const retardColor = x.cc?.critique?C.red:x.cc?.enRetard?C.orange:C.green;
                           return (
                             <div key={i} style={{ fontSize:8, color:C.sec, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", marginBottom:1, padding:"1px 3px", background:retardColor+"22", borderRadius:2 }}>
-                              {x.c.client}
+                              {x.c.client}{(x.cmd as any).ref_chantier ? ` — ${(x.cmd as any).ref_chantier}` : ""}
                             </div>
                           );
                         })}

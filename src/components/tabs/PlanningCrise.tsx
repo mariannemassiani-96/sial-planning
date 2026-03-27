@@ -65,6 +65,7 @@ export default function PlanningCrise({ commandes }: { commandes: CommandeCC[] }
               <div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 14, fontWeight: 700 }}>{cc.client}</span>
+                  {(cc as any).ref_chantier && <Bdg t={(cc as any).ref_chantier} c={C.teal} />}
                   {tm && <Bdg t={tm.label} c={tm.famille === "hors_standard" ? C.purple : CFAM[tm.famille] || C.blue} />}
                   <Bdg t={`×${cc.quantite}`} c={C.sec} />
                   {cc.priorite !== "normale" && <Bdg t={cc.priorite?.replace("_", " ").toUpperCase() || ""} c={cc.priorite === "chantier_bloque" ? C.red : C.orange} />}
