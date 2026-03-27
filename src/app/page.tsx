@@ -52,11 +52,11 @@ export default function HomePage() {
 
   const nav = [
     { id: "dashboard",    l: "🏠 Tableau de bord",        alert: critiques },
+    { id: "livraison",    l: "🚚 Livraisons" },
     { id: "saisie",       l: "➕ Commande" },
     { id: "carnet",       l: `📂 Carnet (${commandes.length})` },
     { id: "crise",        l: `🚨 Crise${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
     { id: "calendrier",   l: "📅 Planning SIAL" },
-    { id: "livraison",    l: "🚚 Livraisons" },
     { id: "charge",       l: "📊 Charge SIAL" },
     { id: "rh",           l: "👥 Équipe SIAL" },
     { id: "isula",        l: "🔷 Planning ISULA VITRAGE" },
