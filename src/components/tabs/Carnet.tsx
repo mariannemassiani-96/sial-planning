@@ -105,6 +105,14 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
   const hasFilters = search || filterZone || filterPoste || filterWeek;
   const clearAll = () => { setSearch(""); setFilterZone(""); setFilterPoste(""); setFilterWeek(null); };
 
+  const exportJson = () => {
+    const blob = new Blob([JSON.stringify(commandes, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `commandes-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+  };
+
   return (
     <div>
       <H c={C.blue}>Carnet de commandes</H>
@@ -132,6 +140,9 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
               ✕ Effacer filtres
             </button>
           )}
+          <button onClick={exportJson} style={{ padding:"5px 12px", background:C.teal+"22", border:`1px solid ${C.teal}44`, borderRadius:4, color:C.teal, fontSize:11, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
+            💾 Export JSON
+          </button>
         </div>
 
         {/* Ligne 2 : zone + poste + semaine */}
