@@ -16,8 +16,18 @@ model User {
   createdAt DateTime @default(now())
 }
 
+model Commentaire {
+  id         String   @id @default(cuid())
+  commandeId String
+  auteur     String
+  texte      String
+  createdAt  DateTime @default(now())
+  commande   Commande @relation(fields: [commandeId], references: [id], onDelete: Cascade)
+}
+
 model Commande {
-  id                      String   @id @default(cuid())
+  id                      String         @id @default(cuid())
+  commentaires            Commentaire[]
   num_commande            String
   client                  String
   ref_chantier            String?

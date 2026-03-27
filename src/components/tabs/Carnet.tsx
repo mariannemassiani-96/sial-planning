@@ -1,7 +1,71 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { TYPES_MENUISERIE, ZONES, C, CFAM, calcTempsType, calcCheminCritique, dateDemarrage, hm, fmtDate, CommandeCC } from "@/lib/sial-data";
 import { H, Bdg, Card } from "@/components/ui";
+
+// ── Commentaires ──────────────────────────────────────────────────────────────
+type Commentaire = { id: string; auteur: string; texte: string; createdAt: string };
+
+function CommentairesPanel({ commandeId }: { commandeId: string }) {
+  const [items, setItems]   = useState<Commentaire[]>([]);
+  const [texte, setTexte]   = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+
+  const load = useCallback(async () => {
+    const res = await fetch(`/api/commandes/${commandeId}/commentaires`);
+    if (res.ok) setItems(await res.json());
+    setLoading(false);
+  }, [commandeId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const submit = async () => {
+    if (!texte.trim() || saving) return;
+    setSaving(true);
+    const res = await fetch(`/api/commandes/${commandeId}/commentaires`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texte }),
+    });
+    if (res.ok) { const saved = await res.json(); setItems(p => [...p, saved]); setTexte(""); }
+    setSaving(false);
+  };
+
+  const fmtTs = (s: string) => new Date(s).toLocaleString("fr-FR", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" });
+
+  return (
+    <div style={{ borderTop:`1px solid ${C.border}`, marginTop:8, paddingTop:8 }}>
+      {loading ? (
+        <div style={{ fontSize:10, color:C.sec }}>Chargement…</div>
+      ) : (
+        <>
+          {items.length === 0 && <div style={{ fontSize:10, color:C.muted, marginBottom:6 }}>Aucun commentaire.</div>}
+          {items.map(item => (
+            <div key={item.id} style={{ marginBottom:6, background:C.s2, borderRadius:4, padding:"5px 8px" }}>
+              <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:2 }}>
+                <span style={{ fontSize:10, fontWeight:700, color:C.teal }}>{item.auteur}</span>
+                <span style={{ fontSize:9, color:C.muted }}>{fmtTs(item.createdAt)}</span>
+              </div>
+              <div style={{ fontSize:11, color:C.text, whiteSpace:"pre-wrap" }}>{item.texte}</div>
+            </div>
+          ))}
+          <div style={{ display:"flex", gap:6, marginTop:4 }}>
+            <input
+              value={texte} onChange={e => setTexte(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+              placeholder="Ajouter un commentaire… (Entrée pour envoyer)"
+              style={{ flex:1, padding:"5px 8px", background:C.bg, border:`1px solid ${C.border}`, borderRadius:4, color:C.text, fontSize:11, outline:"none" }}
+            />
+            <button onClick={submit} disabled={saving || !texte.trim()}
+              style={{ padding:"5px 12px", background:C.blue, border:"none", borderRadius:4, color:"#fff", fontSize:11, fontWeight:700, cursor:texte.trim()?"pointer":"default", opacity:texte.trim()?1:0.4 }}>
+              Envoyer
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 const ETAPES = [
   { key: "etape_coupe_ok",   label: "Coupe",   c: "#42A5F5" },
@@ -77,6 +141,7 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
   const [filterZone,  setFilterZone]  = useState("");
   const [filterPoste, setFilterPoste] = useState("");
   const [filterWeek,  setFilterWeek]  = useState<string | null>(null);
+  const [openComments, setOpenComments] = useState<string | null>(null);
 
   const sorted = useMemo(() =>
     [...commandes].sort((a, b) =>
@@ -288,6 +353,12 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
               <button onClick={() => onEdit(c)} style={{ background: "none", border: `1px solid ${C.blue}`, borderRadius: 3, color: C.blue, cursor: "pointer", padding: "3px 7px", fontSize: 11, marginRight: 4 }}>✎</button>
               <button onClick={() => { if (window.confirm(`Supprimer ${cmd.num_commande || c.client} ?`)) onDelete(c.id); }} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 3, color: C.sec, cursor: "pointer", padding: "3px 7px", fontSize: 11 }}>✕</button>
             </div>
+            <button
+              onClick={() => setOpenComments(p => p === String(c.id) ? null : String(c.id))}
+              style={{ marginTop:6, background:"none", border:`1px solid ${openComments===String(c.id)?C.yellow:C.border}`, borderRadius:4, color:openComments===String(c.id)?C.yellow:C.muted, fontSize:10, cursor:"pointer", padding:"2px 10px" }}>
+              💬 Commentaires
+            </button>
+            {openComments === String(c.id) && <CommentairesPanel commandeId={String(c.id)} />}
           </Card>
         );
       })}
