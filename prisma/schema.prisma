@@ -66,6 +66,8 @@ model Commande {
   etape_palette_ok        Boolean  @default(false)
   notes                   String?
   type_commande           String?
+  atelier                 String   @default("SIAL")
+  montant_ht              Float?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }
@@ -94,4 +96,10 @@ model PlanningRH {
   plan      Json
   valide    Boolean  @default(false)
   updatedAt DateTime @updatedAt
+}
+
+model Backup {
+  id        String   @id @default(cuid())
+  data      Json
+  createdAt DateTime @default(now())
 }

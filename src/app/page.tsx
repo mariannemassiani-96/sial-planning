@@ -48,20 +48,26 @@ export default function HomePage() {
   const retards = commandes.filter(c => calcCheminCritique(c)?.enRetard).length;
   const critiques = commandes.some(c => calcCheminCritique(c)?.critique);
 
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const nav = [
-    { id: "dashboard", l: "🏠 Tableau de bord", alert: critiques },
-    { id: "saisie", l: "➕ Commande" },
-    { id: "carnet", l: `📂 Carnet (${commandes.length})` },
-    { id: "crise", l: `🚨 Crise${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
-    { id: "calendrier", l: "📅 Planning" },
-    { id: "livraison", l: "🚚 Livraisons" },
-    { id: "charge", l: "📊 Charge" },
-    { id: "rh", l: "👥 Équipe" },
-    { id: "isula", l: "🔷 ISULA Vitrage" },
-    { id: "qualite", l: "✅ Qualité" },
-    { id: "stocks", l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
-    { id: "nomenclature", l: "📐 Nomenclature" },
-    { id: "simulateur", l: "🎯 Simulateur" },
+    { id: "dashboard",    l: "🏠 Tableau de bord",        alert: critiques },
+    { id: "saisie",       l: "➕ Commande" },
+    { id: "carnet",       l: `📂 Carnet (${commandes.length})` },
+    { id: "crise",        l: `🚨 Crise${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
+    { id: "calendrier",   l: "📅 Planning SIAL" },
+    { id: "livraison",    l: "🚚 Livraisons" },
+    { id: "charge",       l: "📊 Charge SIAL" },
+    { id: "rh",           l: "👥 Équipe SIAL" },
+    { id: "isula",        l: "🔷 Planning ISULA VITRAGE" },
+    { id: "charge_isula", l: "📊 Charge ISULA VITRAGE" },
+    { id: "equipe_isula", l: "👥 Équipe ISULA VITRAGE" },
+    ...(isAdmin ? [
+      { id: "qualite",      l: "✅ Qualité" },
+      { id: "stocks",       l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
+      { id: "nomenclature", l: "📐 Nomenclature" },
+      { id: "simulateur",   l: "🎯 Simulateur" },
+    ] : []),
   ];
 
   const addCommande = async (cmd: CommandeCC) => {
@@ -168,6 +174,8 @@ export default function HomePage() {
             {ong === "charge" && <ChargeSemaine commandes={commandes} />}
             {ong === "rh" && <PlanningRH commandes={commandes} />}
             {ong === "isula" && <PlanningIsula commandes={commandes} />}
+            {ong === "charge_isula" && <div style={{ padding: 40, color: C.sec, textAlign: "center" }}>📊 Charge ISULA VITRAGE — à venir</div>}
+            {ong === "equipe_isula" && <div style={{ padding: 40, color: C.sec, textAlign: "center" }}>👥 Équipe ISULA VITRAGE — à venir</div>}
             {ong === "qualite" && <Qualite />}
             {ong === "stocks" && <StocksTampons stocksTampons={stocks} onUpdate={updateStock} />}
             {ong === "nomenclature" && <Nomenclature />}

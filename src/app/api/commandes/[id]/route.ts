@@ -41,6 +41,8 @@ function mapToDb(data: any) {
     etape_palette_ok:        data.etape_palette_ok        ?? false,
     notes:                   data.notes                   || null,
     type_commande:           data.type_commande           || null,
+    atelier:                 data.atelier                 || "SIAL",
+    montant_ht:              data.montant_ht != null ? parseFloat(data.montant_ht) || null : null,
     avancement:              parseInt(data.avancement)    || 0,
     statut:                  data.statut                  || "en_attente",
   };

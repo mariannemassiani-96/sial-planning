@@ -157,6 +157,7 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
 
   const [search,           setSearch]           = useState("");
   const [filterZone,       setFilterZone]       = useState("");
+  const [filterAtelier,    setFilterAtelier]    = useState("");
   const [filterPoste,      setFilterPoste]      = useState("");
   const [filterStatut,     setFilterStatut]     = useState("");
   const [filterTypeCmd,    setFilterTypeCmd]    = useState("");
@@ -179,6 +180,7 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
       if (!ok) return false;
     }
     if (filterZone    && cmd.zone          !== filterZone)    return false;
+    if (filterAtelier && (cmd.atelier||"SIAL") !== filterAtelier) return false;
     if (filterStatut  && cmd.statut        !== filterStatut)  return false;
     if (filterTypeCmd && cmd.type_commande !== filterTypeCmd) return false;
     if (filterPoste   && !hasPoste(c, filterPoste))           return false;
@@ -187,10 +189,10 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
       if (getMondayOf(cmd.date_livraison_souhaitee) !== filterWeekLiv) return false;
     } else if (filterWeekLiv) return false;
     return true;
-  }), [sorted, search, filterZone, filterStatut, filterTypeCmd, filterPoste, filterWeekFab, filterWeekLiv]);
+  }), [sorted, search, filterZone, filterAtelier, filterStatut, filterTypeCmd, filterPoste, filterWeekFab, filterWeekLiv]);
 
-  const hasFilters = search || filterZone || filterStatut || filterTypeCmd || filterPoste || filterWeekFab || filterWeekLiv;
-  const clearAll = () => { setSearch(""); setFilterZone(""); setFilterStatut(""); setFilterTypeCmd(""); setFilterPoste(""); setFilterWeekFab(null); setFilterWeekLiv(null); };
+  const hasFilters = search || filterZone || filterAtelier || filterStatut || filterTypeCmd || filterPoste || filterWeekFab || filterWeekLiv;
+  const clearAll = () => { setSearch(""); setFilterZone(""); setFilterAtelier(""); setFilterStatut(""); setFilterTypeCmd(""); setFilterPoste(""); setFilterWeekFab(null); setFilterWeekLiv(null); };
 
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(commandes, null, 2)], { type: "application/json" });
@@ -234,6 +236,13 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
 
         {/* Ligne 2 : zone + statut + type commande + poste */}
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:8 }}>
+          <select value={filterAtelier} onChange={e => setFilterAtelier(e.target.value)}
+            style={{ padding:"5px 10px", background:filterAtelier?C.orange+"22":C.bg, border:`1px solid ${filterAtelier?C.orange:C.border}`, borderRadius:4, color:filterAtelier?C.orange:C.sec, fontSize:11, cursor:"pointer", fontWeight:700 }}>
+            <option value="">SIAL + ISULA</option>
+            <option value="SIAL">SIAL uniquement</option>
+            <option value="ISULA VITRAGE">ISULA VITRAGE uniquement</option>
+          </select>
+
           <select value={filterZone} onChange={e => setFilterZone(e.target.value)}
             style={{ padding:"5px 10px", background:filterZone?C.teal+"22":C.bg, border:`1px solid ${filterZone?C.teal:C.border}`, borderRadius:4, color:filterZone?C.teal:C.sec, fontSize:11, cursor:"pointer" }}>
             <option value="">Toutes les zones</option>

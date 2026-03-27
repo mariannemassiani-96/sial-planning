@@ -16,7 +16,7 @@ const TYPES_COMMANDE = [
 
 const empty = {
   num_commande: "", client: "", ref_chantier: "",
-  zone: ZONES[0], priorite: "normale", type_commande: "",
+  zone: ZONES[0], priorite: "normale", type_commande: "", atelier: "SIAL", montant_ht: "",
   semaine_theorique: "", semaine_atteignable: "",
   date_alu: "", date_pvc: "", date_accessoires: "",
   date_panneau_porte: "", date_volet_roulant: "",
@@ -41,7 +41,7 @@ function cmdToForm(cmd: any): FormType {
     : [{ ...emptyVitrage }];
   return {
     num_commande: cmd.num_commande || "", client: cmd.client || "", ref_chantier: cmd.ref_chantier || "",
-    zone: cmd.zone || ZONES[0], priorite: cmd.priorite || "normale", type_commande: cmd.type_commande || "",
+    zone: cmd.zone || ZONES[0], priorite: cmd.priorite || "normale", type_commande: cmd.type_commande || "", atelier: cmd.atelier || "SIAL", montant_ht: cmd.montant_ht != null ? String(cmd.montant_ht) : "",
     semaine_theorique: cmd.semaine_theorique || "", semaine_atteignable: cmd.semaine_atteignable || "",
     date_alu: cmd.date_alu || "", date_pvc: cmd.date_pvc || "", date_accessoires: cmd.date_accessoires || "",
     date_panneau_porte: cmd.date_panneau_porte || "", date_volet_roulant: cmd.date_volet_roulant || "",
@@ -121,7 +121,9 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
           <div><label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>ZONE</label><select style={inp} value={f.zone} onChange={e => set("zone", e.target.value)}>{ZONES.map(z => <option key={z}>{z}</option>)}</select></div>
           <div><label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>TYPE COMMANDE</label><select style={inp} value={f.type_commande} onChange={e => set("type_commande", e.target.value)}><option value="">— Sélectionner —</option>{TYPES_COMMANDE.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}</select></div>
+          <div><label style={{ fontSize: 10, color: C.orange, display: "block", marginBottom: 3 }}>ATELIER</label><select style={{ ...inp, borderColor: C.orange+"66" }} value={f.atelier} onChange={e => set("atelier", e.target.value)}><option value="SIAL">SIAL</option><option value="ISULA VITRAGE">ISULA VITRAGE</option></select></div>
           <div><label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>PRIORITÉ</label><select style={inp} value={f.priorite} onChange={e => set("priorite", e.target.value)}><option value="normale">Normale</option><option value="urgente">Urgente</option><option value="chantier_bloque">Chantier bloqué</option></select></div>
+          <div><label style={{ fontSize: 10, color: C.green, display: "block", marginBottom: 3 }}>MONTANT HT (€)</label><input type="number" min={0} step={0.01} style={{ ...inp, borderColor: C.green+"66" }} value={f.montant_ht} onChange={e => set("montant_ht", e.target.value)} placeholder="ex: 12500.00" /></div>
           <div><label style={{ fontSize: 10, color: C.blue, display: "block", marginBottom: 3 }}>SEM. THÉORIQUE</label><input style={{ ...inp, borderColor: C.blue + "66" }} value={f.semaine_theorique} onChange={e => set("semaine_theorique", e.target.value)} placeholder="ex: S18-2026" /></div>
           <div><label style={{ fontSize: 10, color: C.green, display: "block", marginBottom: 3 }}>SEM. ATTEIGNABLE</label><input style={{ ...inp, borderColor: C.green + "66" }} value={f.semaine_atteignable} onChange={e => set("semaine_atteignable", e.target.value)} placeholder="ex: S20-2026" /></div>
         </div>

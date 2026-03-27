@@ -4,15 +4,16 @@ import { calcCheminCritique, C, CFAM, fmtDate, CommandeCC, TYPES_MENUISERIE, ZON
 import { H, Bdg } from "@/components/ui";
 import { openPrintWindow, fmtDatePrint } from "@/lib/print-utils";
 
-const ZONE_COLOR: Record<string, string> = {
-  "Porto-Vecchio":    "#FFA726",
-  "Ajaccio":          "#42A5F5",
-  "Balagne":          "#FFCA28",
-  "SIAL":             "#EF5350",
-  "Continent":        "#66BB6A",
-  "Plaine Orientale": "#CE93D8",
-  "Sur chantier":     "#4DB6AC",
-  "Autre":            "#6B8BAD",
+const ZONE_COLORS: Record<string, string> = {
+  "Porto-Vecchio":   "#E53935",
+  "Ajaccio":         "#FB8C00",
+  "Balagne":         "#1E88E5",
+  "Bastia Nord":     "#00ACC1",
+  "Sur chantier":    "#43A047",
+  "Plaine Orientale":"#8E24AA",
+  "Continent":       "#6D4C41",
+  "SIAL":            "#757575",
+  "Autre":           "#546E7A",
 };
 
 const TRANSPORTEURS = [
@@ -191,7 +192,7 @@ export default function PlanningLivraison({ commandes, onPatch }: {
       ? Math.round((new Date(livSouhaitee).getTime() - Date.now()) / 86400000)
       : null;
     const jc = jr === null ? C.sec : jr < 0 ? C.red : jr < 7 ? C.orange : C.green;
-    const zoneColor = ZONE_COLOR[cmd.zone] || C.sec;
+    const zoneColor = ZONE_COLORS[cmd.zone] || C.sec;
     const transp = TRANSPORTEURS.find(t => t.id === cmd.transporteur);
 
     return (
@@ -212,7 +213,10 @@ export default function PlanningLivraison({ commandes, onPatch }: {
               {cmd.ref_chantier && <Bdg t={cmd.ref_chantier} c={C.teal} sz={9}/>}
               {tm && <Bdg t={tm.label} c={tm.famille==="hors_standard"?C.purple:CFAM[tm.famille]||C.blue} sz={9}/>}
               <Bdg t={`×${c.quantite}`} c={C.sec} sz={9}/>
-              {transp && <span style={{ fontSize:9, padding:"1px 6px", background:transp.c+"22", border:`1px solid ${transp.c}44`, borderRadius:3, color:transp.c, fontWeight:700 }}>{transp.label}</span>}
+              {transp
+                ? <span style={{ fontSize:9, padding:"1px 6px", background:transp.c+"22", border:`1px solid ${transp.c}44`, borderRadius:3, color:transp.c, fontWeight:700 }}>{transp.label}</span>
+                : <span style={{ fontSize:9, padding:"1px 6px", borderRadius:3, color:C.muted, fontStyle:"italic" }}>— transporteur non défini</span>
+              }
             </div>
             <div style={{ display:"flex", gap:10, fontSize:10, color:C.sec, flexWrap:"wrap" }}>
               {cmd.zone && <span style={{ color: zoneColor, fontWeight: 600 }}>{cmd.zone}</span>}
@@ -265,7 +269,7 @@ export default function PlanningLivraison({ commandes, onPatch }: {
     const rows = periodDelivs.map(x => {
       const { cmd, c, cc, livSouhaitee } = x;
       const tm = TYPES_MENUISERIE[c.type];
-      const zc = ZONE_COLOR[cmd.zone] || "#888";
+      const zc = ZONE_COLORS[cmd.zone] || "#888";
       const jr = livSouhaitee ? Math.round((new Date(livSouhaitee).getTime()-Date.now())/86400000) : null;
       const retardCol = cc?.critique ? "crit" : cc?.enRetard ? "warn" : "ok";
       const transp = cmd.transporteur || "—";
@@ -295,14 +299,20 @@ export default function PlanningLivraison({ commandes, onPatch }: {
       <H c={C.green}>Planning de livraison</H>
 
       {/* Légende zones */}
-      <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap", alignItems:"center" }}>
-        {Object.entries(ZONE_COLOR).map(([z, col]) => (
-          <span key={z} style={{ fontSize:10, padding:"2px 8px", borderRadius:3, background:col+"22", border:`1px solid ${col}55`, color:col, fontWeight:600 }}>{z}</span>
-        ))}
-        <span style={{ fontSize:10, color:C.sec, marginLeft:8 }}>· Transporteurs :</span>
-        {TRANSPORTEURS.map(t => (
-          <span key={t.id} style={{ fontSize:10, padding:"2px 8px", borderRadius:3, background:t.c+"22", border:`1px solid ${t.c}55`, color:t.c, fontWeight:600 }}>{t.label}</span>
-        ))}
+      <div style={{ marginBottom:10, padding:"8px 10px", background:C.s1, borderRadius:6, border:`1px solid ${C.border}` }}>
+        <div style={{ fontSize:9, color:C.sec, fontWeight:700, letterSpacing:"0.07em", marginBottom:5 }}>LÉGENDE — ZONES</div>
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
+          {Object.entries(ZONE_COLORS).map(([z, col]) => (
+            <span key={z} style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:10, padding:"2px 8px", borderRadius:3, background:col+"22", border:`1px solid ${col}55`, color:col, fontWeight:600 }}>
+              <span style={{ width:8, height:8, borderRadius:"50%", background:col, display:"inline-block", flexShrink:0 }} />
+              {z}
+            </span>
+          ))}
+          <span style={{ fontSize:10, color:C.sec, marginLeft:6 }}>· Transporteurs :</span>
+          {TRANSPORTEURS.map(t => (
+            <span key={t.id} style={{ fontSize:10, padding:"2px 8px", borderRadius:3, background:t.c+"22", border:`1px solid ${t.c}55`, color:t.c, fontWeight:600 }}>{t.label}</span>
+          ))}
+        </div>
       </div>
 
       {/* Controls */}
@@ -400,19 +410,23 @@ export default function PlanningLivraison({ commandes, onPatch }: {
                   const retardColor = x.cc?.critique ? C.red : x.cc?.enRetard ? C.orange : C.green;
                   const tm = TYPES_MENUISERIE[x.c.type];
                   const transp = TRANSPORTEURS.find(t => t.id === x.cmd.transporteur);
+                  const zoneCol = ZONE_COLORS[x.cmd.zone] || C.border;
                   return (
                     <div key={i}
                       draggable
                       onDragStart={handleDragStart(String(x.c.id), x.livSouhaitee)}
                       onDragEnd={handleDragEnd}
-                      style={{ marginBottom:4, padding:"5px 6px", background:C.bg, borderRadius:4, borderLeft:`2px solid ${retardColor}`, cursor:"grab", userSelect:"none" }}>
+                      style={{ marginBottom:4, padding:"5px 6px", background:C.bg, borderRadius:4, border:`1px solid ${zoneCol}33`, borderLeft:`4px solid ${zoneCol}`, cursor:"grab", userSelect:"none" }}>
                       <div style={{ fontSize:11, fontWeight:700, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
                         {x.c.client}{x.cmd.ref_chantier ? ` — ${x.cmd.ref_chantier}` : ""}
                       </div>
                       <div style={{ fontSize:9, color:C.sec }}>{tm?.label} ×{x.c.quantite}</div>
-                      <div style={{ display:"flex", gap:4, marginTop:2, flexWrap:"wrap" }}>
+                      <div style={{ display:"flex", gap:4, marginTop:2, flexWrap:"wrap", alignItems:"center" }}>
                         {x.cc?.enRetard && <Bdg t={`+${x.cc.retardJours}j`} c={retardColor} sz={8}/>}
-                        {transp && <span style={{ fontSize:8, padding:"0px 4px", background:transp.c+"22", border:`1px solid ${transp.c}44`, borderRadius:2, color:transp.c, fontWeight:700 }}>{transp.label}</span>}
+                        {transp
+                          ? <span style={{ fontSize:8, padding:"0px 4px", background:transp.c+"22", border:`1px solid ${transp.c}44`, borderRadius:2, color:transp.c, fontWeight:700 }}>{transp.label}</span>
+                          : <span style={{ fontSize:8, color:C.muted, fontStyle:"italic" }}>— transporteur non défini</span>
+                        }
                       </div>
                     </div>
                   );
@@ -492,14 +506,15 @@ export default function PlanningLivraison({ commandes, onPatch }: {
                           {delivs.length} liv.
                         </div>
                         {delivs.slice(0,3).map((x,i) => {
-                          const retardColor = x.cc?.critique?C.red:x.cc?.enRetard?C.orange:C.green;
+                          // retardColor unused — zone color used instead
                           const transp = TRANSPORTEURS.find(t => t.id === x.cmd.transporteur);
+                          const zoneCol = ZONE_COLORS[x.cmd.zone] || C.border;
                           return (
                             <div key={i}
                               draggable
                               onDragStart={e => { e.stopPropagation(); handleDragStart(String(x.c.id), x.livSouhaitee)(e); }}
                               onDragEnd={handleDragEnd}
-                              style={{ fontSize:8, color:C.sec, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", marginBottom:1, padding:"1px 3px", background:retardColor+"22", borderRadius:2, cursor:"grab" }}>
+                              style={{ fontSize:8, color:C.sec, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", marginBottom:1, padding:"1px 3px", background:C.bg, borderRadius:2, borderLeft:`3px solid ${zoneCol}`, cursor:"grab" }}>
                               {x.c.client}{x.cmd.ref_chantier ? ` — ${x.cmd.ref_chantier}` : ""}
                               {transp && <span style={{ color:transp.c, marginLeft:2 }}>({transp.label})</span>}
                             </div>
