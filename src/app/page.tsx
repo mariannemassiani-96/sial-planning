@@ -164,7 +164,7 @@ export default function HomePage() {
             {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} onEdit={editCommande} onPatch={patchCommande} />}
             {ong === "crise" && <PlanningCrise commandes={commandes} />}
             {ong === "calendrier" && <PlanningCalendrier commandes={commandes} />}
-            {ong === "livraison" && <PlanningLivraison commandes={commandes} />}
+            {ong === "livraison" && <PlanningLivraison commandes={commandes} onPatch={patchCommande} />}
             {ong === "charge" && <ChargeSemaine commandes={commandes} />}
             {ong === "rh" && <PlanningRH commandes={commandes} />}
             {ong === "isula" && <PlanningIsula commandes={commandes} />}

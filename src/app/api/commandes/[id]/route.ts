@@ -34,6 +34,7 @@ function mapToDb(data: any) {
     cmd_accessoires_necessaire: data.cmd_accessoires_necessaire ?? false,
     cmd_panneau_necessaire:  data.cmd_panneau_necessaire  ?? false,
     cmd_volet_necessaire:    data.cmd_volet_necessaire    ?? false,
+    transporteur:            data.transporteur            || null,
     etape_coupe_ok:          data.etape_coupe_ok          ?? false,
     etape_montage_ok:        data.etape_montage_ok        ?? false,
     etape_vitrage_ok:        data.etape_vitrage_ok        ?? false,
