@@ -15,6 +15,8 @@ import PlanningCalendrier from "@/components/tabs/PlanningCalendrier";
 import PlanningLivraison from "@/components/tabs/PlanningLivraison";
 import Dashboard from "@/components/tabs/Dashboard";
 import PlanningRH from "@/components/tabs/PlanningRH";
+import PlanningIsula from "@/components/tabs/PlanningIsula";
+import Qualite from "@/components/tabs/Qualite";
 
 export default function HomePage() {
   const { data: session, status } = useSession();
@@ -55,6 +57,8 @@ export default function HomePage() {
     { id: "livraison", l: "🚚 Livraisons" },
     { id: "charge", l: "📊 Charge" },
     { id: "rh", l: "👥 Équipe" },
+    { id: "isula", l: "🔷 ISULA Vitrage" },
+    { id: "qualite", l: "✅ Qualité" },
     { id: "stocks", l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
     { id: "nomenclature", l: "📐 Nomenclature" },
     { id: "simulateur", l: "🎯 Simulateur" },
@@ -69,6 +73,18 @@ export default function HomePage() {
       if (res.ok) { const saved = await res.json(); setCommandes(p => [saved, ...p]); }
     } catch {}
     setOng("carnet");
+  };
+
+  const patchCommande = async (id: string, updates: Record<string, boolean>) => {
+    const cmd = commandes.find(x => x.id === id);
+    if (!cmd) return;
+    try {
+      const res = await fetch(`/api/commandes/${id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...cmd, ...updates }),
+      });
+      if (res.ok) { const saved = await res.json(); setCommandes(p => p.map(x => x.id === saved.id ? saved : x)); }
+    } catch {}
   };
 
   const delCommande = async (id: any) => {
@@ -145,12 +161,14 @@ export default function HomePage() {
           <>
             {ong === "dashboard" && <Dashboard commandes={commandes} stocks={stocks} onNav={setOng} onRefresh={fetchAll} />}
             {ong === "saisie" && <SaisieCommande key={String(cmdEdit?.id || "new")} onAjouter={addCommande} commande={cmdEdit} onModifier={modifCommande} />}
-            {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} onEdit={editCommande} />}
+            {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} onEdit={editCommande} onPatch={patchCommande} />}
             {ong === "crise" && <PlanningCrise commandes={commandes} />}
             {ong === "calendrier" && <PlanningCalendrier commandes={commandes} />}
             {ong === "livraison" && <PlanningLivraison commandes={commandes} />}
             {ong === "charge" && <ChargeSemaine commandes={commandes} />}
             {ong === "rh" && <PlanningRH commandes={commandes} />}
+            {ong === "isula" && <PlanningIsula commandes={commandes} />}
+            {ong === "qualite" && <Qualite />}
             {ong === "stocks" && <StocksTampons stocksTampons={stocks} onUpdate={updateStock} />}
             {ong === "nomenclature" && <Nomenclature />}
             {ong === "simulateur" && <Simulateur />}

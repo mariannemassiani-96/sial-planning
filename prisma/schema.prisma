@@ -49,9 +49,26 @@ model Commande {
   cmd_volet_necessaire    Boolean  @default(false)
   avancement              Int      @default(0)
   statut                  String   @default("en_attente")
+  etape_coupe_ok          Boolean  @default(false)
+  etape_montage_ok        Boolean  @default(false)
+  etape_vitrage_ok        Boolean  @default(false)
+  etape_palette_ok        Boolean  @default(false)
   notes                   String?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
+}
+
+model ControleQualite {
+  date      String   @id
+  data      Json
+  updatedAt DateTime @updatedAt
+}
+
+model PlanningIsula {
+  semaine   String   @id
+  plan      Json
+  valide    Boolean  @default(false)
+  updatedAt DateTime @updatedAt
 }
 
 model StockTampon {
