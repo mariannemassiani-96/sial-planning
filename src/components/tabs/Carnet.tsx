@@ -67,6 +67,24 @@ function CommentairesPanel({ commandeId }: { commandeId: string }) {
   );
 }
 
+const STATUTS = [
+  { id: "en_attente",            label: "En attente de validation", c: "#9E9E9E" },
+  { id: "appro",                 label: "Commande APPRO",           c: "#FF9800" },
+  { id: "fab",                   label: "Commande FAB",             c: "#2196F3" },
+  { id: "fabrique",              label: "Fabriqué",                 c: "#00BCD4" },
+  { id: "livre",                 label: "Livré",                    c: "#4CAF50" },
+  { id: "livraison_partielle",   label: "Livraison Partielle",      c: "#8BC34A" },
+  { id: "facture",               label: "Facturé",                  c: "#9C27B0" },
+  { id: "facturation_partielle", label: "Facturation Partielle",    c: "#E91E63" },
+];
+
+const TYPES_COMMANDE = [
+  { id: "chantier_pro", label: "Chantier PRO", c: "#1565C0" },
+  { id: "chantier_par", label: "Chantier PAR", c: "#2E7D32" },
+  { id: "sav",          label: "SAV",          c: "#E65100" },
+  { id: "diffus",       label: "DIFFUS",       c: "#6A1B9A" },
+];
+
 const ETAPES = [
   { key: "etape_coupe_ok",   label: "Coupe",   c: "#42A5F5" },
   { key: "etape_montage_ok", label: "Montage", c: "#FFA726" },
@@ -133,15 +151,18 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
   commandes: CommandeCC[];
   onDelete: (id: any) => void;
   onEdit: (cmd: CommandeCC) => void;
-  onPatch: (id: string, updates: Record<string, boolean>) => void;
+  onPatch: (id: string, updates: Record<string, unknown>) => void;
 }) {
   const todayMonday = getMondayOf(localStr(new Date()));
 
-  const [search,      setSearch]      = useState("");
-  const [filterZone,  setFilterZone]  = useState("");
-  const [filterPoste, setFilterPoste] = useState("");
-  const [filterWeek,  setFilterWeek]  = useState<string | null>(null);
-  const [openComments, setOpenComments] = useState<string | null>(null);
+  const [search,           setSearch]           = useState("");
+  const [filterZone,       setFilterZone]       = useState("");
+  const [filterPoste,      setFilterPoste]      = useState("");
+  const [filterStatut,     setFilterStatut]     = useState("");
+  const [filterTypeCmd,    setFilterTypeCmd]    = useState("");
+  const [filterWeekFab,    setFilterWeekFab]    = useState<string | null>(null);
+  const [filterWeekLiv,    setFilterWeekLiv]    = useState<string | null>(null);
+  const [openComments,     setOpenComments]     = useState<string | null>(null);
 
   const sorted = useMemo(() =>
     [...commandes].sort((a, b) =>
@@ -150,7 +171,6 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
 
   const filtered = useMemo(() => sorted.filter(c => {
     const cmd = c as any;
-    // Texte libre : client, num_commande, ref_chantier
     if (search) {
       const q = search.toLowerCase();
       const ok = (c.client || "").toLowerCase().includes(q)
@@ -158,17 +178,19 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
         || (cmd.ref_chantier || "").toLowerCase().includes(q);
       if (!ok) return false;
     }
-    // Zone / chantier
-    if (filterZone && cmd.zone !== filterZone) return false;
-    // Poste
-    if (filterPoste && !hasPoste(c, filterPoste)) return false;
-    // Semaine
-    if (filterWeek && !hasEtapeInWeek(c, filterWeek)) return false;
+    if (filterZone    && cmd.zone          !== filterZone)    return false;
+    if (filterStatut  && cmd.statut        !== filterStatut)  return false;
+    if (filterTypeCmd && cmd.type_commande !== filterTypeCmd) return false;
+    if (filterPoste   && !hasPoste(c, filterPoste))           return false;
+    if (filterWeekFab && !hasEtapeInWeek(c, filterWeekFab))   return false;
+    if (filterWeekLiv && cmd.date_livraison_souhaitee) {
+      if (getMondayOf(cmd.date_livraison_souhaitee) !== filterWeekLiv) return false;
+    } else if (filterWeekLiv) return false;
     return true;
-  }), [sorted, search, filterZone, filterPoste, filterWeek]);
+  }), [sorted, search, filterZone, filterStatut, filterTypeCmd, filterPoste, filterWeekFab, filterWeekLiv]);
 
-  const hasFilters = search || filterZone || filterPoste || filterWeek;
-  const clearAll = () => { setSearch(""); setFilterZone(""); setFilterPoste(""); setFilterWeek(null); };
+  const hasFilters = search || filterZone || filterStatut || filterTypeCmd || filterPoste || filterWeekFab || filterWeekLiv;
+  const clearAll = () => { setSearch(""); setFilterZone(""); setFilterStatut(""); setFilterTypeCmd(""); setFilterPoste(""); setFilterWeekFab(null); setFilterWeekLiv(null); };
 
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(commandes, null, 2)], { type: "application/json" });
@@ -210,47 +232,67 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
           </button>
         </div>
 
-        {/* Ligne 2 : zone + poste + semaine */}
-        <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
-
-          {/* Zone */}
+        {/* Ligne 2 : zone + statut + type commande + poste */}
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:8 }}>
           <select value={filterZone} onChange={e => setFilterZone(e.target.value)}
             style={{ padding:"5px 10px", background:filterZone?C.teal+"22":C.bg, border:`1px solid ${filterZone?C.teal:C.border}`, borderRadius:4, color:filterZone?C.teal:C.sec, fontSize:11, cursor:"pointer" }}>
             <option value="">Toutes les zones</option>
             {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
           </select>
 
-          {/* Poste */}
+          <select value={filterStatut} onChange={e => setFilterStatut(e.target.value)}
+            style={{ padding:"5px 10px", background:filterStatut?C.blue+"22":C.bg, border:`1px solid ${filterStatut?C.blue:C.border}`, borderRadius:4, color:filterStatut?(STATUTS.find(s=>s.id===filterStatut)?.c||C.blue):C.sec, fontSize:11, cursor:"pointer" }}>
+            <option value="">Tous les statuts</option>
+            {STATUTS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+
+          <select value={filterTypeCmd} onChange={e => setFilterTypeCmd(e.target.value)}
+            style={{ padding:"5px 10px", background:filterTypeCmd?C.purple+"22":C.bg, border:`1px solid ${filterTypeCmd?C.purple:C.border}`, borderRadius:4, color:filterTypeCmd?C.purple:C.sec, fontSize:11, cursor:"pointer" }}>
+            <option value="">Tous les types</option>
+            {TYPES_COMMANDE.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+
           <select value={filterPoste} onChange={e => setFilterPoste(e.target.value)}
             style={{ padding:"5px 10px", background:filterPoste?C.orange+"22":C.bg, border:`1px solid ${filterPoste?C.orange:C.border}`, borderRadius:4, color:filterPoste?C.orange:C.sec, fontSize:11, cursor:"pointer" }}>
             <option value="">Tous les postes</option>
             {POSTES_FILTRE.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
+        </div>
 
-          {/* Semaine */}
+        {/* Ligne 3 : semaine fab + semaine livraison */}
+        <div style={{ display:"flex", gap:16, flexWrap:"wrap", alignItems:"center" }}>
+          {/* Semaine fabrication */}
           <div style={{ display:"flex", gap:4, alignItems:"center" }}>
-            <button
-              onClick={() => setFilterWeek(p => p ? addDays(p, -7) : addDays(todayMonday, -7))}
-              style={{ padding:"4px 8px", background:C.bg, border:`1px solid ${C.border}`, borderRadius:4, color:C.sec, cursor:"pointer", fontSize:12 }}>‹</button>
-            <span style={{ fontSize:11, color:filterWeek?C.purple:C.sec, fontWeight:filterWeek?700:400, minWidth:200, textAlign:"center",
-              padding:"4px 8px", background:filterWeek?C.purple+"22":C.bg, border:`1px solid ${filterWeek?C.purple:C.border}`, borderRadius:4 }}>
-              {filterWeek ? weekLabel(filterWeek) : "Toutes les semaines"}
+            <span style={{ fontSize:10, color:C.sec, fontWeight:700, marginRight:2 }}>FAB</span>
+            <button onClick={() => setFilterWeekFab(p => p ? addDays(p,-7) : addDays(todayMonday,-7))}
+              style={{ padding:"3px 7px", background:C.bg, border:`1px solid ${C.border}`, borderRadius:4, color:C.sec, cursor:"pointer", fontSize:11 }}>‹</button>
+            <span style={{ fontSize:10, color:filterWeekFab?C.purple:C.sec, fontWeight:filterWeekFab?700:400, minWidth:170, textAlign:"center",
+              padding:"3px 8px", background:filterWeekFab?C.purple+"22":C.bg, border:`1px solid ${filterWeekFab?C.purple:C.border}`, borderRadius:4 }}>
+              {filterWeekFab ? weekLabel(filterWeekFab) : "Toutes semaines"}
             </span>
-            <button
-              onClick={() => setFilterWeek(p => p ? addDays(p, 7) : addDays(todayMonday, 7))}
-              style={{ padding:"4px 8px", background:C.bg, border:`1px solid ${C.border}`, borderRadius:4, color:C.sec, cursor:"pointer", fontSize:12 }}>›</button>
-            {!filterWeek && (
-              <button onClick={() => setFilterWeek(todayMonday)}
-                style={{ padding:"4px 10px", background:C.purple+"22", border:`1px solid ${C.purple}44`, borderRadius:4, color:C.purple, cursor:"pointer", fontSize:10, fontWeight:700 }}>
-                Cette semaine
-              </button>
-            )}
-            {filterWeek && (
-              <button onClick={() => setFilterWeek(null)}
-                style={{ padding:"4px 8px", background:C.bg, border:`1px solid ${C.border}`, borderRadius:4, color:C.sec, cursor:"pointer", fontSize:10 }}>
-                ✕
-              </button>
-            )}
+            <button onClick={() => setFilterWeekFab(p => p ? addDays(p,7) : addDays(todayMonday,7))}
+              style={{ padding:"3px 7px", background:C.bg, border:`1px solid ${C.border}`, borderRadius:4, color:C.sec, cursor:"pointer", fontSize:11 }}>›</button>
+            {!filterWeekFab
+              ? <button onClick={() => setFilterWeekFab(todayMonday)} style={{ padding:"3px 8px", background:C.purple+"22", border:`1px solid ${C.purple}44`, borderRadius:4, color:C.purple, cursor:"pointer", fontSize:10, fontWeight:700 }}>Cette sem.</button>
+              : <button onClick={() => setFilterWeekFab(null)} style={{ padding:"3px 7px", background:C.bg, border:`1px solid ${C.border}`, borderRadius:4, color:C.sec, cursor:"pointer", fontSize:10 }}>✕</button>
+            }
+          </div>
+
+          {/* Semaine livraison */}
+          <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+            <span style={{ fontSize:10, color:C.sec, fontWeight:700, marginRight:2 }}>LIV</span>
+            <button onClick={() => setFilterWeekLiv(p => p ? addDays(p,-7) : addDays(todayMonday,-7))}
+              style={{ padding:"3px 7px", background:C.bg, border:`1px solid ${C.border}`, borderRadius:4, color:C.sec, cursor:"pointer", fontSize:11 }}>‹</button>
+            <span style={{ fontSize:10, color:filterWeekLiv?C.green:C.sec, fontWeight:filterWeekLiv?700:400, minWidth:170, textAlign:"center",
+              padding:"3px 8px", background:filterWeekLiv?C.green+"22":C.bg, border:`1px solid ${filterWeekLiv?C.green:C.border}`, borderRadius:4 }}>
+              {filterWeekLiv ? weekLabel(filterWeekLiv) : "Toutes semaines"}
+            </span>
+            <button onClick={() => setFilterWeekLiv(p => p ? addDays(p,7) : addDays(todayMonday,7))}
+              style={{ padding:"3px 7px", background:C.bg, border:`1px solid ${C.border}`, borderRadius:4, color:C.sec, cursor:"pointer", fontSize:11 }}>›</button>
+            {!filterWeekLiv
+              ? <button onClick={() => setFilterWeekLiv(todayMonday)} style={{ padding:"3px 8px", background:C.green+"22", border:`1px solid ${C.green}44`, borderRadius:4, color:C.green, cursor:"pointer", fontSize:10, fontWeight:700 }}>Cette sem.</button>
+              : <button onClick={() => setFilterWeekLiv(null)} style={{ padding:"3px 7px", background:C.bg, border:`1px solid ${C.border}`, borderRadius:4, color:C.sec, cursor:"pointer", fontSize:10 }}>✕</button>
+            }
           </div>
         </div>
 
@@ -260,8 +302,6 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
             ? <><span style={{ color:filtered.length===0?C.red:C.blue, fontWeight:700 }}>{filtered.length}</span> résultat{filtered.length!==1?"s":""} sur {sorted.length} commande{sorted.length!==1?"s":""}</>
             : <>{sorted.length} commande{sorted.length!==1?"s":""}</>
           }
-          {filterPoste && <span style={{ marginLeft:8, color:C.orange }}>· Poste : {POSTES_FILTRE.find(p=>p.id===filterPoste)?.label}</span>}
-          {filterWeek && <span style={{ marginLeft:8, color:C.purple }}>· {weekLabel(filterWeek)}</span>}
         </div>
       </div>
 
@@ -298,6 +338,7 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
                   <span style={{ fontSize: 14, fontWeight: 700 }}>{c.client}</span>
                   {cmd.ref_chantier && <Bdg t={cmd.ref_chantier} c={C.teal} />}
                   {cmd.zone && <Bdg t={cmd.zone} c={C.sec} />}
+                  {cmd.type_commande && (() => { const tc = TYPES_COMMANDE.find(t=>t.id===cmd.type_commande); return tc ? <Bdg t={tc.label} c={tc.c} /> : null; })()}
                   {tm && <Bdg t={tm.label} c={tm.famille === "hors_standard" ? C.purple : CFAM[tm.famille] || C.blue} />}
                   {(cmd.date_panneau_porte || cmd.date_volet_roulant) && <Bdg t="+ options" c={C.yellow} />}
                   {toutTermine && <Bdg t="✅ Terminé" c={C.green} />}
@@ -324,6 +365,24 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
                     {cmd.cmd_volet_necessaire && <span style={{ color: cmd.cmd_volet_passee ? C.green : C.red }}>{cmd.cmd_volet_passee ? "✓" : "⚠"} Volet{cmd.date_volet_roulant ? " "+fmtDate(cmd.date_volet_roulant) : ""}</span>}
                   </div>
                 )}
+
+                {/* Statut + Type commande */}
+                <div style={{ marginTop: 7, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  {(() => {
+                    const st = STATUTS.find(s => s.id === (cmd.statut || "en_attente")) || STATUTS[0];
+                    return (
+                      <select value={cmd.statut || "en_attente"} onChange={e => onPatch(String(c.id), { statut: e.target.value })}
+                        style={{ padding:"2px 8px", background:st.c+"22", border:`1px solid ${st.c}66`, borderRadius:4, color:st.c, fontSize:10, fontWeight:700, cursor:"pointer" }}>
+                        {STATUTS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                      </select>
+                    );
+                  })()}
+                  <select value={cmd.type_commande || ""} onChange={e => onPatch(String(c.id), { type_commande: e.target.value || null })}
+                    style={{ padding:"2px 8px", background:C.bg, border:`1px solid ${C.border}`, borderRadius:4, color:cmd.type_commande?(TYPES_COMMANDE.find(t=>t.id===cmd.type_commande)?.c||C.sec):C.muted, fontSize:10, cursor:"pointer" }}>
+                    <option value="">Type…</option>
+                    {TYPES_COMMANDE.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                  </select>
+                </div>
 
                 {/* Suivi étapes */}
                 <div style={{ marginTop: 7, display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>

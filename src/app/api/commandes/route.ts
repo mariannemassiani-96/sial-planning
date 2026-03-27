@@ -40,6 +40,7 @@ function mapToDb(data: any) {
     etape_vitrage_ok:        data.etape_vitrage_ok        ?? false,
     etape_palette_ok:        data.etape_palette_ok        ?? false,
     notes:                   data.notes                   || null,
+    type_commande:           data.type_commande           || null,
     avancement:              parseInt(data.avancement)    || 0,
     statut:                  data.statut                  || "en_attente",
   };

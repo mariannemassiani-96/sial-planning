@@ -65,6 +65,7 @@ model Commande {
   etape_vitrage_ok        Boolean  @default(false)
   etape_palette_ok        Boolean  @default(false)
   notes                   String?
+  type_commande           String?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }

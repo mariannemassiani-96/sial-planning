@@ -75,7 +75,7 @@ export default function HomePage() {
     setOng("carnet");
   };
 
-  const patchCommande = async (id: string, updates: Record<string, boolean>) => {
+  const patchCommande = async (id: string, updates: Record<string, unknown>) => {
     const cmd = commandes.find(x => x.id === id);
     if (!cmd) return;
     try {
