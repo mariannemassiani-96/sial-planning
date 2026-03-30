@@ -28,6 +28,7 @@ const empty = {
   date_alu: "", date_pvc: "", date_accessoires: "",
   date_panneau_porte: "", date_volet_roulant: "",
   date_livraison_souhaitee: "",
+  aucune_menuiserie: false,
   aucun_vitrage: false,
   cmd_alu_passee: false, cmd_pvc_passee: false, cmd_accessoires_passee: false,
   cmd_panneau_passee: false, cmd_volet_passee: false,
@@ -51,6 +52,7 @@ function cmdToForm(cmd: any): FormType {
     date_alu: cmd.date_alu || "", date_pvc: cmd.date_pvc || "", date_accessoires: cmd.date_accessoires || "",
     date_panneau_porte: cmd.date_panneau_porte || "", date_volet_roulant: cmd.date_volet_roulant || "",
     date_livraison_souhaitee: cmd.date_livraison_souhaitee || "",
+    aucune_menuiserie: cmd.aucune_menuiserie || false,
     aucun_vitrage: cmd.aucun_vitrage || false,
     cmd_alu_passee: cmd.cmd_alu_passee || false, cmd_pvc_passee: cmd.cmd_pvc_passee || false, cmd_accessoires_passee: cmd.cmd_accessoires_passee || false,
     cmd_panneau_passee: cmd.cmd_panneau_passee || false, cmd_volet_passee: cmd.cmd_volet_passee || false,
@@ -237,12 +239,20 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
 
       <div style={{ padding: 10, background: C.bg, borderRadius: 5, border: `1px solid ${C.border}`, marginBottom: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <div style={{ fontSize: 10, color: C.purple, fontWeight: 700 }}>MENUISERIES</div>
-          <button onClick={addLigne} style={{ padding: "3px 10px", background: C.purple + "33", border: `1px solid ${C.purple}`, borderRadius: 4, color: C.purple, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>+ Ajouter ligne</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ fontSize: 10, color: C.purple, fontWeight: 700 }}>MENUISERIES</div>
+            <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 10, color: f.aucune_menuiserie ? C.orange : C.sec }}>
+              <input type="checkbox" checked={f.aucune_menuiserie} onChange={e => set("aucune_menuiserie", e.target.checked)} />
+              Aucune menuiserie
+            </label>
+          </div>
+          {!f.aucune_menuiserie && <button onClick={addLigne} style={{ padding: "3px 10px", background: C.purple + "33", border: `1px solid ${C.purple}`, borderRadius: 4, color: C.purple, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>+ Ajouter ligne</button>}
         </div>
-        {f.lignes.length === 0 && (
+        {f.aucune_menuiserie ? (
+          <div style={{ fontSize: 11, color: C.orange, padding: "6px 0" }}>Sans menuiserie à fabriquer — accessoire / intervention SAV uniquement.</div>
+        ) : f.lignes.length === 0 ? (
           <div style={{ fontSize: 11, color: C.muted, padding: "8px 0", fontStyle: "italic" }}>Aucune menuiserie à fabriquer — accessoire / intervention SAV uniquement.</div>
-        )}
+        ) : null}
         {f.lignes.map((lg, i) => {
           const tmLg = TYPES_MENUISERIE[lg.type];
           const isHSLg = lg.type === "hors_standard";
