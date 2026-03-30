@@ -6,7 +6,14 @@ import { H, Card } from "@/components/ui";
 const inp = { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, padding: "7px 11px", color: C.text, fontSize: 13, width: "100%", outline: "none" };
 
 const emptyLigne = { type: "ob1_pvc", quantite: 1, coloris: "blanc", hs_nb_profils: "", hs_t_coupe: "", hs_t_montage: "", hs_t_vitrage: "", hs_op_montage: "jp", hs_op_vitrage: "quentin", hs_notes: "" };
-const emptyVitrage = { composition: "4/16/4", quantite: "1", surface_m2: "" };
+const emptyVitrage = { composition: "4/16/4", quantite: "1", surface_m2: "", fournisseur: "isula", cmd_passee: false, date_reception: "" };
+const FOURNISSEURS_VITRAGE = [
+  { id: "isula",  label: "ISULA VITRAGE" },
+  { id: "sigma",  label: "SIGMA" },
+  { id: "emaver", label: "EMAVER" },
+  { id: "gps",    label: "GPS" },
+  { id: "autre",  label: "Autre" },
+];
 const TYPES_COMMANDE = [
   { id: "chantier_pro", label: "Chantier PRO" },
   { id: "chantier_par", label: "Chantier PAR" },
@@ -35,7 +42,7 @@ type FormType = typeof empty;
 function cmdToForm(cmd: any): FormType {
   const lignes = cmd.lignes?.length > 0 ? cmd.lignes : [];
   const vitrages = cmd.vitrages?.length > 0
-    ? cmd.vitrages.map((v: any) => ({ composition: v.composition || "4/16/4", quantite: String(v.quantite || "1"), surface_m2: v.surface_m2 || "" }))
+    ? cmd.vitrages.map((v: any) => ({ composition: v.composition || "4/16/4", quantite: String(v.quantite || "1"), surface_m2: v.surface_m2 || "", fournisseur: v.fournisseur || "isula", cmd_passee: v.cmd_passee || false, date_reception: v.date_reception || "" }))
     : [];
   return {
     num_commande: cmd.num_commande || "", client: cmd.client || "", ref_chantier: cmd.ref_chantier || "",
@@ -206,14 +213,39 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
             {f.vitrages.length === 0 && (
               <div style={{ fontSize: 11, color: C.muted, padding: "8px 0", fontStyle: "italic" }}>Aucun vitrage isolant — cliquer "+ Composition" pour en ajouter.</div>
             )}
-            {f.vitrages.map((vg, i) => (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 0.6fr 1fr auto", gap: 8, marginBottom: 6, alignItems: "end" }}>
-                <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>COMPOSITION</label><select style={inp} value={vg.composition} onChange={e => setVitrage(i, "composition", e.target.value)}>{["4/16/4", "4/12/4", "4/20/4", "44.2/16/4 feuilleté", "VSG feuilleté", "Contrôle solaire", "Autre"].map(c => <option key={c}>{c}</option>)}</select></div>
-                <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>QTÉ</label><input type="number" min={1} style={{ ...inp, color: C.purple, fontWeight: 700 }} value={vg.quantite} onChange={e => setVitrage(i, "quantite", e.target.value)} placeholder="1" /></div>
-                <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>SURFACE TOTALE (m²)</label><input type="number" min={0} step={0.01} style={{ ...inp, color: C.teal, fontWeight: 700 }} value={vg.surface_m2} onChange={e => setVitrage(i, "surface_m2", e.target.value)} placeholder="ex: 3.60" /></div>
-                <button onClick={() => delVitrage(i)} style={{ padding: "6px 10px", background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 }}>✕</button>
-              </div>
-            ))}
+            {f.vitrages.map((vg, i) => {
+              const isExterieur = (vg as any).fournisseur && (vg as any).fournisseur !== "isula";
+              const cmdPassee = (vg as any).cmd_passee || false;
+              const fournisseurColor = isExterieur ? C.yellow : C.teal;
+              return (
+                <div key={i} style={{ marginBottom: 8, padding: 8, background: C.s1, borderRadius: 4, border: `1px solid ${isExterieur ? C.yellow + "55" : C.border}` }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 0.6fr 1fr 1.2fr auto", gap: 8, alignItems: "end" }}>
+                    <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>COMPOSITION</label><select style={inp} value={vg.composition} onChange={e => setVitrage(i, "composition", e.target.value)}>{["4/16/4", "4/12/4", "4/20/4", "44.2/16/4 feuilleté", "VSG feuilleté", "Contrôle solaire", "Autre"].map(c => <option key={c}>{c}</option>)}</select></div>
+                    <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>QTÉ</label><input type="number" min={1} style={{ ...inp, color: C.purple, fontWeight: 700 }} value={vg.quantite} onChange={e => setVitrage(i, "quantite", e.target.value)} placeholder="1" /></div>
+                    <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>SURFACE TOTALE (m²)</label><input type="number" min={0} step={0.01} style={{ ...inp, color: C.teal, fontWeight: 700 }} value={vg.surface_m2} onChange={e => setVitrage(i, "surface_m2", e.target.value)} placeholder="ex: 3.60" /></div>
+                    <div>
+                      <label style={{ fontSize: 9, color: fournisseurColor, display: "block", marginBottom: 2 }}>FOURNISSEUR</label>
+                      <select style={{ ...inp, borderColor: fournisseurColor + "66", color: fournisseurColor, fontWeight: 700 }} value={(vg as any).fournisseur || "isula"} onChange={e => setVitrage(i, "fournisseur", e.target.value)}>
+                        {FOURNISSEURS_VITRAGE.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                      </select>
+                    </div>
+                    <button onClick={() => delVitrage(i)} style={{ padding: "6px 10px", background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 }}>✕</button>
+                  </div>
+                  {isExterieur && (
+                    <div style={{ marginTop: 6, display: "flex", gap: 10, alignItems: "center" }}>
+                      <button type="button" onClick={() => setVitrage(i, "cmd_passee", !cmdPassee)}
+                        style={{ fontSize: 10, padding: "3px 10px", borderRadius: 3, border: `1px solid ${cmdPassee ? C.green : C.red}`, background: "none", color: cmdPassee ? C.green : C.red, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
+                        {cmdPassee ? "✓ Commandé" : "À commander"}
+                      </button>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>DATE RÉCEPTION PRÉVUE</label>
+                        <input type="date" style={{ ...inp, fontSize: 11, padding: "4px 8px", borderColor: C.yellow + "66" }} value={(vg as any).date_reception || ""} onChange={e => setVitrage(i, "date_reception", e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             {f.vitrages.length > 0 && (
               <div style={{ marginTop: 6, fontSize: 10, color: C.muted }}>
                 Total : <span className="mono" style={{ color: C.teal, fontWeight: 700 }}>{Math.round(f.vitrages.reduce((s, v) => s + (parseFloat(v.surface_m2) || 0), 0) * 100) / 100} m²</span>
