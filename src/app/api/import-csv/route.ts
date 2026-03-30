@@ -138,7 +138,6 @@ function rowToCommande(row: Record<string, string>, idx: number): Record<string,
   const quantite = nChassis || (nCoulissant + nGalandage + nFixe + nFrappe) || 1;
 
   const cmdAluPvc = (row["Commande Alu/PVC"] || "").toLowerCase();
-  const cmdVitrage = (row["Commande Vitrage"] || "").toLowerCase();
 
   const nbHeures = parseFloat(row["Nbre Heure Montage"] || "0") || 0;
 
