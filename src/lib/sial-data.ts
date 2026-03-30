@@ -6,7 +6,7 @@
 export interface TypeMenuiserie {
   label: string;
   mat: "PVC" | "ALU" | "ALU/PVC";
-  famille: "frappe" | "coulissant" | "glandage" | "porte" | "hors_standard";
+  famille: "frappe" | "coulissant" | "glandage" | "porte" | "hors_standard" | "intervention";
   dormant: number;
   ouvrants: number;
   lmt: number;
@@ -41,7 +41,8 @@ export const TYPES_MENUISERIE: Record<string, TypeMenuiserie> = {
   g2v2r:      { label:"G2V2R",    mat:"ALU", famille:"glandage",    dormant:1, ouvrants:2, lmt:15, dt:4, renfort:0  },
   g3v3r:      { label:"G3V3R",    mat:"ALU", famille:"glandage",    dormant:1, ouvrants:3, lmt:20, dt:9, renfort:0  },
   g4v2r:      { label:"G4V2R",    mat:"ALU", famille:"glandage",    dormant:1, ouvrants:4, lmt:18, dt:7, renfort:0  },
-  hors_standard: { label:"Hors Standard", mat:"ALU/PVC", famille:"hors_standard", dormant:0, ouvrants:0, lmt:0, dt:0, renfort:0 },
+  hors_standard:         { label:"Hors Standard",         mat:"ALU/PVC", famille:"hors_standard", dormant:0, ouvrants:0, lmt:0, dt:0, renfort:0 },
+  intervention_chantier: { label:"Intervention Chantier", mat:"ALU/PVC", famille:"intervention",    dormant:0, ouvrants:0, lmt:0, dt:0, renfort:0 },
 };
 
 // Calculer profils_total
@@ -111,6 +112,18 @@ export interface TempsType {
 export function calcTempsType(typeId: string, quantite = 1, hsTemps?: HsTemps | null): TempsType | null {
   const tm = TYPES_MENUISERIE[typeId];
   if (!tm) return null;
+
+  if (tm.famille === "intervention") {
+    const tIntervention = Math.round(parseFloat(String(hsTemps?.t_montage)) || 0);
+    return {
+      typeId, label: tm.label, mat: tm.mat, famille: "intervention", quantite,
+      profils_total: 0, ouvrants_masques: 0,
+      par_poste: { coupe: 0, coulissant: 0, frappes: tIntervention, vitrage_ov: 0 },
+      tTotal: tIntervention,
+      operateur_montage: hsTemps?.operateur_montage || "jp",
+      notes: hsTemps?.notes || "",
+    };
+  }
 
   if (tm.famille === "hors_standard" && hsTemps) {
     // Pour le hors standard, les temps saisis sont des totaux commande (pas par pièce)
@@ -345,6 +358,7 @@ export interface CommandeCC extends CommandeCalc {
 export function calcCheminCritique(cmd: CommandeCC) {
   const tm = TYPES_MENUISERIE[cmd.type];
   if (!tm) return null;
+  if (tm.famille === "intervention") return null;
   const t = calcTempsType(cmd.type, cmd.quantite, cmd.hsTemps);
   if (!t) return null;
   const dd = dateDemarrage(cmd);

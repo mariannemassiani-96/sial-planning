@@ -67,7 +67,8 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
   const premiereLigne = f.lignes?.[0] || emptyLigne;
   const dd = dateDemarrage({ date_alu: f.date_alu, date_pvc: f.date_pvc, date_accessoires: f.date_accessoires });
   const isHS = premiereLigne.type === "hors_standard";
-  const hsTemps = isHS ? { nb_profils: premiereLigne.hs_nb_profils, t_coupe: premiereLigne.hs_t_coupe, t_montage: premiereLigne.hs_t_montage, t_vitrage: premiereLigne.hs_t_vitrage, operateur_montage: premiereLigne.hs_op_montage || "jp", operateur_vitrage: premiereLigne.hs_op_vitrage || "quentin", notes: premiereLigne.hs_notes } : null;
+  const isInterv = premiereLigne.type === "intervention_chantier";
+  const hsTemps = (isHS || isInterv) ? { nb_profils: premiereLigne.hs_nb_profils, t_coupe: premiereLigne.hs_t_coupe, t_montage: premiereLigne.hs_t_montage, t_vitrage: premiereLigne.hs_t_vitrage, operateur_montage: premiereLigne.hs_op_montage || "jp", operateur_vitrage: premiereLigne.hs_op_vitrage || "quentin", notes: premiereLigne.hs_notes } : null;
   const qteTotale = f.lignes.reduce((s, l) => s + (parseInt(String(l.quantite)) || 0), 0);
   const dlAuto = () => {
     if (!dd || f.lignes.length === 0) return "";
@@ -90,6 +91,7 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
       <optgroup label="── ALU Coulissants">{groupes.ALU.coulissant.map(({ k, v }) => <option key={k} value={k}>{v.label}</option>)}</optgroup>
       <optgroup label="── ALU Glandages">{groupes.ALU.glandage.map(({ k, v }) => <option key={k} value={k}>{v.label}</option>)}</optgroup>
       <optgroup label="── Spécial"><option value="hors_standard">Hors Standard</option></optgroup>
+      <optgroup label="── SAV / Intervention"><option value="intervention_chantier">Intervention Chantier</option></optgroup>
     </select>
   );
 
@@ -138,27 +140,47 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
         {f.lignes.map((lg, i) => {
           const tmLg = TYPES_MENUISERIE[lg.type];
           const isHSLg = lg.type === "hors_standard";
+          const isIntervLg = lg.type === "intervention_chantier";
+          const OPERATEURS = [{ id: "jp", l: "Jean-Pierre" }, { id: "michel", l: "Michel" }, { id: "jf", l: "Jean-François" }, { id: "quentin", l: "Quentin" }, { id: "bruno", l: "Bruno" }, { id: "alain", l: "Alain" }];
           return (
-            <div key={i} style={{ marginBottom: 8, padding: 8, background: C.s1, borderRadius: 4, border: `1px solid ${C.border}` }}>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: 8, alignItems: "end" }}>
-                <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>TYPE</label>{selectType(lg.type, v => setLigne(i, "type", v))}</div>
-                <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>QTÉ</label><input type="number" min={1} style={inp} value={lg.quantite} onChange={e => setLigne(i, "quantite", Math.max(1, parseInt(e.target.value) || 1))} /></div>
-                <div>
+            <div key={i} style={{ marginBottom: 8, padding: 8, background: C.s1, borderRadius: 4, border: `1px solid ${isIntervLg ? C.orange + "66" : C.border}` }}>
+              <div style={{ display: "grid", gridTemplateColumns: isIntervLg ? "2fr auto" : "2fr 1fr 1fr auto", gap: 8, alignItems: "end" }}>
+                <div><label style={{ fontSize: 9, color: isIntervLg ? C.orange : C.sec, display: "block", marginBottom: 2 }}>TYPE</label>{selectType(lg.type, v => setLigne(i, "type", v))}</div>
+                {!isIntervLg && <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>QTÉ</label><input type="number" min={1} style={inp} value={lg.quantite} onChange={e => setLigne(i, "quantite", Math.max(1, parseInt(e.target.value) || 1))} /></div>}
+                {!isIntervLg && <div>
                   <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>COLORIS</label>
                   <input list="coloris-list" style={inp} value={lg.coloris} onChange={e => setLigne(i, "coloris", e.target.value)} placeholder="ex: Blanc, RAL 7016…" />
                   <datalist id="coloris-list">
                     <option value="Blanc" /><option value="Blanc laqué" /><option value="Bois" /><option value="Gris anthracite" /><option value="Noir" /><option value="Aluminium" /><option value="Sable" /><option value="RAL 7016" /><option value="RAL 9005" /><option value="RAL 9010" /><option value="Bicolore" />
                   </datalist>
-                </div>
+                </div>}
                 <button onClick={() => delLigne(i)} style={{ padding: "6px 10px", background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 }}>✕</button>
               </div>
-              {tmLg && !isHSLg && <div style={{ marginTop: 4, fontSize: 9, color: C.muted }} className="mono">{tmLg.profils_total} profils · {tmLg.dormant} dorm. · {tmLg.ouvrants} ouv.</div>}
+              {tmLg && !isHSLg && !isIntervLg && <div style={{ marginTop: 4, fontSize: 9, color: C.muted }} className="mono">{tmLg.profils_total} profils · {tmLg.dormant} dorm. · {tmLg.ouvrants} ouv.</div>}
               {isHSLg && (
                 <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
                   {[{ l: "Nb profils", k: "hs_nb_profils" }, { l: "Coupe total (min)", k: "hs_t_coupe" }, { l: "Montage total (min)", k: "hs_t_montage" }, { l: "Vitrage total (min)", k: "hs_t_vitrage" }].map(x => (
                     <div key={x.k}><label style={{ fontSize: 8, color: C.purple, display: "block", marginBottom: 2 }}>{x.l}</label><input type="number" min={0} style={{ ...inp, fontSize: 11, padding: "4px 6px" }} value={(lg as any)[x.k] || ""} onChange={e => setLigne(i, x.k, e.target.value)} /></div>
                   ))}
                   <div><label style={{ fontSize: 8, color: C.purple, display: "block", marginBottom: 2 }}>Op. vitrage</label><select style={{ ...inp, fontSize: 11, padding: "4px 6px" }} value={lg.hs_op_vitrage || "quentin"} onChange={e => setLigne(i, "hs_op_vitrage", e.target.value)}>{[{ id: "quentin", l: "Quentin" }, { id: "michel", l: "Michel" }, { id: "jf", l: "Jean-François" }, { id: "jp", l: "Jean-Pierre" }, { id: "bruno", l: "Bruno" }].map(o => <option key={o.id} value={o.id}>{o.l}</option>)}</select></div>
+                </div>
+              )}
+              {isIntervLg && (
+                <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: 6 }}>
+                  <div>
+                    <label style={{ fontSize: 8, color: C.orange, display: "block", marginBottom: 2 }}>TEMPS INTERVENTION (min)</label>
+                    <input type="number" min={0} style={{ ...inp, fontSize: 11, padding: "4px 6px", borderColor: C.orange + "66", color: C.orange, fontWeight: 700 }} value={lg.hs_t_montage || ""} onChange={e => setLigne(i, "hs_t_montage", e.target.value)} placeholder="ex: 120" />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 8, color: C.orange, display: "block", marginBottom: 2 }}>OPÉRATEUR</label>
+                    <select style={{ ...inp, fontSize: 11, padding: "4px 6px" }} value={lg.hs_op_montage || "jp"} onChange={e => setLigne(i, "hs_op_montage", e.target.value)}>
+                      {OPERATEURS.map(o => <option key={o.id} value={o.id}>{o.l}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 8, color: C.orange, display: "block", marginBottom: 2 }}>NOTES / DESCRIPTION</label>
+                    <input style={{ ...inp, fontSize: 11, padding: "4px 6px" }} value={lg.hs_notes || ""} onChange={e => setLigne(i, "hs_notes", e.target.value)} placeholder="ex: Remplacement poignée, réglage…" />
+                  </div>
                 </div>
               )}
             </div>
@@ -233,7 +255,7 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
         {dd && <div style={{ marginTop: 8, fontSize: 11, color: C.sec }}>Démarrage fab estimé : <span style={{ color: C.teal, fontWeight: 600 }} className="mono">{fmtDate(dd)}</span></div>}
       </div>
 
-      {t && (
+      {t && f.type_commande !== "sav" && f.type_commande !== "diffus" && (
         <div style={{ marginTop: 10, padding: 10, background: C.bg, borderRadius: 5, border: `1px solid ${C.border}` }}>
           <div style={{ fontSize: 10, color: C.sec, marginBottom: 8 }}>TEMPS DE FABRICATION{isHS ? " (totaux saisis)" : ` (calculés · ${qteTotale} pièce${qteTotale > 1 ? "s" : ""})`}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 }}>
