@@ -361,7 +361,7 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
         ) : (
           <>
             {f.vitrages.length === 0 && (
-              <div style={{ fontSize: 11, color: C.muted, padding: "8px 0", fontStyle: "italic" }}>Aucun vitrage isolant — cliquer "+ Composition" pour en ajouter.</div>
+              <div style={{ fontSize: 11, color: C.muted, padding: "8px 0", fontStyle: "italic" }}>Aucun vitrage isolant — cliquer &quot;+ Composition&quot; pour en ajouter.</div>
             )}
             {f.vitrages.map((vg, i) => {
               const isExterieur = (vg as any).fournisseur && (vg as any).fournisseur !== "isula";
