@@ -233,7 +233,8 @@ export async function POST(req: Request) {
     if (existingKeys.has(key)) { dupes++; continue; }
 
     try {
-      await prisma.commande.create({ data: cmd });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await prisma.commande.create({ data: cmd as any });
       existingKeys.add(key);
       imported++;
       importIdx++;
