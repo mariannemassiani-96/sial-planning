@@ -36,7 +36,7 @@ function cmdToForm(cmd: any): FormType {
   const lignes = cmd.lignes?.length > 0 ? cmd.lignes : [];
   const vitrages = cmd.vitrages?.length > 0
     ? cmd.vitrages.map((v: any) => ({ composition: v.composition || "4/16/4", quantite: String(v.quantite || "1"), surface_m2: v.surface_m2 || "" }))
-    : [{ ...emptyVitrage }];
+    : [];
   return {
     num_commande: cmd.num_commande || "", client: cmd.client || "", ref_chantier: cmd.ref_chantier || "",
     zone: cmd.zone || ZONES[0], priorite: cmd.priorite || "normale", type_commande: cmd.type_commande || "", atelier: cmd.atelier || "SIAL", montant_ht: cmd.montant_ht != null ? String(cmd.montant_ht) : "",
@@ -203,18 +203,23 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
           <div style={{ fontSize: 11, color: C.orange, padding: "6px 0" }}>Sans vitrage isolant — fourni ou non applicable.</div>
         ) : (
           <>
+            {f.vitrages.length === 0 && (
+              <div style={{ fontSize: 11, color: C.muted, padding: "8px 0", fontStyle: "italic" }}>Aucun vitrage isolant — cliquer "+ Composition" pour en ajouter.</div>
+            )}
             {f.vitrages.map((vg, i) => (
               <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 0.6fr 1fr auto", gap: 8, marginBottom: 6, alignItems: "end" }}>
                 <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>COMPOSITION</label><select style={inp} value={vg.composition} onChange={e => setVitrage(i, "composition", e.target.value)}>{["4/16/4", "4/12/4", "4/20/4", "44.2/16/4 feuilleté", "VSG feuilleté", "Contrôle solaire", "Autre"].map(c => <option key={c}>{c}</option>)}</select></div>
                 <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>QTÉ</label><input type="number" min={1} style={{ ...inp, color: C.purple, fontWeight: 700 }} value={vg.quantite} onChange={e => setVitrage(i, "quantite", e.target.value)} placeholder="1" /></div>
                 <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>SURFACE TOTALE (m²)</label><input type="number" min={0} step={0.01} style={{ ...inp, color: C.teal, fontWeight: 700 }} value={vg.surface_m2} onChange={e => setVitrage(i, "surface_m2", e.target.value)} placeholder="ex: 3.60" /></div>
-                <button onClick={() => delVitrage(i)} disabled={f.vitrages.length === 1} style={{ padding: "6px 10px", background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 }}>✕</button>
+                <button onClick={() => delVitrage(i)} style={{ padding: "6px 10px", background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 }}>✕</button>
               </div>
             ))}
-            <div style={{ marginTop: 6, fontSize: 10, color: C.muted }}>
-              Total : <span className="mono" style={{ color: C.teal, fontWeight: 700 }}>{Math.round(f.vitrages.reduce((s, v) => s + (parseFloat(v.surface_m2) || 0), 0) * 100) / 100} m²</span>
-              <span style={{ marginLeft: 12 }}>{f.vitrages.reduce((s, v) => s + (parseInt(v.quantite) || 0), 0)} unité(s)</span>
-            </div>
+            {f.vitrages.length > 0 && (
+              <div style={{ marginTop: 6, fontSize: 10, color: C.muted }}>
+                Total : <span className="mono" style={{ color: C.teal, fontWeight: 700 }}>{Math.round(f.vitrages.reduce((s, v) => s + (parseFloat(v.surface_m2) || 0), 0) * 100) / 100} m²</span>
+                <span style={{ marginLeft: 12 }}>{f.vitrages.reduce((s, v) => s + (parseInt(v.quantite) || 0), 0)} unité(s)</span>
+              </div>
+            )}
           </>
         )}
       </div>
