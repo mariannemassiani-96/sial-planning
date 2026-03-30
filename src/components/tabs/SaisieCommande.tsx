@@ -33,9 +33,7 @@ const empty = {
 type FormType = typeof empty;
 
 function cmdToForm(cmd: any): FormType {
-  const lignes = cmd.lignes?.length > 0
-    ? cmd.lignes
-    : [{ ...emptyLigne, type: cmd.type || "ob1_pvc", quantite: cmd.quantite || 1 }];
+  const lignes = cmd.lignes?.length > 0 ? cmd.lignes : [];
   const vitrages = cmd.vitrages?.length > 0
     ? cmd.vitrages.map((v: any) => ({ composition: v.composition || "4/16/4", quantite: String(v.quantite || "1"), surface_m2: v.surface_m2 || "" }))
     : [{ ...emptyVitrage }];
@@ -72,12 +70,12 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
   const hsTemps = isHS ? { nb_profils: premiereLigne.hs_nb_profils, t_coupe: premiereLigne.hs_t_coupe, t_montage: premiereLigne.hs_t_montage, t_vitrage: premiereLigne.hs_t_vitrage, operateur_montage: premiereLigne.hs_op_montage || "jp", operateur_vitrage: premiereLigne.hs_op_vitrage || "quentin", notes: premiereLigne.hs_notes } : null;
   const qteTotale = f.lignes.reduce((s, l) => s + (parseInt(String(l.quantite)) || 0), 0);
   const dlAuto = () => {
-    if (!dd) return "";
+    if (!dd || f.lignes.length === 0) return "";
     const cc = calcCheminCritique({ type: premiereLigne.type, quantite: qteTotale, hsTemps, date_alu: f.date_alu, date_pvc: f.date_pvc, date_accessoires: f.date_accessoires, date_panneau_porte: f.date_panneau_porte, date_volet_roulant: f.date_volet_roulant });
     return cc?.dateLivraisonAuPlusTot || "";
   };
   const dlReelle = dlAuto;
-  const t = calcTempsType(premiereLigne.type, qteTotale, hsTemps);
+  const t = f.lignes.length > 0 ? calcTempsType(premiereLigne.type, qteTotale, hsTemps) : null;
 
   const groupes: Record<string, Record<string, Array<{ k: string; v: any }>>> = { PVC: { frappe: [] }, ALU: { frappe: [], porte: [], coulissant: [], glandage: [] } };
   Object.entries(TYPES_MENUISERIE).forEach(([k, v]) => {
@@ -97,7 +95,7 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
 
   const submit = () => {
     if (!f.client || !f.num_commande) return;
-    const premType = f.lignes[0]?.type || "ob1_pvc";
+    const premType = f.lignes[0]?.type || null;
     const premHS = f.lignes[0]?.type === "hors_standard" ? { nb_profils: f.lignes[0].hs_nb_profils, t_coupe: f.lignes[0].hs_t_coupe, t_montage: f.lignes[0].hs_t_montage, t_vitrage: f.lignes[0].hs_t_vitrage, operateur_montage: f.lignes[0].hs_op_montage || "jp", operateur_vitrage: f.lignes[0].hs_op_vitrage || "quentin" } : null;
     const result = { ...f, id: commande?.id || Date.now(), type: premType, quantite: qteTotale, hsTemps: premHS, date_livraison_souhaitee: f.date_livraison_souhaitee || dlReelle() || dlAuto() };
     if (commande && onModifier) { onModifier(result); } else { onAjouter(result); }
@@ -134,6 +132,9 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
           <div style={{ fontSize: 10, color: C.purple, fontWeight: 700 }}>MENUISERIES</div>
           <button onClick={addLigne} style={{ padding: "3px 10px", background: C.purple + "33", border: `1px solid ${C.purple}`, borderRadius: 4, color: C.purple, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>+ Ajouter ligne</button>
         </div>
+        {f.lignes.length === 0 && (
+          <div style={{ fontSize: 11, color: C.muted, padding: "8px 0", fontStyle: "italic" }}>Aucune menuiserie à fabriquer — accessoire / intervention SAV uniquement.</div>
+        )}
         {f.lignes.map((lg, i) => {
           const tmLg = TYPES_MENUISERIE[lg.type];
           const isHSLg = lg.type === "hors_standard";
@@ -149,7 +150,7 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
                     <option value="Blanc" /><option value="Blanc laqué" /><option value="Bois" /><option value="Gris anthracite" /><option value="Noir" /><option value="Aluminium" /><option value="Sable" /><option value="RAL 7016" /><option value="RAL 9005" /><option value="RAL 9010" /><option value="Bicolore" />
                   </datalist>
                 </div>
-                <button onClick={() => delLigne(i)} disabled={f.lignes.length === 1} style={{ padding: "6px 10px", background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 }}>✕</button>
+                <button onClick={() => delLigne(i)} style={{ padding: "6px 10px", background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 }}>✕</button>
               </div>
               {tmLg && !isHSLg && <div style={{ marginTop: 4, fontSize: 9, color: C.muted }} className="mono">{tmLg.profils_total} profils · {tmLg.dormant} dorm. · {tmLg.ouvrants} ouv.</div>}
               {isHSLg && (
