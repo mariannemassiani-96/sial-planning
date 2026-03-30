@@ -6,7 +6,7 @@ import { H, Card } from "@/components/ui";
 const inp = { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, padding: "7px 11px", color: C.text, fontSize: 13, width: "100%", outline: "none" };
 
 const emptyLigne = { type: "ob1_pvc", quantite: 1, coloris: "blanc", hs_nb_profils: "", hs_t_coupe: "", hs_t_montage: "", hs_t_vitrage: "", hs_op_montage: "jp", hs_op_vitrage: "quentin", hs_notes: "" };
-const emptyVitrage = { composition: "", quantite: "1", surface_m2: "", fournisseur: "isula", cmd_passee: false, date_reception: "", position: "", couleur_intercalaire: "", largeur: "", hauteur: "", forme: "", prix_m2: "", prix_total: "" };
+const emptyVitrage = { composition: "", quantite: "1", surface_m2: "", fournisseur: "isula", cmd_passee: false, date_reception: "", position: "", couleur_intercalaire: "", largeur: "", hauteur: "", forme: "", prix_m2: "", prix_total: "", largeur_origine: "", hauteur_origine: "", surface_m2_origine: "" };
 const FOURNISSEURS_VITRAGE = [
   { id: "isula",  label: "ISULA VITRAGE" },
   { id: "sigma",  label: "SIGMA" },
@@ -42,7 +42,7 @@ type FormType = typeof empty;
 function cmdToForm(cmd: any): FormType {
   const lignes = cmd.lignes?.length > 0 ? cmd.lignes : [];
   const vitrages = cmd.vitrages?.length > 0
-    ? cmd.vitrages.map((v: any) => ({ composition: v.composition || "", quantite: String(v.quantite || "1"), surface_m2: v.surface_m2 || "", fournisseur: v.fournisseur || "isula", cmd_passee: v.cmd_passee || false, date_reception: v.date_reception || "", position: v.position || "", couleur_intercalaire: v.couleur_intercalaire || "", largeur: v.largeur || "", hauteur: v.hauteur || "", forme: v.forme || "", prix_m2: v.prix_m2 || "", prix_total: v.prix_total || "" }))
+    ? cmd.vitrages.map((v: any) => ({ composition: v.composition || "", quantite: String(v.quantite || "1"), surface_m2: v.surface_m2 || "", fournisseur: v.fournisseur || "isula", cmd_passee: v.cmd_passee || false, date_reception: v.date_reception || "", position: v.position || "", couleur_intercalaire: v.couleur_intercalaire || "", largeur: v.largeur || "", hauteur: v.hauteur || "", forme: v.forme || "", prix_m2: v.prix_m2 || "", prix_total: v.prix_total || "", largeur_origine: v.largeur_origine || "", hauteur_origine: v.hauteur_origine || "", surface_m2_origine: v.surface_m2_origine || "" }))
     : [];
   return {
     num_commande: cmd.num_commande || "", client: cmd.client || "", ref_chantier: cmd.ref_chantier || "",
@@ -151,7 +151,7 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
       ...emptyVitrage,
       composition:          r.desc || r.code,
       quantite:             String(r.quantite),
-      surface_m2:           r.surface_m2,
+      surface_m2:           String(Math.round(parseFloat(r.surface_m2 || "0") * r.quantite * 100) / 100),
       fournisseur:          "isula",
       position:             r.position,
       couleur_intercalaire: r.couleur,
@@ -160,6 +160,9 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
       forme:                r.forme,
       prix_m2:              r.prix_m2,
       prix_total:           r.prix_total,
+      largeur_origine:      r.largeur,
+      hauteur_origine:      r.hauteur,
+      surface_m2_origine:   String(Math.round(parseFloat(r.surface_m2 || "0") * r.quantite * 100) / 100),
     }));
     setF(p => ({ ...p, vitrages: newVitrages }));
     setShowF2(false);
@@ -391,8 +394,20 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
               const cmdPassee = v.cmd_passee || false;
               const fournisseurColor = isExterieur ? C.yellow : C.teal;
               const hasProF2 = v.position || v.largeur || v.hauteur;
+              const hasOrigines = v.largeur_origine || v.hauteur_origine;
+              const isRevised = hasOrigines && (v.largeur !== v.largeur_origine || v.hauteur !== v.hauteur_origine || v.surface_m2 !== v.surface_m2_origine);
               return (
-                <div key={i} style={{ marginBottom: 8, padding: 8, background: C.s1, borderRadius: 4, border: `1px solid ${isExterieur ? C.yellow + "55" : C.border}` }}>
+                <div key={i} style={{ marginBottom: 8, padding: 8, background: C.s1, borderRadius: 4, border: `1px solid ${isRevised ? C.orange + "99" : isExterieur ? C.yellow + "55" : C.border}` }}>
+                  {/* Badge REV. si dimensions modifiées */}
+                  {isRevised && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: C.orange, background: C.orange+"22", border: `1px solid ${C.orange}66`, borderRadius: 3, padding: "1px 6px" }}>REV. — Dimensions modifiées</span>
+                      <button type="button" onClick={() => { setVitrage(i, "largeur", v.largeur_origine); setVitrage(i, "hauteur", v.hauteur_origine); setVitrage(i, "surface_m2", v.surface_m2_origine); }}
+                        style={{ fontSize: 9, padding: "1px 8px", borderRadius: 3, border: `1px solid ${C.sec}`, background: "none", color: C.sec, cursor: "pointer" }}>
+                        ↩ Restaurer originales
+                      </button>
+                    </div>
+                  )}
                   {/* Ligne principale */}
                   <div style={{ display: "grid", gridTemplateColumns: "2fr 0.6fr 1fr 1.2fr auto", gap: 8, alignItems: "end" }}>
                     <div>
@@ -403,7 +418,11 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
                       </datalist>
                     </div>
                     <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>QTÉ</label><input type="number" min={1} style={{ ...inp, color: C.purple, fontWeight: 700 }} value={vg.quantite} onChange={e => setVitrage(i, "quantite", e.target.value)} placeholder="1" /></div>
-                    <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>SURFACE (m²)</label><input style={{ ...inp, color: C.teal, fontWeight: 700 }} value={vg.surface_m2} onChange={e => setVitrage(i, "surface_m2", e.target.value)} placeholder="ex: 0.50" /></div>
+                    <div>
+                      <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>SURFACE (m²)</label>
+                      <input style={{ ...inp, color: isRevised && v.surface_m2 !== v.surface_m2_origine && v.surface_m2_origine ? C.orange : C.teal, fontWeight: 700, borderColor: isRevised && v.surface_m2 !== v.surface_m2_origine && v.surface_m2_origine ? C.orange+"66" : undefined }} value={vg.surface_m2} onChange={e => setVitrage(i, "surface_m2", e.target.value)} placeholder="ex: 0.50" />
+                      {isRevised && v.surface_m2 !== v.surface_m2_origine && v.surface_m2_origine && <div style={{ fontSize: 8, color: C.red, textDecoration: "line-through", marginTop: 1 }}>{v.surface_m2_origine}</div>}
+                    </div>
                     <div>
                       <label style={{ fontSize: 9, color: fournisseurColor, display: "block", marginBottom: 2 }}>FOURNISSEUR</label>
                       <select style={{ ...inp, borderColor: fournisseurColor + "66", color: fournisseurColor, fontWeight: 700 }} value={v.fournisseur || "isula"} onChange={e => setVitrage(i, "fournisseur", e.target.value)}>
@@ -417,8 +436,20 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
                     <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "0.5fr 1.2fr 0.8fr 0.8fr 0.8fr 1fr 1fr", gap: 6 }}>
                       <div><label style={{ fontSize: 8, color: C.orange, display: "block", marginBottom: 2 }}>POS.</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px", color: C.orange }} value={v.position || ""} onChange={e => setVitrage(i, "position", e.target.value)} /></div>
                       <div><label style={{ fontSize: 8, color: C.sec, display: "block", marginBottom: 2 }}>COLORIS INTERCALAIRE</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px" }} value={v.couleur_intercalaire || ""} onChange={e => setVitrage(i, "couleur_intercalaire", e.target.value)} /></div>
-                      <div><label style={{ fontSize: 8, color: C.purple, display: "block", marginBottom: 2 }}>L (mm)</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px", color: C.purple }} value={v.largeur || ""} onChange={e => setVitrage(i, "largeur", e.target.value)} /></div>
-                      <div><label style={{ fontSize: 8, color: C.purple, display: "block", marginBottom: 2 }}>H (mm)</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px", color: C.purple }} value={v.hauteur || ""} onChange={e => setVitrage(i, "hauteur", e.target.value)} /></div>
+                      <div>
+                        <label style={{ fontSize: 8, color: isRevised && v.largeur !== v.largeur_origine ? C.orange : C.purple, display: "block", marginBottom: 2 }}>
+                          L (mm){isRevised && v.largeur !== v.largeur_origine ? " ✎" : ""}
+                        </label>
+                        <input style={{ ...inp, fontSize: 11, padding: "3px 6px", color: isRevised && v.largeur !== v.largeur_origine ? C.orange : C.purple, borderColor: isRevised && v.largeur !== v.largeur_origine ? C.orange+"66" : undefined }} value={v.largeur || ""} onChange={e => setVitrage(i, "largeur", e.target.value)} />
+                        {isRevised && v.largeur !== v.largeur_origine && <div style={{ fontSize: 8, color: C.red, textDecoration: "line-through", marginTop: 1 }}>{v.largeur_origine}</div>}
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 8, color: isRevised && v.hauteur !== v.hauteur_origine ? C.orange : C.purple, display: "block", marginBottom: 2 }}>
+                          H (mm){isRevised && v.hauteur !== v.hauteur_origine ? " ✎" : ""}
+                        </label>
+                        <input style={{ ...inp, fontSize: 11, padding: "3px 6px", color: isRevised && v.hauteur !== v.hauteur_origine ? C.orange : C.purple, borderColor: isRevised && v.hauteur !== v.hauteur_origine ? C.orange+"66" : undefined }} value={v.hauteur || ""} onChange={e => setVitrage(i, "hauteur", e.target.value)} />
+                        {isRevised && v.hauteur !== v.hauteur_origine && <div style={{ fontSize: 8, color: C.red, textDecoration: "line-through", marginTop: 1 }}>{v.hauteur_origine}</div>}
+                      </div>
                       <div><label style={{ fontSize: 8, color: C.sec, display: "block", marginBottom: 2 }}>FORME</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px" }} value={v.forme || ""} onChange={e => setVitrage(i, "forme", e.target.value)} /></div>
                       <div><label style={{ fontSize: 8, color: C.green, display: "block", marginBottom: 2 }}>PRIX / m²</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px", color: C.green }} value={v.prix_m2 || ""} onChange={e => setVitrage(i, "prix_m2", e.target.value)} /></div>
                       <div><label style={{ fontSize: 8, color: C.green, display: "block", marginBottom: 2 }}>PRIX TOTAL</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px", color: C.green, fontWeight: 700 }} value={v.prix_total || ""} onChange={e => setVitrage(i, "prix_total", e.target.value)} /></div>

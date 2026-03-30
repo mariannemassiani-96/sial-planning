@@ -16,7 +16,9 @@ import PlanningLivraison from "@/components/tabs/PlanningLivraison";
 import Dashboard from "@/components/tabs/Dashboard";
 import PlanningRH from "@/components/tabs/PlanningRH";
 import PlanningIsula from "@/components/tabs/PlanningIsula";
+import BesoinVitrages from "@/components/tabs/BesoinVitrages";
 import Qualite from "@/components/tabs/Qualite";
+import ImportCSV from "@/components/tabs/ImportCSV";
 
 export default function HomePage() {
   const { data: session, status } = useSession();
@@ -59,14 +61,16 @@ export default function HomePage() {
     { id: "calendrier",   l: "📅 Planning SIAL" },
     { id: "charge",       l: "📊 Charge SIAL" },
     { id: "rh",           l: "👥 Équipe SIAL" },
-    { id: "isula",        l: "🔷 Planning ISULA VITRAGE" },
-    { id: "charge_isula", l: "📊 Charge ISULA VITRAGE" },
+    { id: "isula",           l: "🔷 Planning ISULA VITRAGE" },
+    { id: "besoins_vitrages", l: "🔢 Besoins Vitrages" },
+    { id: "charge_isula",    l: "📊 Charge ISULA VITRAGE" },
     { id: "equipe_isula", l: "👥 Équipe ISULA VITRAGE" },
     ...(isAdmin ? [
       { id: "qualite",      l: "✅ Qualité" },
       { id: "stocks",       l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
       { id: "nomenclature", l: "📐 Nomenclature" },
       { id: "simulateur",   l: "🎯 Simulateur" },
+      { id: "import_csv",   l: "📥 Import CSV" },
     ] : []),
   ];
 
@@ -174,12 +178,14 @@ export default function HomePage() {
             {ong === "charge" && <ChargeSemaine commandes={commandes} />}
             {ong === "rh" && <PlanningRH commandes={commandes} />}
             {ong === "isula" && <PlanningIsula commandes={commandes} />}
+            {ong === "besoins_vitrages" && <BesoinVitrages commandes={commandes} />}
             {ong === "charge_isula" && <div style={{ padding: 40, color: C.sec, textAlign: "center" }}>📊 Charge ISULA VITRAGE — à venir</div>}
             {ong === "equipe_isula" && <div style={{ padding: 40, color: C.sec, textAlign: "center" }}>👥 Équipe ISULA VITRAGE — à venir</div>}
             {ong === "qualite" && <Qualite />}
             {ong === "stocks" && <StocksTampons stocksTampons={stocks} onUpdate={updateStock} />}
             {ong === "nomenclature" && <Nomenclature />}
             {ong === "simulateur" && <Simulateur />}
+            {ong === "import_csv" && <ImportCSV onRefresh={fetchAll} />}
           </>
         )}
       </div>
