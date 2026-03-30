@@ -6,7 +6,7 @@ import { H, Card } from "@/components/ui";
 const inp = { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, padding: "7px 11px", color: C.text, fontSize: 13, width: "100%", outline: "none" };
 
 const emptyLigne = { type: "ob1_pvc", quantite: 1, coloris: "blanc", hs_nb_profils: "", hs_t_coupe: "", hs_t_montage: "", hs_t_vitrage: "", hs_op_montage: "jp", hs_op_vitrage: "quentin", hs_notes: "" };
-const emptyVitrage = { composition: "4/16/4", quantite: "1", surface_m2: "", fournisseur: "isula", cmd_passee: false, date_reception: "" };
+const emptyVitrage = { composition: "", quantite: "1", surface_m2: "", fournisseur: "isula", cmd_passee: false, date_reception: "", position: "", couleur_intercalaire: "", largeur: "", hauteur: "", forme: "", prix_m2: "", prix_total: "" };
 const FOURNISSEURS_VITRAGE = [
   { id: "isula",  label: "ISULA VITRAGE" },
   { id: "sigma",  label: "SIGMA" },
@@ -42,7 +42,7 @@ type FormType = typeof empty;
 function cmdToForm(cmd: any): FormType {
   const lignes = cmd.lignes?.length > 0 ? cmd.lignes : [];
   const vitrages = cmd.vitrages?.length > 0
-    ? cmd.vitrages.map((v: any) => ({ composition: v.composition || "4/16/4", quantite: String(v.quantite || "1"), surface_m2: v.surface_m2 || "", fournisseur: v.fournisseur || "isula", cmd_passee: v.cmd_passee || false, date_reception: v.date_reception || "" }))
+    ? cmd.vitrages.map((v: any) => ({ composition: v.composition || "", quantite: String(v.quantite || "1"), surface_m2: v.surface_m2 || "", fournisseur: v.fournisseur || "isula", cmd_passee: v.cmd_passee || false, date_reception: v.date_reception || "", position: v.position || "", couleur_intercalaire: v.couleur_intercalaire || "", largeur: v.largeur || "", hauteur: v.hauteur || "", forme: v.forme || "", prix_m2: v.prix_m2 || "", prix_total: v.prix_total || "" }))
     : [];
   return {
     num_commande: cmd.num_commande || "", client: cmd.client || "", ref_chantier: cmd.ref_chantier || "",
@@ -62,32 +62,30 @@ function cmdToForm(cmd: any): FormType {
 }
 
 // ── Parseur Pro F2 ────────────────────────────────────────────────────────────
-type ProF2Result = {
-  numCommande: string;
-  clientName: string;
-  compositions: Array<{ code: string; desc: string; quantite: number; surface_m2: number }>;
+type ProF2Row = {
+  code: string; desc: string; position: string; couleur: string;
+  largeur: string; hauteur: string; surface_m2: string; surface_facturable: boolean;
+  quantite: number; forme: string; prix_m2: string; prix_total: string;
 };
+type ProF2Result = { numCommande: string; clientName: string; rows: ProF2Row[] };
 
 function parseProF2(raw: string): ProF2Result | null {
-  // Normalise : si pas de tabs, convertir les espaces multiples
   const text = raw.includes("\t") ? raw : raw.replace(/ {3,}/g, "\t");
   const lines = text.split("\n");
 
-  // Chercher n° commande et client dans l'entête
   let numCommande = "";
   let clientName = "";
   for (const line of lines) {
     const m = line.match(/(O_\d{4}-\d{4})\s*[-–]\s*([A-ZÉÈÊÀÂÙÛÔÎÏÜ][A-ZÉÈÊÀÂÙÛÔÎÏÜ\s\-]+)/i);
     if (m) {
       numCommande = m[1];
-      clientName = m[2].trim().replace(/\s+[A-Z]\s*$/, "").trim(); // enlever suffixe "A" ou "B"
+      clientName = m[2].trim().replace(/\s+[A-Z]\s*$/, "").trim();
       break;
     }
   }
 
-  // Trouver la section (VITRAGES)
   let inVitrages = false;
-  const groups: Record<string, { code: string; desc: string; quantite: number; surface_m2: number }> = {};
+  const rows: ProF2Row[] = [];
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -100,24 +98,30 @@ function parseProF2(raw: string): ProF2Result | null {
     if (cols.length < 9) continue;
 
     const code = cols[0];
-    // Ignorer les lignes d'entête : Code, Description, lignes vides, multi-ligne header
     if (!code || code === "Code" || code === "(* Surface facturable)" || !/^[\d]|^SP/.test(code)) continue;
 
-    const desc = cols[2] || code;
-    // Surface : "* 0,50  m²" ou "0,52  m²" → valeur par pièce
-    const surfStr = (cols[7] || "").replace(/\*/g, "").replace(/m²/gi, "").replace(",", ".").trim();
-    const surfParPiece = parseFloat(surfStr) || 0;
-    const qte = parseInt(cols[8]) || 0;
-    if (qte === 0) continue;
+    const surfRaw = cols[7] || "";
+    const facturable = surfRaw.includes("*");
+    const surfStr = surfRaw.replace(/\*/g, "").replace(/m²/gi, "").replace(",", ".").trim();
 
-    if (!groups[code]) groups[code] = { code, desc, quantite: 0, surface_m2: 0 };
-    groups[code].quantite += qte;
-    groups[code].surface_m2 = Math.round((groups[code].surface_m2 + surfParPiece * qte) * 100) / 100;
+    rows.push({
+      code,
+      desc:      cols[2] || code,
+      position:  cols[3] || "",
+      couleur:   cols[4] || "",
+      largeur:   cols[5] || "",
+      hauteur:   cols[6] || "",
+      surface_m2: surfStr,
+      surface_facturable: facturable,
+      quantite:  parseInt(cols[8]) || 1,
+      forme:     cols[9] || "",
+      prix_m2:   cols[10] || "",
+      prix_total: cols[11] || "",
+    });
   }
 
-  const compositions = Object.values(groups);
-  if (compositions.length === 0) return null;
-  return { numCommande, clientName, compositions };
+  if (rows.length === 0) return null;
+  return { numCommande, clientName, rows };
 }
 
 export default function SaisieCommande({ onAjouter, commande, onModifier }: { onAjouter: (cmd: any) => void; commande?: any; onModifier?: (cmd: any) => void }) {
@@ -143,12 +147,19 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
   };
   const applyF2 = () => {
     if (!previewF2) return;
-    const newVitrages = previewF2.compositions.map(c => ({
+    const newVitrages = previewF2.rows.map(r => ({
       ...emptyVitrage,
-      composition: c.desc || c.code,
-      quantite: String(c.quantite),
-      surface_m2: String(c.surface_m2),
-      fournisseur: "isula",
+      composition:          r.desc || r.code,
+      quantite:             String(r.quantite),
+      surface_m2:           r.surface_m2,
+      fournisseur:          "isula",
+      position:             r.position,
+      couleur_intercalaire: r.couleur,
+      largeur:              r.largeur,
+      hauteur:              r.hauteur,
+      forme:                r.forme,
+      prix_m2:              r.prix_m2,
+      prix_total:           r.prix_total,
     }));
     setF(p => ({ ...p, vitrages: newVitrages }));
     setShowF2(false);
@@ -324,32 +335,43 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
                     {previewF2.clientName && <span> — {previewF2.clientName}</span>}
                   </div>
                 )}
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
-                  <thead>
-                    <tr style={{ color: C.sec }}>
-                      <th style={{ textAlign: "left", padding: "3px 6px", borderBottom: `1px solid ${C.border}` }}>Composition</th>
-                      <th style={{ textAlign: "center", padding: "3px 6px", borderBottom: `1px solid ${C.border}` }}>Qté</th>
-                      <th style={{ textAlign: "right", padding: "3px 6px", borderBottom: `1px solid ${C.border}` }}>Surface facturable</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewF2.compositions.map((c, i) => (
-                      <tr key={i} style={{ color: C.text }}>
-                        <td style={{ padding: "3px 6px", fontFamily: "monospace" }}>{c.desc}</td>
-                        <td style={{ padding: "3px 6px", textAlign: "center", color: C.purple, fontWeight: 700 }}>{c.quantite}</td>
-                        <td style={{ padding: "3px 6px", textAlign: "right", color: C.teal, fontWeight: 700 }}>{c.surface_m2.toFixed(2)} m²</td>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9 }}>
+                    <thead>
+                      <tr style={{ color: C.sec, background: C.s2 }}>
+                        {["Pos.", "Composition", "Coloris", "L (mm)", "H (mm)", "Surface", "Qté", "Forme", "Prix/m²", "Total"].map(h => (
+                          <th key={h} style={{ textAlign: h === "Pos." || h === "Qté" ? "center" : "left", padding: "3px 6px", borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{h}</th>
+                        ))}
                       </tr>
-                    ))}
-                    <tr style={{ borderTop: `1px solid ${C.border}`, color: C.sec }}>
-                      <td style={{ padding: "4px 6px", fontWeight: 700 }}>TOTAL</td>
-                      <td style={{ padding: "4px 6px", textAlign: "center", color: C.purple, fontWeight: 700 }}>{previewF2.compositions.reduce((s, c) => s + c.quantite, 0)}</td>
-                      <td style={{ padding: "4px 6px", textAlign: "right", color: C.teal, fontWeight: 700 }}>{previewF2.compositions.reduce((s, c) => s + c.surface_m2, 0).toFixed(2)} m²</td>
-                    </tr>
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {previewF2.rows.map((r, i) => (
+                        <tr key={i} style={{ color: C.text, borderBottom: `1px solid ${C.border}22` }}>
+                          <td style={{ padding: "2px 6px", textAlign: "center", color: C.orange }}>{r.position}</td>
+                          <td style={{ padding: "2px 6px", fontFamily: "monospace", fontSize: 8, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.desc}>{r.desc}</td>
+                          <td style={{ padding: "2px 6px", color: C.sec }}>{r.couleur}</td>
+                          <td style={{ padding: "2px 6px", textAlign: "right", color: C.purple }}>{r.largeur}</td>
+                          <td style={{ padding: "2px 6px", textAlign: "right", color: C.purple }}>{r.hauteur}</td>
+                          <td style={{ padding: "2px 6px", textAlign: "right", color: C.teal, fontWeight: 700 }}>{r.surface_facturable && <span style={{ color: C.yellow }}>* </span>}{r.surface_m2} m²</td>
+                          <td style={{ padding: "2px 6px", textAlign: "center", color: C.blue, fontWeight: 700 }}>{r.quantite}</td>
+                          <td style={{ padding: "2px 6px", color: C.sec }}>{r.forme}</td>
+                          <td style={{ padding: "2px 6px", color: C.sec }}>{r.prix_m2}</td>
+                          <td style={{ padding: "2px 6px", color: C.green, fontWeight: 700 }}>{r.prix_total}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ borderTop: `1px solid ${C.border}`, color: C.sec, background: C.s2 }}>
+                        <td colSpan={6} style={{ padding: "3px 6px", fontWeight: 700, fontSize: 10 }}>TOTAL — {previewF2.rows.length} ligne{previewF2.rows.length > 1 ? "s" : ""}</td>
+                        <td style={{ padding: "3px 6px", textAlign: "center", color: C.blue, fontWeight: 700 }}>{previewF2.rows.reduce((s, r) => s + r.quantite, 0)}</td>
+                        <td colSpan={2} />
+                        <td style={{ padding: "3px 6px", color: C.green, fontWeight: 700 }}>{previewF2.rows.reduce((s, r) => { const m = r.prix_total.replace(/[^\d,]/g, "").replace(",", "."); return s + (parseFloat(m) || 0); }, 0).toFixed(2)} €</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ marginTop: 4, fontSize: 9, color: C.yellow }}>* surface facturable (minimum appliqué)</div>
                 <button type="button" onClick={applyF2}
                   style={{ marginTop: 8, width: "100%", padding: "6px 0", background: C.cyan, border: "none", borderRadius: 4, color: "#000", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                  ✓ Appliquer ces {previewF2.compositions.length} composition{previewF2.compositions.length > 1 ? "s" : ""} aux vitrages
+                  ✓ Importer ces {previewF2.rows.length} ligne{previewF2.rows.length > 1 ? "s" : ""} de vitrages
                 </button>
               </div>
             )}
@@ -364,29 +386,45 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
               <div style={{ fontSize: 11, color: C.muted, padding: "8px 0", fontStyle: "italic" }}>Aucun vitrage isolant — cliquer &quot;+ Composition&quot; pour en ajouter.</div>
             )}
             {f.vitrages.map((vg, i) => {
-              const isExterieur = (vg as any).fournisseur && (vg as any).fournisseur !== "isula";
-              const cmdPassee = (vg as any).cmd_passee || false;
+              const v = vg as any;
+              const isExterieur = v.fournisseur && v.fournisseur !== "isula";
+              const cmdPassee = v.cmd_passee || false;
               const fournisseurColor = isExterieur ? C.yellow : C.teal;
+              const hasProF2 = v.position || v.largeur || v.hauteur;
               return (
                 <div key={i} style={{ marginBottom: 8, padding: 8, background: C.s1, borderRadius: 4, border: `1px solid ${isExterieur ? C.yellow + "55" : C.border}` }}>
+                  {/* Ligne principale */}
                   <div style={{ display: "grid", gridTemplateColumns: "2fr 0.6fr 1fr 1.2fr auto", gap: 8, alignItems: "end" }}>
                     <div>
-                  <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>COMPOSITION</label>
-                  <input list="compo-datalist" style={inp} value={vg.composition} onChange={e => setVitrage(i, "composition", e.target.value)} placeholder="ex: 4/16/4 ou code Pro F2…" />
-                  <datalist id="compo-datalist">
-                    {["4/16/4", "4/12/4", "4/20/4", "44.2/16/4 feuilleté", "VSG feuilleté", "Contrôle solaire", "Autre"].map(c => <option key={c} value={c} />)}
-                  </datalist>
-                </div>
+                      <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>COMPOSITION</label>
+                      <input list="compo-datalist" style={inp} value={vg.composition} onChange={e => setVitrage(i, "composition", e.target.value)} placeholder="ex: 4/16/4 ou code Pro F2…" />
+                      <datalist id="compo-datalist">
+                        {["4/16/4", "4/12/4", "4/20/4", "44.2/16/4 feuilleté", "VSG feuilleté", "Contrôle solaire", "Autre"].map(c => <option key={c} value={c} />)}
+                      </datalist>
+                    </div>
                     <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>QTÉ</label><input type="number" min={1} style={{ ...inp, color: C.purple, fontWeight: 700 }} value={vg.quantite} onChange={e => setVitrage(i, "quantite", e.target.value)} placeholder="1" /></div>
-                    <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>SURFACE TOTALE (m²)</label><input type="number" min={0} step={0.01} style={{ ...inp, color: C.teal, fontWeight: 700 }} value={vg.surface_m2} onChange={e => setVitrage(i, "surface_m2", e.target.value)} placeholder="ex: 3.60" /></div>
+                    <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>SURFACE (m²)</label><input style={{ ...inp, color: C.teal, fontWeight: 700 }} value={vg.surface_m2} onChange={e => setVitrage(i, "surface_m2", e.target.value)} placeholder="ex: 0.50" /></div>
                     <div>
                       <label style={{ fontSize: 9, color: fournisseurColor, display: "block", marginBottom: 2 }}>FOURNISSEUR</label>
-                      <select style={{ ...inp, borderColor: fournisseurColor + "66", color: fournisseurColor, fontWeight: 700 }} value={(vg as any).fournisseur || "isula"} onChange={e => setVitrage(i, "fournisseur", e.target.value)}>
+                      <select style={{ ...inp, borderColor: fournisseurColor + "66", color: fournisseurColor, fontWeight: 700 }} value={v.fournisseur || "isula"} onChange={e => setVitrage(i, "fournisseur", e.target.value)}>
                         {FOURNISSEURS_VITRAGE.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
                       </select>
                     </div>
                     <button onClick={() => delVitrage(i)} style={{ padding: "6px 10px", background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 }}>✕</button>
                   </div>
+                  {/* Détails Pro F2 */}
+                  {hasProF2 && (
+                    <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "0.5fr 1.2fr 0.8fr 0.8fr 0.8fr 1fr 1fr", gap: 6 }}>
+                      <div><label style={{ fontSize: 8, color: C.orange, display: "block", marginBottom: 2 }}>POS.</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px", color: C.orange }} value={v.position || ""} onChange={e => setVitrage(i, "position", e.target.value)} /></div>
+                      <div><label style={{ fontSize: 8, color: C.sec, display: "block", marginBottom: 2 }}>COLORIS INTERCALAIRE</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px" }} value={v.couleur_intercalaire || ""} onChange={e => setVitrage(i, "couleur_intercalaire", e.target.value)} /></div>
+                      <div><label style={{ fontSize: 8, color: C.purple, display: "block", marginBottom: 2 }}>L (mm)</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px", color: C.purple }} value={v.largeur || ""} onChange={e => setVitrage(i, "largeur", e.target.value)} /></div>
+                      <div><label style={{ fontSize: 8, color: C.purple, display: "block", marginBottom: 2 }}>H (mm)</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px", color: C.purple }} value={v.hauteur || ""} onChange={e => setVitrage(i, "hauteur", e.target.value)} /></div>
+                      <div><label style={{ fontSize: 8, color: C.sec, display: "block", marginBottom: 2 }}>FORME</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px" }} value={v.forme || ""} onChange={e => setVitrage(i, "forme", e.target.value)} /></div>
+                      <div><label style={{ fontSize: 8, color: C.green, display: "block", marginBottom: 2 }}>PRIX / m²</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px", color: C.green }} value={v.prix_m2 || ""} onChange={e => setVitrage(i, "prix_m2", e.target.value)} /></div>
+                      <div><label style={{ fontSize: 8, color: C.green, display: "block", marginBottom: 2 }}>PRIX TOTAL</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px", color: C.green, fontWeight: 700 }} value={v.prix_total || ""} onChange={e => setVitrage(i, "prix_total", e.target.value)} /></div>
+                    </div>
+                  )}
+                  {/* Fournisseur externe : commande + date réception */}
                   {isExterieur && (
                     <div style={{ marginTop: 6, display: "flex", gap: 10, alignItems: "center" }}>
                       <button type="button" onClick={() => setVitrage(i, "cmd_passee", !cmdPassee)}
@@ -395,7 +433,7 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
                       </button>
                       <div style={{ flex: 1 }}>
                         <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>DATE RÉCEPTION PRÉVUE</label>
-                        <input type="date" style={{ ...inp, fontSize: 11, padding: "4px 8px", borderColor: C.yellow + "66" }} value={(vg as any).date_reception || ""} onChange={e => setVitrage(i, "date_reception", e.target.value)} />
+                        <input type="date" style={{ ...inp, fontSize: 11, padding: "4px 8px", borderColor: C.yellow + "66" }} value={v.date_reception || ""} onChange={e => setVitrage(i, "date_reception", e.target.value)} />
                       </div>
                     </div>
                   )}
