@@ -164,11 +164,20 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
   const [filterWeekFab,    setFilterWeekFab]    = useState<string | null>(null);
   const [filterWeekLiv,    setFilterWeekLiv]    = useState<string | null>(null);
   const [openComments,     setOpenComments]     = useState<string | null>(null);
+  const [sortBy,           setSortBy]           = useState<"livraison" | "client">("livraison");
 
-  const sorted = useMemo(() =>
-    [...commandes].sort((a, b) =>
-      new Date(a.date_livraison_souhaitee || "").getTime() - new Date(b.date_livraison_souhaitee || "").getTime()
-    ), [commandes]);
+  const sorted = useMemo(() => {
+    const arr = [...commandes];
+    if (sortBy === "client") {
+      arr.sort((a, b) => (a.client || "").localeCompare(b.client || "", "fr", { sensitivity: "base" }));
+    } else {
+      arr.sort((a, b) =>
+        new Date(a.date_livraison_souhaitee || "9999-12-31").getTime() -
+        new Date(b.date_livraison_souhaitee || "9999-12-31").getTime()
+      );
+    }
+    return arr;
+  }, [commandes, sortBy]);
 
   const filtered = useMemo(() => sorted.filter(c => {
     const cmd = c as any;
@@ -305,12 +314,25 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
           </div>
         </div>
 
-        {/* Compteur résultats */}
-        <div style={{ marginTop:6, fontSize:10, color:C.sec }}>
-          {hasFilters
-            ? <><span style={{ color:filtered.length===0?C.red:C.blue, fontWeight:700 }}>{filtered.length}</span> résultat{filtered.length!==1?"s":""} sur {sorted.length} commande{sorted.length!==1?"s":""}</>
-            : <>{sorted.length} commande{sorted.length!==1?"s":""}</>
-          }
+        {/* Compteur résultats + tri */}
+        <div style={{ marginTop:6, display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+          <div style={{ fontSize:10, color:C.sec }}>
+            {hasFilters
+              ? <><span style={{ color:filtered.length===0?C.red:C.blue, fontWeight:700 }}>{filtered.length}</span> résultat{filtered.length!==1?"s":""} sur {sorted.length} commande{sorted.length!==1?"s":""}</>
+              : <>{sorted.length} commande{sorted.length!==1?"s":""}</>
+            }
+          </div>
+          <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+            <span style={{ fontSize:10, color:C.sec, fontWeight:700 }}>Trier :</span>
+            <button onClick={() => setSortBy("livraison")}
+              style={{ padding:"2px 10px", borderRadius:4, fontSize:10, fontWeight:700, cursor:"pointer", border:`1px solid ${sortBy==="livraison"?C.green:C.border}`, background:sortBy==="livraison"?C.green+"22":"none", color:sortBy==="livraison"?C.green:C.sec }}>
+              📅 Livraison
+            </button>
+            <button onClick={() => setSortBy("client")}
+              style={{ padding:"2px 10px", borderRadius:4, fontSize:10, fontWeight:700, cursor:"pointer", border:`1px solid ${sortBy==="client"?C.blue:C.border}`, background:sortBy==="client"?C.blue+"22":"none", color:sortBy==="client"?C.blue:C.sec }}>
+              🔤 Client A→Z
+            </button>
+          </div>
         </div>
       </div>
 
@@ -342,13 +364,21 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
           <Card key={String(c.id)} accent={activePosteMatch?.c || (cc?.critique ? C.red : c.priorite === "chantier_bloque" ? C.red : c.priorite === "urgente" ? C.orange : C.border)} style={{ marginBottom: 7 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ flex: 1 }}>
+                {/* Client + Chantier en évidence */}
+                <div style={{ marginBottom: 2 }}>
+                  <span style={{ fontSize: 17, fontWeight: 800, color: C.text, letterSpacing: "-0.01em" }}>{c.client || "—"}</span>
+                  {cmd.ref_chantier && (
+                    <span style={{ fontSize: 13, fontWeight: 600, color: C.teal, marginLeft: 10 }}>{cmd.ref_chantier}</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 10, color: C.sec, marginBottom: 5 }} className="mono">
+                  {cmd.num_commande || "—"}
+                  {cmd.zone && <span style={{ marginLeft: 8 }}>· {cmd.zone}</span>}
+                </div>
+                {/* Badges */}
                 <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4, flexWrap: "wrap" }}>
-                  <span className="mono" style={{ fontSize: 11, color: C.orange, fontWeight: 700 }}>{cmd.num_commande || "—"}</span>
-                  <span style={{ fontSize: 14, fontWeight: 700 }}>{c.client}</span>
-                  {cmd.ref_chantier && <Bdg t={cmd.ref_chantier} c={C.teal} />}
-                  {cmd.zone && <Bdg t={cmd.zone} c={C.sec} />}
                   {cmd.type_commande && (() => { const tc = TYPES_COMMANDE.find(t=>t.id===cmd.type_commande); return tc ? <Bdg t={tc.label} c={tc.c} /> : null; })()}
-                  {tm && <Bdg t={tm.label} c={tm.famille === "hors_standard" ? C.purple : CFAM[tm.famille] || C.blue} />}
+                  {tm && <Bdg t={tm.label} c={tm.famille === "hors_standard" || tm.famille === "intervention" ? C.purple : CFAM[tm.famille] || C.blue} />}
                   {(cmd.date_panneau_porte || cmd.date_volet_roulant) && <Bdg t="+ options" c={C.yellow} />}
                   {toutTermine && <Bdg t="✅ Terminé" c={C.green} />}
                   {activePosteMatch && <Bdg t={`En cours : ${activePosteMatch.label}`} c={activePosteMatch.c} />}
