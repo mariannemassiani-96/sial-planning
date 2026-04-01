@@ -254,9 +254,6 @@ export default function PlanningFabrication({
   // ── Statut semaine validée
   const [semValidee, setSemValidee] = useState<boolean>(false);
 
-  // ── Tâches parallèles
-  const [tachesParalleles, setTachesParalleles] = useState<Set<string>>(new Set());
-
   // ── Modals
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [showPrintMenu, setShowPrintMenu] = useState(false);
@@ -410,15 +407,6 @@ export default function PlanningFabrication({
     savePlan(newPlan);
   }, [commandes, weekDays, savePlan]);
 
-  // ─── Toggle tâche parallèle
-  const toggleParallel = (tacheId: string) => {
-    setTachesParalleles(prev => {
-      const next = new Set(prev);
-      if (next.has(tacheId)) next.delete(tacheId);
-      else next.add(tacheId);
-      return next;
-    });
-  };
 
   // ─── Valider la semaine
   const validerSemaine = () => {
@@ -432,6 +420,27 @@ export default function PlanningFabrication({
 
   // ─── Résumé quantités
   const resume = useMemo(() => calcResume(commandes, plan), [commandes, plan]);
+
+  // ─── Vue par opérateur : inversion du plan (opId → dayStr → [{commandeId, tacheId}])
+  const EQUIPE_SIAL = EQUIPE.filter(op => op.poste !== "isula");
+
+  const planByOp = useMemo(() => {
+    const result: Record<string, Record<string, Array<{ commandeId: string; tacheId: string }>>> = {};
+    EQUIPE_SIAL.forEach(op => { result[op.id] = {}; });
+    result["__aucun__"] = {};
+    Object.entries(plan).forEach(([tacheId, byDay]) => {
+      Object.entries(byDay).forEach(([dayStr, cells]) => {
+        cells.forEach(cell => {
+          const opId = cell.operateur ?? "__aucun__";
+          if (!result[opId]) result[opId] = {};
+          if (!result[opId][dayStr]) result[opId][dayStr] = [];
+          result[opId][dayStr].push({ commandeId: cell.commandeId, tacheId });
+        });
+      });
+    });
+    return result;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan]);
 
   // ─── Trouver commande par id
   const cmdById = useCallback((id: string) =>
@@ -476,73 +485,6 @@ export default function PlanningFabrication({
     setShowPlanModal(true);
   };
 
-  // ─── Rendu cellule (vue poste)
-  const renderCell = (tacheId: string, dayStr: string) => {
-    const cells: PlanCell[] = plan[tacheId]?.[dayStr] ?? [];
-    const jourFerie = JOURS_FERIES[dayStr];
-    return (
-      <td
-        key={dayStr}
-        style={{
-          border: `1px solid ${C.border}`,
-          verticalAlign: "top",
-          padding: "4px 5px",
-          background: jourFerie ? C.s1 + "cc" : "transparent",
-          position: "relative",
-          minWidth: 130,
-        }}
-      >
-        {jourFerie && (
-          <div style={{ fontSize: 9, color: C.orange, marginBottom: 3, fontStyle: "italic" }}>
-            {jourFerie}
-          </div>
-        )}
-        {cells.map((cell, i) => {
-          const cmd = cmdById(cell.commandeId);
-          if (!cmd) return null;
-          return (
-            <div
-              key={i}
-              onDoubleClick={() => cmd && onEdit?.(cmd)}
-              style={{
-                background: C.s2,
-                border: `1px solid ${C.bLight}`,
-                borderRadius: 4,
-                padding: "3px 6px",
-                marginBottom: 3,
-                cursor: "pointer",
-                fontSize: 10,
-                lineHeight: 1.4,
-                position: "relative",
-              }}
-              title="Double-clic pour éditer"
-            >
-              <div style={{ color: C.text, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 115 }}>
-                {cmd.client ?? "—"}
-              </div>
-              {(cmd as any).ref_chantier && (
-                <div style={{ color: C.sec, fontSize: 9, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 115 }}>
-                  {(cmd as any).ref_chantier}
-                </div>
-              )}
-              <button
-                onClick={e => { e.stopPropagation(); removeCell(tacheId, dayStr, cell.commandeId); }}
-                title="Retirer du planning"
-                style={{
-                  position: "absolute", top: 2, right: 3,
-                  background: "none", border: "none",
-                  color: C.red, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0,
-                }}
-              >
-                ×
-              </button>
-            </div>
-          );
-        })}
-      </td>
-    );
-  };
-
   // ── Label semaine
   const semLabel = `S.${getWeekNum(monday)} — du ${weekDays[0].toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })} au ${weekDays[4].toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })}`;
 
@@ -561,7 +503,7 @@ export default function PlanningFabrication({
           border: `1px solid ${C.border}`, borderRadius: 5, overflow: "hidden",
         }}>
           {([
-            { id: "poste",      label: "Par poste" },
+            { id: "poste",      label: "Par opérateur" },
             { id: "commande",   label: "Par commande" },
             { id: "calendrier", label: "📅 Calendrier" },
           ] as { id: VueMode; label: string }[]).map(v => (
@@ -653,18 +595,18 @@ export default function PlanningFabrication({
         <PlanningCalendrier commandes={commandes} />
       )}
 
-      {/* ── VUE PAR POSTE ──────────────────────────────────────────────────────── */}
+      {/* ── VUE PAR OPÉRATEUR ─────────────────────────────────────────────────── */}
       {vue === "poste" && (
         <div style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11 }}>
             <thead>
               <tr>
-                <th style={thStyle({ width: 200, textAlign: "left" })}>Tâche</th>
+                <th style={thStyle({ width: 130, textAlign: "left" })}>Opérateur</th>
                 {weekDays.map((d, i) => {
                   const ds = localStr(d);
                   const ferie = JOURS_FERIES[ds];
                   return (
-                    <th key={i} style={thStyle({ background: ferie ? C.s2 : C.s1, minWidth: 140 })}>
+                    <th key={i} style={thStyle({ background: ferie ? C.s2 : C.s1, minWidth: 160 })}>
                       <div>{JOUR_LABELS[i]}</div>
                       <div style={{ fontWeight: 400, color: C.sec, fontSize: 10 }}>
                         {d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}
@@ -676,55 +618,122 @@ export default function PlanningFabrication({
               </tr>
             </thead>
             <tbody>
-              {TACHES_FABRICATION.map(tache => (
-                <tr key={tache.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-                  {/* Colonne tâche */}
-                  <td style={{
-                    border: `1px solid ${C.border}`,
-                    padding: "6px 8px",
-                    background: C.s1,
-                    verticalAlign: "top",
-                    minWidth: 185,
+              {EQUIPE_SIAL.map(op => {
+                const rowByDay = planByOp[op.id] ?? {};
+                const hasAnything = Object.values(rowByDay).some(arr => arr.length > 0);
+                return (
+                  <tr key={op.id} style={{
+                    borderBottom: `1px solid ${C.border}`,
+                    opacity: hasAnything ? 1 : 0.45,
                   }}>
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 4 }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 700, color: C.text, fontSize: 11 }}>{tache.label}</div>
-                        <div style={{ fontSize: 9, color: C.sec, marginTop: 1 }}>
-                          {tache.temps_unitaire} {tache.unite}
-                        </div>
-                        {tache.competences.length > 0 && (
-                          <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>
-                            {tache.competences
-                              .map(id => EQUIPE.find(e => e.id === id)?.nom ?? id)
-                              .join(", ")}
-                          </div>
-                        )}
-                        {tachesParalleles.has(tache.id) && (
-                          <div style={{ marginTop: 3 }}>
-                            <Bdg t="∥ Parallèle" c={C.purple} sz={9} />
-                          </div>
-                        )}
-                      </div>
-                      {/* Bouton ∥ parallèle */}
-                      <button
-                        onClick={() => toggleParallel(tache.id)}
-                        title="Marquer comme tâche parallèle (seule la plus longue compte)"
-                        style={{
-                          background: tachesParalleles.has(tache.id) ? C.purple + "33" : "none",
-                          border: `1px solid ${tachesParalleles.has(tache.id) ? C.purple : C.border}`,
-                          borderRadius: 3,
-                          color: tachesParalleles.has(tache.id) ? C.purple : C.muted,
-                          fontSize: 12, cursor: "pointer", padding: "1px 5px", lineHeight: 1,
-                          flexShrink: 0,
-                        }}
-                      >
-                        ∥
-                      </button>
-                    </div>
+                    {/* Colonne opérateur */}
+                    <td style={{
+                      border: `1px solid ${C.border}`,
+                      padding: "8px 10px",
+                      background: C.s1,
+                      verticalAlign: "top",
+                      minWidth: 120,
+                    }}>
+                      <div style={{ fontWeight: 700, color: C.text, fontSize: 12 }}>{op.nom}</div>
+                      <div style={{ fontSize: 9, color: C.sec, marginTop: 2 }}>{op.poste}</div>
+                    </td>
+                    {/* Cellules par jour */}
+                    {weekDays.map(d => {
+                      const ds = localStr(d);
+                      const ferie = JOURS_FERIES[ds];
+                      const items = rowByDay[ds] ?? [];
+                      return (
+                        <td key={ds} style={{
+                          border: `1px solid ${C.border}`,
+                          verticalAlign: "top",
+                          padding: "4px 5px",
+                          background: ferie ? C.s1 + "cc" : "transparent",
+                          minWidth: 160,
+                        }}>
+                          {ferie && (
+                            <div style={{ fontSize: 9, color: C.orange, marginBottom: 3, fontStyle: "italic" }}>
+                              {ferie}
+                            </div>
+                          )}
+                          {items.map((item, i) => {
+                            const cmd = cmdById(item.commandeId);
+                            if (!cmd) return null;
+                            const tache = TACHES_FABRICATION.find(t => t.id === item.tacheId);
+                            return (
+                              <div
+                                key={i}
+                                onDoubleClick={() => cmd && onEdit?.(cmd)}
+                                style={{
+                                  background: C.s2,
+                                  border: `1px solid ${C.bLight}`,
+                                  borderRadius: 4,
+                                  padding: "4px 7px",
+                                  marginBottom: 3,
+                                  cursor: "pointer",
+                                  lineHeight: 1.4,
+                                  position: "relative",
+                                }}
+                                title="Double-clic pour éditer la commande"
+                              >
+                                <div style={{ fontWeight: 700, fontSize: 11, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>
+                                  {cmd.client ?? "—"}
+                                </div>
+                                {(cmd as any).ref_chantier && (
+                                  <div style={{ fontSize: 9, color: C.sec, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>
+                                    {(cmd as any).ref_chantier}
+                                  </div>
+                                )}
+                                <div style={{ fontSize: 9, color: C.teal, marginTop: 1 }}>
+                                  {tache?.label ?? item.tacheId}
+                                </div>
+                                <button
+                                  onClick={e => { e.stopPropagation(); removeCell(item.tacheId, ds, item.commandeId); }}
+                                  title="Retirer du planning"
+                                  style={{
+                                    position: "absolute", top: 2, right: 3,
+                                    background: "none", border: "none",
+                                    color: C.red, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0,
+                                  }}
+                                >×</button>
+                              </div>
+                            );
+                          })}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+              {/* Ligne « Non assigné » si des cellules sans opérateur existent */}
+              {Object.values(planByOp["__aucun__"] ?? {}).some(a => a.length > 0) && (
+                <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <td style={{
+                    border: `1px solid ${C.border}`, padding: "8px 10px",
+                    background: C.s1, verticalAlign: "top",
+                  }}>
+                    <div style={{ fontWeight: 700, color: C.orange, fontSize: 11 }}>Non assigné</div>
                   </td>
-                  {weekDays.map(d => renderCell(tache.id, localStr(d)))}
+                  {weekDays.map(d => {
+                    const ds = localStr(d);
+                    const items = planByOp["__aucun__"]?.[ds] ?? [];
+                    return (
+                      <td key={ds} style={{ border: `1px solid ${C.border}`, verticalAlign: "top", padding: "4px 5px" }}>
+                        {items.map((item, i) => {
+                          const cmd = cmdById(item.commandeId);
+                          if (!cmd) return null;
+                          const tache = TACHES_FABRICATION.find(t => t.id === item.tacheId);
+                          return (
+                            <div key={i} style={{ background: C.s2, border: `1px solid ${C.orange}44`, borderRadius: 4, padding: "3px 6px", marginBottom: 3, fontSize: 10 }}>
+                              <div style={{ fontWeight: 700, color: C.text }}>{cmd.client ?? "—"}</div>
+                              <div style={{ fontSize: 9, color: C.teal }}>{tache?.label ?? item.tacheId}</div>
+                            </div>
+                          );
+                        })}
+                      </td>
+                    );
+                  })}
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
