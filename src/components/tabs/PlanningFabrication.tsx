@@ -103,14 +103,6 @@ function calcTachesCmd(cmd: CommandeCC): Array<{ tacheId: string; dureeMin: numb
   return tasks;
 }
 
-// Renvoie l'id du premier opérateur compétent pour une tâche
-function findBestOp(tacheId: string): string | undefined {
-  for (const [opId, taches] of Object.entries(COMPETENCES_DEFAUT)) {
-    if (taches.includes(tacheId)) return opId;
-  }
-  return TACHES_FABRICATION.find(t => t.id === tacheId)?.competences[0];
-}
-
 // Avancer d'un jour ouvré à partir d'un YYYY-MM-DD
 function nextOuvrableAfter(dateStr: string): string {
   return addWorkdays(dateStr, 1);
@@ -351,7 +343,46 @@ export default function PlanningFabrication({
     const weekStartStr = localStr(weekDays[0]);
     const weekEndStr   = localStr(weekDays[4]);
 
-    // Filtrer et trier : bloqué > urgent > normal, exclure livré/annulé
+    // ── Suivi capacité : minutes utilisées par opérateur par jour (max 480)
+    const opDayMin: Record<string, Record<string, number>> = {};
+    const getMin = (op: string, day: string): number => opDayMin[op]?.[day] ?? 0;
+    const addMin = (op: string, day: string, m: number) => {
+      if (!opDayMin[op]) opDayMin[op] = {};
+      opDayMin[op][day] = getMin(op, day) + m;
+    };
+
+    // Opérateurs compétents pour une tâche (depuis COMPETENCES_DEFAUT)
+    const candidats = (tacheId: string): string[] => {
+      const list: string[] = [];
+      for (const [opId, taches] of Object.entries(COMPETENCES_DEFAUT)) {
+        if (taches.includes(tacheId)) list.push(opId);
+      }
+      if (list.length === 0) {
+        const fallback = TACHES_FABRICATION.find(t => t.id === tacheId)?.competences[0];
+        if (fallback) list.push(fallback);
+      }
+      return list;
+    };
+
+    // Premier jour ouvré >= start où au moins un opérateur compétent a de la capacité
+    const findSlot = (tacheId: string, start: string, dureeMin: number): string => {
+      let day = isWorkday(start) ? start : nextOuvrableAfter(start);
+      const ops = candidats(tacheId);
+      for (let i = 0; i < 60; i++) {
+        if (ops.length === 0 || ops.some(op => getMin(op, day) + dureeMin <= 480)) return day;
+        day = nextOuvrableAfter(day);
+      }
+      return start;
+    };
+
+    // Opérateur le moins chargé ce jour-là parmi les compétents disponibles
+    const pickOp = (tacheId: string, day: string, dureeMin: number): string | undefined => {
+      const ops = candidats(tacheId).filter(op => getMin(op, day) + dureeMin <= 480);
+      if (ops.length === 0) return candidats(tacheId)[0]; // fallback
+      return ops.reduce((best, op) => getMin(op, day) < getMin(best, day) ? op : best);
+    };
+
+    // ── Filtrer et trier : bloqué > urgent > normal, exclure livré/annulé
     const activeCommandes = commandes
       .filter(cmd => {
         const st = (cmd as any).statut as string | undefined;
@@ -373,34 +404,30 @@ export default function PlanningFabrication({
 
       const cid = String(cmd.id ?? "");
       const taches = calcTachesCmd(cmd);
-      let cursorDay = dateDemarrage(cmd);
-      let minutesLeft = 480; // minutes restantes dans la journée courante
+      let cmdCursor = dateDemarrage(cmd); // date au plus tôt pour la prochaine tâche
 
       taches.forEach(({ tacheId, dureeMin }) => {
         if (!newPlan[tacheId]) newPlan[tacheId] = {};
 
-        // Passer à la journée suivante si la journée est épuisée
-        if (minutesLeft <= 0) {
-          cursorDay = nextOuvrableAfter(cursorDay);
-          minutesLeft = 480;
-        }
+        // Trouver le premier jour où un opérateur compétent est disponible
+        const assignDay = findSlot(tacheId, cmdCursor, dureeMin);
+        const opId = pickOp(tacheId, assignDay, dureeMin);
 
-        // Placer dans le plan si la journée est dans la semaine courante
-        if (cursorDay >= weekStartStr && cursorDay <= weekEndStr && isWorkday(cursorDay)) {
-          if (!newPlan[tacheId][cursorDay]) newPlan[tacheId][cursorDay] = [];
-          const exists = newPlan[tacheId][cursorDay].some(c => c.commandeId === cid);
-          if (!exists) {
-            newPlan[tacheId][cursorDay].push({ commandeId: cid, operateur: findBestOp(tacheId) });
+        // Placer dans le plan si dans la semaine courante
+        if (assignDay >= weekStartStr && assignDay <= weekEndStr) {
+          if (!newPlan[tacheId][assignDay]) newPlan[tacheId][assignDay] = [];
+          if (!newPlan[tacheId][assignDay].some(c => c.commandeId === cid)) {
+            newPlan[tacheId][assignDay].push({ commandeId: cid, operateur: opId });
           }
         }
 
-        // Avancer le curseur en minutes
-        minutesLeft -= dureeMin;
-        // Si la tâche dépasse la journée, avancer d'autant de jours que nécessaire
-        while (minutesLeft <= 0) {
-          cursorDay = nextOuvrableAfter(cursorDay);
-          minutesLeft += 480;
-        }
+        // Réserver la capacité de l'opérateur
+        if (opId) addMin(opId, assignDay, dureeMin);
+
+        // La prochaine tâche de cette commande commence au plus tôt le même jour,
+        // ou le lendemain si la journée est saturée (< 30 min restantes)
+        const restant = opId ? 480 - getMin(opId, assignDay) : 0;
+        cmdCursor = restant < 30 ? nextOuvrableAfter(assignDay) : assignDay;
       });
     });
 
