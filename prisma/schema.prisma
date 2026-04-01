@@ -103,3 +103,62 @@ model Backup {
   data      Json
   createdAt DateTime @default(now())
 }
+
+model Tache {
+  id               String   @id @default(cuid())
+  nom              String
+  temps_unitaire   Float
+  unite            String
+  categorie        String   @default("production")
+  parallelisable   Boolean  @default(false)
+  competences      Json     @default("[]")
+  ordre            Int      @default(0)
+  actif            Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model CompetenceOperateur {
+  id          String   @id @default(cuid())
+  operateurId String
+  tacheId     String
+  priorite    Int      @default(1)
+  updatedAt   DateTime @updatedAt
+
+  @@unique([operateurId, tacheId])
+}
+
+model AvancementJournalier {
+  id          String   @id @default(cuid())
+  date        String
+  operateur   String
+  tacheId     String
+  commandeId  String?
+  quantite    Float
+  notes       String?
+  createdAt   DateTime @default(now())
+}
+
+model SemaineValidee {
+  semaine     String   @id
+  valide      Boolean  @default(false)
+  validePar   String?
+  valideAt    DateTime?
+  plan        Json     @default("{}")
+  updatedAt   DateTime @updatedAt
+}
+
+model TacheRituelle {
+  id       String  @id @default(cuid())
+  label    String
+  fixe     Boolean @default(false)
+  visible  Boolean @default(true)
+  ordre    Int     @default(0)
+}
+
+model MembreEquipe {
+  id         String @id @default(cuid())
+  nom        String
+  naissance  String @default("")
+  actif      Boolean @default(true)
+}

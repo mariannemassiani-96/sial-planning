@@ -17,9 +17,11 @@ const ZONE_COLORS: Record<string, string> = {
 };
 
 const TRANSPORTEURS = [
-  { id: "SIAL",        label: "SIAL",        c: "#42A5F5" },
-  { id: "SETEC",       label: "SETEC",       c: "#FFA726" },
-  { id: "Paccagnini",  label: "Paccagnini",  c: "#66BB6A" },
+  { id: "nous",    label: "Par nous-mêmes",   c: "#42A5F5" },
+  { id: "setec",   label: "Par Setec",         c: "#FFA726" },
+  { id: "express", label: "Transporteur express", c: "#66BB6A" },
+  { id: "poseur",  label: "Par un poseur",     c: "#AB47BC" },
+  { id: "depot",   label: "Client au dépôt",   c: "#26C6DA" },
 ];
 
 type ViewMode = "semaine" | "jour" | "mois";
@@ -45,9 +47,10 @@ function sameMonth(dateStr: string, year: number, month: number) {
   return d.getFullYear() === year && d.getMonth() === month;
 }
 
-export default function PlanningLivraison({ commandes, onPatch }: {
+export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
   commandes: CommandeCC[];
   onPatch: (id: string, updates: Record<string, any>) => void;
+  onEdit?: (cmd: CommandeCC) => void;
 }) {
   const today = localStr(new Date());
   const [view,        setView]        = useState<ViewMode>("semaine");
@@ -200,10 +203,11 @@ export default function PlanningLivraison({ commandes, onPatch }: {
         draggable={isDraggable}
         onDragStart={isDraggable ? handleDragStart(String(c.id), livSouhaitee) : undefined}
         onDragEnd={isDraggable ? handleDragEnd : undefined}
+        onDoubleClick={() => onEdit?.(x.c)}
         style={{
           marginBottom:6, padding:"8px 10px", background:C.bg, borderRadius:5,
           border:`1px solid ${zoneColor}44`, borderLeft:`4px solid ${zoneColor}`,
-          cursor: isDraggable ? "grab" : "default",
+          cursor: onEdit ? "pointer" : isDraggable ? "grab" : "default",
         }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
           <div style={{ flex:1, minWidth:0 }}>
@@ -416,7 +420,8 @@ export default function PlanningLivraison({ commandes, onPatch }: {
                       draggable
                       onDragStart={handleDragStart(String(x.c.id), x.livSouhaitee)}
                       onDragEnd={handleDragEnd}
-                      style={{ marginBottom:4, padding:"5px 6px", background:C.bg, borderRadius:4, border:`1px solid ${zoneCol}33`, borderLeft:`4px solid ${zoneCol}`, cursor:"grab", userSelect:"none" }}>
+                      onDoubleClick={() => onEdit?.(x.c)}
+                      style={{ marginBottom:4, padding:"5px 6px", background:C.bg, borderRadius:4, border:`1px solid ${zoneCol}33`, borderLeft:`4px solid ${zoneCol}`, cursor: onEdit ? "pointer" : "grab", userSelect:"none" }}>
                       <div style={{ fontSize:11, fontWeight:700, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
                         {x.c.client}{x.cmd.ref_chantier ? ` — ${x.cmd.ref_chantier}` : ""}
                       </div>
@@ -514,7 +519,8 @@ export default function PlanningLivraison({ commandes, onPatch }: {
                               draggable
                               onDragStart={e => { e.stopPropagation(); handleDragStart(String(x.c.id), x.livSouhaitee)(e); }}
                               onDragEnd={handleDragEnd}
-                              style={{ fontSize:8, color:C.sec, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", marginBottom:1, padding:"1px 3px", background:C.bg, borderRadius:2, borderLeft:`3px solid ${zoneCol}`, cursor:"grab" }}>
+                              onDoubleClick={e => { e.stopPropagation(); onEdit?.(x.c); }}
+                              style={{ fontSize:8, color:C.sec, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", marginBottom:1, padding:"1px 3px", background:C.bg, borderRadius:2, borderLeft:`3px solid ${zoneCol}`, cursor: onEdit ? "pointer" : "grab" }}>
                               {x.c.client}{x.cmd.ref_chantier ? ` — ${x.cmd.ref_chantier}` : ""}
                               {transp && <span style={{ color:transp.c, marginLeft:2 }}>({transp.label})</span>}
                             </div>

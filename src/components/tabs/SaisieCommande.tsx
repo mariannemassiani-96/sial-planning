@@ -28,6 +28,7 @@ const empty = {
   date_alu: "", date_pvc: "", date_accessoires: "",
   date_panneau_porte: "", date_volet_roulant: "",
   date_livraison_souhaitee: "",
+  transporteur: "",
   aucune_menuiserie: false,
   aucun_vitrage: false,
   cmd_alu_passee: false, cmd_pvc_passee: false, cmd_accessoires_passee: false,
@@ -52,6 +53,7 @@ function cmdToForm(cmd: any): FormType {
     date_alu: cmd.date_alu || "", date_pvc: cmd.date_pvc || "", date_accessoires: cmd.date_accessoires || "",
     date_panneau_porte: cmd.date_panneau_porte || "", date_volet_roulant: cmd.date_volet_roulant || "",
     date_livraison_souhaitee: cmd.date_livraison_souhaitee || "",
+    transporteur: cmd.transporteur || "",
     aucune_menuiserie: cmd.aucune_menuiserie || false,
     aucun_vitrage: cmd.aucun_vitrage || false,
     cmd_alu_passee: cmd.cmd_alu_passee || false, cmd_pvc_passee: cmd.cmd_pvc_passee || false, cmd_accessoires_passee: cmd.cmd_accessoires_passee || false,
@@ -234,6 +236,17 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
           <div><label style={{ fontSize: 10, color: C.green, display: "block", marginBottom: 3 }}>MONTANT HT (€)</label><input type="number" min={0} step={0.01} style={{ ...inp, borderColor: C.green+"66" }} value={f.montant_ht} onChange={e => set("montant_ht", e.target.value)} placeholder="ex: 12500.00" /></div>
           <div><label style={{ fontSize: 10, color: C.blue, display: "block", marginBottom: 3 }}>SEM. THÉORIQUE</label><input style={{ ...inp, borderColor: C.blue + "66" }} value={f.semaine_theorique} onChange={e => set("semaine_theorique", e.target.value)} placeholder="ex: S18-2026" /></div>
           <div><label style={{ fontSize: 10, color: C.green, display: "block", marginBottom: 3 }}>SEM. ATTEIGNABLE</label><input style={{ ...inp, borderColor: C.green + "66" }} value={f.semaine_atteignable} onChange={e => set("semaine_atteignable", e.target.value)} placeholder="ex: S20-2026" /></div>
+        </div>
+        <div style={{ marginTop: 8 }}>
+          <label style={{ fontSize: 10, color: C.green, display: "block", marginBottom: 3 }}>TRANSPORTEUR</label>
+          <select style={inp} value={(f as any).transporteur || ""} onChange={e => set("transporteur" as any, e.target.value)}>
+            <option value="">— Non défini —</option>
+            <option value="nous">Livraison par nous-mêmes</option>
+            <option value="setec">Livraison par Setec</option>
+            <option value="express">Livraison par transporteur express</option>
+            <option value="poseur">Livraison par un poseur</option>
+            <option value="depot">Client récupère au dépôt</option>
+          </select>
         </div>
       </div>
 
