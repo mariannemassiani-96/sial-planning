@@ -118,7 +118,7 @@ type PlanSemaine = {
   };
 };
 
-type VueMode = "poste" | "commande" | "calendrier";
+type VueMode = "poste" | "operateur" | "commande" | "calendrier";
 
 // ─── Postes principaux pour la vue par commande ───────────────────────────────
 
@@ -246,11 +246,15 @@ export default function PlanningFabrication({
   // ── Statut semaine validée
   const [semValidee, setSemValidee] = useState<boolean>(false);
 
-  // ── Drag & drop
+  // ── Drag & drop (vue par opérateur : déplacer une carte)
   const [dragItem, setDragItem] = useState<{
     commandeId: string; tacheId: string; fromOpId: string; fromDay: string;
   } | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+
+  // ── Drag & drop (vue par poste : glisser un opérateur sur une commande)
+  const [dragOpId, setDragOpId] = useState<string | null>(null);
+  const [dragCardKey, setDragCardKey] = useState<string | null>(null);
 
   // ── Modals
   const [showPlanModal, setShowPlanModal] = useState(false);
@@ -357,6 +361,17 @@ export default function PlanningFabrication({
         commandeId,
         operateur: toOpId === "__aucun__" ? undefined : toOpId,
       });
+    }
+    savePlan(newPlan);
+  }, [plan, savePlan]);
+
+  // ─── Assigner un opérateur à une commande dans une cellule (vue par poste)
+  const assignOp = useCallback((tacheId: string, dayStr: string, commandeId: string, opId: string) => {
+    const newPlan = JSON.parse(JSON.stringify(plan)) as PlanSemaine;
+    if (newPlan[tacheId]?.[dayStr]) {
+      newPlan[tacheId][dayStr] = newPlan[tacheId][dayStr].map(c =>
+        c.commandeId === commandeId ? { ...c, operateur: opId } : c
+      );
     }
     savePlan(newPlan);
   }, [plan, savePlan]);
@@ -556,7 +571,8 @@ export default function PlanningFabrication({
           border: `1px solid ${C.border}`, borderRadius: 5, overflow: "hidden",
         }}>
           {([
-            { id: "poste",      label: "Par opérateur" },
+            { id: "poste",      label: "Par poste" },
+            { id: "operateur",  label: "Par opérateur" },
             { id: "commande",   label: "Par commande" },
             { id: "calendrier", label: "📅 Calendrier" },
           ] as { id: VueMode; label: string }[]).map(v => (
@@ -648,8 +664,179 @@ export default function PlanningFabrication({
         <PlanningCalendrier commandes={commandes} />
       )}
 
-      {/* ── VUE PAR OPÉRATEUR (drag & drop) ──────────────────────────────────── */}
+      {/* ── VUE PAR POSTE — palette opérateurs + grille tâches×jours ──────────── */}
       {vue === "poste" && (
+        <div>
+          {/* Palette opérateurs draggables */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+            marginBottom: 12, padding: "10px 12px",
+            background: C.s1, border: `1px solid ${C.border}`, borderRadius: 7,
+          }}>
+            <span style={{ fontSize: 10, color: C.sec, fontWeight: 600, marginRight: 4, whiteSpace: "nowrap" }}>
+              Glisser sur une commande →
+            </span>
+            {EQUIPE_SIAL.map(op => (
+              <div
+                key={op.id}
+                draggable
+                onDragStart={e => { setDragOpId(op.id); e.dataTransfer.effectAllowed = "copy"; }}
+                onDragEnd={() => { setDragOpId(null); setDragCardKey(null); }}
+                style={{
+                  padding: "5px 13px",
+                  background: dragOpId === op.id ? C.blue + "33" : C.s2,
+                  border: `1px solid ${dragOpId === op.id ? C.blue : C.border}`,
+                  borderRadius: 20,
+                  cursor: "grab",
+                  fontSize: 11, fontWeight: 700,
+                  color: dragOpId === op.id ? C.blue : C.text,
+                  userSelect: "none",
+                  transition: "all 0.1s",
+                }}
+              >
+                {op.nom}
+              </div>
+            ))}
+          </div>
+
+          {/* Grille tâches × jours */}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11 }}>
+              <thead>
+                <tr>
+                  <th style={thStyle({ width: 180, textAlign: "left" })}>Poste / Tâche</th>
+                  {weekDays.map((d, i) => {
+                    const ds = localStr(d);
+                    const ferie = JOURS_FERIES[ds];
+                    return (
+                      <th key={i} style={thStyle({ background: ferie ? C.s2 : C.s1, minWidth: 170 })}>
+                        <div>{JOUR_LABELS[i]}</div>
+                        <div style={{ fontWeight: 400, color: C.sec, fontSize: 10 }}>
+                          {d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}
+                        </div>
+                        {ferie && <div style={{ fontSize: 9, color: C.orange, marginTop: 2 }}>{ferie}</div>}
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {TACHES_FABRICATION.filter(tache => {
+                  // N'afficher que les tâches qui ont des commandes planifiées cette semaine
+                  const byDay = plan[tache.id] ?? {};
+                  return weekDays.some(d => (byDay[localStr(d)]?.length ?? 0) > 0);
+                }).map(tache => (
+                  <tr key={tache.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                    {/* Colonne tâche */}
+                    <td style={{
+                      border: `1px solid ${C.border}`, padding: "6px 10px",
+                      background: C.s1, verticalAlign: "top", minWidth: 175,
+                    }}>
+                      <div style={{ fontWeight: 700, color: C.text, fontSize: 11 }}>{tache.label}</div>
+                      <div style={{ fontSize: 9, color: C.sec, marginTop: 2 }}>
+                        {tache.competences.map(id => EQUIPE.find(e => e.id === id)?.nom ?? id).join(", ")}
+                      </div>
+                    </td>
+                    {/* Cellules par jour */}
+                    {weekDays.map(d => {
+                      const ds = localStr(d);
+                      const ferie = JOURS_FERIES[ds];
+                      const cells = plan[tache.id]?.[ds] ?? [];
+                      return (
+                        <td key={ds} style={{
+                          border: `1px solid ${C.border}`,
+                          verticalAlign: "top", padding: "4px 5px",
+                          background: ferie ? C.s1 + "cc" : "transparent",
+                          minWidth: 170,
+                        }}>
+                          {ferie && (
+                            <div style={{ fontSize: 9, color: C.orange, marginBottom: 3, fontStyle: "italic" }}>
+                              {ferie}
+                            </div>
+                          )}
+                          {cells.map((cell, i) => {
+                            const cmd = cmdById(cell.commandeId);
+                            if (!cmd) return null;
+                            const cardKey = `${tache.id}_${ds}_${cell.commandeId}`;
+                            const isOver = dragCardKey === cardKey && !!dragOpId;
+                            const opName = EQUIPE.find(e => e.id === cell.operateur)?.nom;
+                            return (
+                              <div
+                                key={i}
+                                onDragOver={e => { if (dragOpId) { e.preventDefault(); setDragCardKey(cardKey); } }}
+                                onDragLeave={e => {
+                                  if (!e.currentTarget.contains(e.relatedTarget as Node))
+                                    setDragCardKey(null);
+                                }}
+                                onDrop={e => {
+                                  e.preventDefault();
+                                  if (!dragOpId) return;
+                                  assignOp(tache.id, ds, cell.commandeId, dragOpId);
+                                  setDragOpId(null); setDragCardKey(null);
+                                }}
+                                onDoubleClick={() => cmd && onEdit?.(cmd)}
+                                style={{
+                                  background: isOver ? C.blue + "22" : C.s2,
+                                  border: `2px solid ${isOver ? C.blue : cell.operateur ? C.teal + "88" : C.bLight}`,
+                                  borderRadius: 5,
+                                  padding: "5px 26px 5px 8px",
+                                  marginBottom: 4,
+                                  lineHeight: 1.4,
+                                  position: "relative",
+                                  cursor: dragOpId ? "copy" : "default",
+                                  transition: "all 0.1s",
+                                }}
+                                title={dragOpId ? "Déposer pour assigner" : "Double-clic pour éditer"}
+                              >
+                                <div style={{ fontWeight: 700, fontSize: 11, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 128 }}>
+                                  {cmd.client ?? "—"}
+                                </div>
+                                {(cmd as any).ref_chantier && (
+                                  <div style={{ fontSize: 9, color: C.sec, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 128 }}>
+                                    {(cmd as any).ref_chantier}
+                                  </div>
+                                )}
+                                {/* Badge opérateur assigné */}
+                                {opName ? (
+                                  <div style={{ fontSize: 9, marginTop: 2, color: C.teal, fontWeight: 600 }}>
+                                    ✓ {opName}
+                                  </div>
+                                ) : (
+                                  <div style={{ fontSize: 9, marginTop: 2, color: C.muted, fontStyle: "italic" }}>
+                                    — sans opérateur
+                                  </div>
+                                )}
+                                <button
+                                  onClick={e => { e.stopPropagation(); removeCell(tache.id, ds, cell.commandeId); }}
+                                  title="Retirer du planning"
+                                  style={{
+                                    position: "absolute", top: 3, right: 3,
+                                    background: "none", border: "none",
+                                    color: C.red, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0,
+                                  }}
+                                >×</button>
+                              </div>
+                            );
+                          })}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+                {/* Message si aucune tâche planifiée */}
+                {TACHES_FABRICATION.every(t => weekDays.every(d => (plan[t.id]?.[localStr(d)]?.length ?? 0) === 0)) && (
+                  <tr><td colSpan={6} style={{ textAlign: "center", color: C.sec, padding: 32, fontSize: 12 }}>
+                    Aucune commande planifiée — cliquez sur ⚡ Répartition auto
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── VUE PAR OPÉRATEUR (drag & drop cartes) ────────────────────────────── */}
+      {vue === "operateur" && (
         <div style={{ overflowX: "auto" }}>
           {dragItem && (
             <div style={{ fontSize: 11, color: C.teal, marginBottom: 6, padding: "4px 8px", background: C.s1, borderRadius: 5, display: "inline-block" }}>
