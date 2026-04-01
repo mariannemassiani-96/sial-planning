@@ -52,13 +52,13 @@ function calcTachesCmd(cmd: CommandeCC): Array<{ tacheId: string; dureeMin: numb
   const isFrappe = famille === "frappe" || famille === "porte";
   const tasks: Array<{ tacheId: string; dureeMin: number }> = [];
 
-  // 1. Déballage / prépa profilés
+  // 1. Déballage / prépa profilés — poste 2 personnes minimum en simultané → temps mur ÷ 2
   if ((lmt || 0) * q > 0)
-    tasks.push({ tacheId: "deballage_prep", dureeMin: Math.max(10, Math.round((lmt || 0) * q * 3)) });
+    tasks.push({ tacheId: "deballage_prep", dureeMin: Math.max(10, Math.round((lmt || 0) * q * 3 / 2)) });
 
-  // 2. Coupe LMT
+  // 2. Coupe LMT — poste 2 personnes minimum en simultané → temps mur ÷ 2
   if ((lmt || 0) > 0)
-    tasks.push({ tacheId: "coupe_lmt", dureeMin: Math.max(5, Math.round((lmt || 0) * q * T.coupe_profil)) });
+    tasks.push({ tacheId: "coupe_lmt", dureeMin: Math.max(5, Math.round((lmt || 0) * q * T.coupe_profil / 2)) });
 
   // 3. Coupe double tête
   if ((dt || 0) > 0)
