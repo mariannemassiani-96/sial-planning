@@ -11,7 +11,6 @@ import StocksTampons from "@/components/tabs/StocksTampons";
 import SaisieCommande from "@/components/tabs/SaisieCommande";
 import PlanningCrise from "@/components/tabs/PlanningCrise";
 import Carnet from "@/components/tabs/Carnet";
-import PlanningCalendrier from "@/components/tabs/PlanningCalendrier";
 import PlanningLivraison from "@/components/tabs/PlanningLivraison";
 import Dashboard from "@/components/tabs/Dashboard";
 import PlanningRH from "@/components/tabs/PlanningRH";
@@ -61,10 +60,9 @@ export default function HomePage() {
     { id: "saisie",       l: "➕ Commande" },
     { id: "carnet",       l: `📂 Carnet (${commandes.length})` },
     { id: "crise",        l: `🚨 Crise${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
-    { id: "calendrier",   l: "📅 Planning SIAL" },
     { id: "charge",       l: "📊 Charge SIAL" },
     { id: "rh",           l: "👥 Équipe SIAL" },
-    { id: "fabrication",    l: "🏭 Planning Fabrication" },
+    { id: "fabrication",    l: "🏭 Planning" },
     { id: "avancement",     l: "📋 Avancement" },
     { id: "atelier",        l: "📺 Affichage Atelier" },
     { id: "isula",           l: "🔷 Planning ISULA VITRAGE" },
@@ -179,7 +177,6 @@ export default function HomePage() {
             {ong === "saisie" && <SaisieCommande key={String(cmdEdit?.id || "new")} onAjouter={addCommande} commande={cmdEdit} onModifier={modifCommande} />}
             {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} onEdit={editCommande} onPatch={patchCommande} />}
             {ong === "crise" && <PlanningCrise commandes={commandes} />}
-            {ong === "calendrier" && <PlanningCalendrier commandes={commandes} />}
             {ong === "livraison" && <PlanningLivraison commandes={commandes} onPatch={patchCommande} onEdit={editCommande} />}
             {ong === "charge" && <ChargeSemaine commandes={commandes} />}
             {ong === "rh" && <PlanningRH commandes={commandes} />}

@@ -1,11 +1,12 @@
 "use client";
 import { useState, useMemo, useCallback, useEffect } from "react";
 import {
-  C, TACHES_FABRICATION, EQUIPE, COMPETENCES_DEFAUT,
+  C, T, TACHES_FABRICATION, EQUIPE, COMPETENCES_DEFAUT,
   fmtDate, CommandeCC, TYPES_MENUISERIE,
-  isWorkday, JOURS_FERIES,
+  isWorkday, JOURS_FERIES, dateDemarrage, addWorkdays,
 } from "@/lib/sial-data";
 import { H, Bdg } from "@/components/ui";
+import PlanningCalendrier from "@/components/tabs/PlanningCalendrier";
 
 // ─── Helpers date ─────────────────────────────────────────────────────────────
 
@@ -38,6 +39,83 @@ function getWeekDays(monday: Date): Date[] {
 
 const JOUR_LABELS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
 
+// ─── Calcul des tâches nécessaires par commande ───────────────────────────────
+
+function calcTachesCmd(cmd: CommandeCC): Array<{ tacheId: string; dureeMin: number }> {
+  const tm = TYPES_MENUISERIE[cmd.type];
+  if (!tm) return [];
+  const q = cmd.quantite || 1;
+  const { famille, mat, lmt, dt, renfort, ouvrants, dormant } = tm;
+  const isPVC = mat === "PVC";
+  const isCoul = famille === "coulissant";
+  const isGland = famille === "glandage";
+  const isFrappe = famille === "frappe" || famille === "porte";
+  const tasks: Array<{ tacheId: string; dureeMin: number }> = [];
+
+  // 1. Déballage / prépa profilés
+  if ((lmt || 0) * q > 0)
+    tasks.push({ tacheId: "deballage_prep", dureeMin: Math.max(10, Math.round((lmt || 0) * q * 3)) });
+
+  // 2. Coupe LMT
+  if ((lmt || 0) > 0)
+    tasks.push({ tacheId: "coupe_lmt", dureeMin: Math.max(5, Math.round((lmt || 0) * q * T.coupe_profil)) });
+
+  // 3. Coupe double tête
+  if ((dt || 0) > 0)
+    tasks.push({ tacheId: "coupe_dt", dureeMin: Math.max(5, Math.round((dt || 0) * q * 1.5)) });
+
+  // 4. Coupe renfort acier
+  if ((renfort || 0) > 0)
+    tasks.push({ tacheId: "coupe_renfort", dureeMin: Math.max(5, Math.round((renfort || 0) * q * 2)) });
+
+  // 5. Soudure PVC ou assemblage ALU
+  if (isPVC && isFrappe)
+    tasks.push({ tacheId: "soudure_pvc", dureeMin: Math.round((1 + ouvrants) * q * T.soudure_cadre) });
+  else if (!isPVC && isFrappe) {
+    tasks.push({ tacheId: "assemblage_dorm_alu", dureeMin: Math.round((dormant || 1) * q * T.poincon_assemblage_alu) });
+    if (ouvrants > 0)
+      tasks.push({ tacheId: "assemblage_ouv_alu", dureeMin: Math.round(ouvrants * q * T.poincon_assemblage_alu) });
+  }
+
+  // 6. Pré-montage coulissant / galandage
+  if ((isCoul || isGland) && ouvrants > 0)
+    tasks.push({ tacheId: "premontage_coul", dureeMin: Math.round(ouvrants * q * T.ouvrant_coul_prep) });
+
+  // 7. Montage dormant
+  if (isCoul)
+    tasks.push({ tacheId: "montage_dorm_coul", dureeMin: Math.round((dormant || 1) * q * T.montage_dormant_coul) });
+  if (isGland)
+    tasks.push({ tacheId: "montage_dorm_gal", dureeMin: Math.round((dormant || 1) * q * T.montage_dormant_gland) });
+
+  // 8. Ferrage ouvrant (frappe)
+  if (isFrappe && ouvrants > 0)
+    tasks.push({ tacheId: "ferrage", dureeMin: Math.round(ouvrants * q * T.ferrage_ouvrant) });
+
+  // 9. Vitrage
+  if (isFrappe && ouvrants > 0)
+    tasks.push({ tacheId: "vitrage_frappe", dureeMin: Math.round(ouvrants * q * T.vitrage_frappe) });
+  if ((isCoul || isGland) && ouvrants > 0)
+    tasks.push({ tacheId: "vitrage_coul", dureeMin: Math.round(ouvrants * q * T.vitrage_ouvrant_coul) });
+
+  // 10. Mise sur palette
+  tasks.push({ tacheId: "palette", dureeMin: Math.round(q * T.mise_palette) });
+
+  return tasks;
+}
+
+// Renvoie l'id du premier opérateur compétent pour une tâche
+function findBestOp(tacheId: string): string | undefined {
+  for (const [opId, taches] of Object.entries(COMPETENCES_DEFAUT)) {
+    if (taches.includes(tacheId)) return opId;
+  }
+  return TACHES_FABRICATION.find(t => t.id === tacheId)?.competences[0];
+}
+
+// Avancer d'un jour ouvré à partir d'un YYYY-MM-DD
+function nextOuvrableAfter(dateStr: string): string {
+  return addWorkdays(dateStr, 1);
+}
+
 // ─── Types locaux ─────────────────────────────────────────────────────────────
 
 type PlanCell = { commandeId: string; operateur?: string; parallel?: boolean };
@@ -48,7 +126,7 @@ type PlanSemaine = {
   };
 };
 
-type VueMode = "poste" | "commande";
+type VueMode = "poste" | "commande" | "calendrier";
 
 // ─── Postes principaux pour la vue par commande ───────────────────────────────
 
@@ -189,8 +267,29 @@ export default function PlanningFabrication({
   const [modalJour, setModalJour] = useState("");
   const [modalOp, setModalOp] = useState("");
 
-  // ── Vue commande : dates par poste
+  // ── Vue commande : dates par poste (override manuel)
   const [cmdDates, setCmdDates] = useState<Record<string, Record<string, string>>>({});
+
+  // ── Dates auto calculées par commande depuis dateDemarrage + durées cumulées
+  const autoCmdDates = useMemo(() => {
+    const result: Record<string, Record<string, string>> = {};
+    commandes.forEach(cmd => {
+      const tm = TYPES_MENUISERIE[cmd.type];
+      if (!tm || tm.famille === "hors_standard" || tm.famille === "intervention") return;
+      const cid = String(cmd.id ?? "");
+      result[cid] = {};
+      const taches = calcTachesCmd(cmd);
+      let cursorDay = dateDemarrage(cmd);
+      let minutesLeft = 480;
+      taches.forEach(({ tacheId, dureeMin }) => {
+        if (minutesLeft <= 0) { cursorDay = nextOuvrableAfter(cursorDay); minutesLeft = 480; }
+        if (!result[cid][tacheId]) result[cid][tacheId] = cursorDay;
+        minutesLeft -= dureeMin;
+        while (minutesLeft <= 0) { cursorDay = nextOuvrableAfter(cursorDay); minutesLeft += 480; }
+      });
+    });
+    return result;
+  }, [commandes]);
 
   // Synchroniser plan depuis localStorage quand la semaine change
   useEffect(() => {
@@ -250,39 +349,61 @@ export default function PlanningFabrication({
   // ─── Répartition automatique
   const repartitionAuto = useCallback(() => {
     const newPlan: PlanSemaine = {};
-    const workDays = weekDays.filter(d => isWorkday(localStr(d)));
-    const cmdIds = commandes.map(c => String(c.id ?? "")).filter(Boolean);
+    TACHES_FABRICATION.forEach(t => { newPlan[t.id] = {}; });
 
-    TACHES_FABRICATION.forEach(tache => {
-      newPlan[tache.id] = {};
+    const weekStartStr = localStr(weekDays[0]);
+    const weekEndStr   = localStr(weekDays[4]);
 
-      // Opérateurs compétents pour cette tâche
-      const competents = EQUIPE.filter(op => {
-        const comps = COMPETENCES_DEFAUT[op.id] ?? [];
-        return comps.includes(tache.id) || tache.competences.includes(op.id);
+    // Filtrer et trier : bloqué > urgent > normal, exclure livré/annulé
+    const activeCommandes = commandes
+      .filter(cmd => {
+        const st = (cmd as any).statut as string | undefined;
+        return st !== "livree" && st !== "annulee";
+      })
+      .sort((a, b) => {
+        const prio = (c: CommandeCC) => {
+          const st = (c as any).statut as string | undefined;
+          if (st === "chantier_bloque" || c.priorite === "BLOQUE") return 0;
+          if (c.priorite === "URGENT" || st === "urgente") return 1;
+          return 2;
+        };
+        return prio(a) - prio(b);
       });
 
-      // Polyvalents (ont des compétences mais pas sur cette tâche)
-      const polyvalents = EQUIPE.filter(op =>
-        !competents.find(c => c.id === op.id) &&
-        (COMPETENCES_DEFAUT[op.id] ?? []).length > 0
-      );
+    activeCommandes.forEach(cmd => {
+      const tm = TYPES_MENUISERIE[cmd.type];
+      if (!tm || tm.famille === "hors_standard" || tm.famille === "intervention") return;
 
-      const ops = [...competents, ...polyvalents];
-      if (ops.length === 0 || cmdIds.length === 0 || workDays.length === 0) return;
+      const cid = String(cmd.id ?? "");
+      const taches = calcTachesCmd(cmd);
+      let cursorDay = dateDemarrage(cmd);
+      let minutesLeft = 480; // minutes restantes dans la journée courante
 
-      // Distribuer les commandes équitablement sur les jours ouvrés
-      const cmdsParJour = Math.ceil(cmdIds.length / workDays.length);
-      let cmdIdx = 0;
-      workDays.forEach(d => {
-        const ds = localStr(d);
-        newPlan[tache.id][ds] = [];
-        const slice = cmdIds.slice(cmdIdx, cmdIdx + cmdsParJour);
-        slice.forEach((cid, i) => {
-          const op = ops[i % ops.length];
-          newPlan[tache.id][ds].push({ commandeId: cid, operateur: op?.id });
-        });
-        cmdIdx += cmdsParJour;
+      taches.forEach(({ tacheId, dureeMin }) => {
+        if (!newPlan[tacheId]) newPlan[tacheId] = {};
+
+        // Passer à la journée suivante si la journée est épuisée
+        if (minutesLeft <= 0) {
+          cursorDay = nextOuvrableAfter(cursorDay);
+          minutesLeft = 480;
+        }
+
+        // Placer dans le plan si la journée est dans la semaine courante
+        if (cursorDay >= weekStartStr && cursorDay <= weekEndStr && isWorkday(cursorDay)) {
+          if (!newPlan[tacheId][cursorDay]) newPlan[tacheId][cursorDay] = [];
+          const exists = newPlan[tacheId][cursorDay].some(c => c.commandeId === cid);
+          if (!exists) {
+            newPlan[tacheId][cursorDay].push({ commandeId: cid, operateur: findBestOp(tacheId) });
+          }
+        }
+
+        // Avancer le curseur en minutes
+        minutesLeft -= dureeMin;
+        // Si la tâche dépasse la journée, avancer d'autant de jours que nécessaire
+        while (minutesLeft <= 0) {
+          cursorDay = nextOuvrableAfter(cursorDay);
+          minutesLeft += 480;
+        }
       });
     });
 
@@ -450,54 +571,60 @@ export default function PlanningFabrication({
           display: "flex", background: C.s1,
           border: `1px solid ${C.border}`, borderRadius: 5, overflow: "hidden",
         }}>
-          {(["poste", "commande"] as VueMode[]).map(v => (
+          {([
+            { id: "poste",      label: "Par poste" },
+            { id: "commande",   label: "Par commande" },
+            { id: "calendrier", label: "📅 Calendrier" },
+          ] as { id: VueMode; label: string }[]).map(v => (
             <button
-              key={v}
-              onClick={() => setVue(v)}
+              key={v.id}
+              onClick={() => setVue(v.id)}
               style={{
                 padding: "5px 14px",
-                background: vue === v ? C.blue : "transparent",
-                color: vue === v ? "#fff" : C.sec,
+                background: vue === v.id ? C.blue : "transparent",
+                color: vue === v.id ? "#fff" : C.sec,
                 border: "none", cursor: "pointer", fontWeight: 600, fontSize: 11,
               }}
             >
-              {v === "poste" ? "Par poste" : "Par commande"}
+              {v.label}
             </button>
           ))}
         </div>
 
-        {/* Navigation semaine */}
-        <button onClick={prevWeek} style={btnSm}>← Préc.</button>
-        <span style={{ fontSize: 12, fontWeight: 600, color: C.text, minWidth: 220, textAlign: "center" }}>
-          {semLabel}
-        </span>
-        <button onClick={nextWeek} style={btnSm}>Suiv. →</button>
-        <button onClick={thisWeek} style={{ ...btnSm, color: C.cyan }}>Cette semaine</button>
+        {/* Navigation semaine — masquée en vue Calendrier (PlanningCalendrier a sa propre nav) */}
+        {vue !== "calendrier" && (<>
+          <button onClick={prevWeek} style={btnSm}>← Préc.</button>
+          <span style={{ fontSize: 12, fontWeight: 600, color: C.text, minWidth: 220, textAlign: "center" }}>
+            {semLabel}
+          </span>
+          <button onClick={nextWeek} style={btnSm}>Suiv. →</button>
+          <button onClick={thisWeek} style={{ ...btnSm, color: C.cyan }}>Cette semaine</button>
 
-        <div style={{ flex: 1 }} />
+          <div style={{ flex: 1 }} />
 
-        {semValidee && <Bdg t="✓ Semaine validée" c={C.green} />}
+          {semValidee && <Bdg t="✓ Semaine validée" c={C.green} />}
 
-        <button onClick={repartitionAuto} style={{ ...btnSm, color: C.yellow }}>
-          ⚡ Répartition auto
-        </button>
+          <button onClick={repartitionAuto} style={{ ...btnSm, color: C.yellow }}>
+            ⚡ Répartition auto
+          </button>
 
-        <button
-          onClick={openPlanModal}
-          style={{ ...btnSm, background: C.blue + "22", color: C.blue, border: `1px solid ${C.blue}44` }}
-        >
-          + Planifier
-        </button>
+          <button
+            onClick={openPlanModal}
+            style={{ ...btnSm, background: C.blue + "22", color: C.blue, border: `1px solid ${C.blue}44` }}
+          >
+            + Planifier
+          </button>
 
-        <button
-          onClick={validerSemaine}
-          style={{ ...btnSm, color: semValidee ? C.orange : C.green }}
-        >
-          {semValidee ? "Dé-valider" : "✓ Valider semaine"}
-        </button>
+          <button
+            onClick={validerSemaine}
+            style={{ ...btnSm, color: semValidee ? C.orange : C.green }}
+          >
+            {semValidee ? "Dé-valider" : "✓ Valider semaine"}
+          </button>
+        </>)}
 
-        {/* Dropdown Imprimer */}
-        <div style={{ position: "relative" }}>
+        {/* Dropdown Imprimer — masqué en vue Calendrier */}
+        {vue !== "calendrier" && <div style={{ position: "relative" }}>
           <button onClick={() => setShowPrintMenu(p => !p)} style={btnSm}>
             Imprimer ▾
           </button>
@@ -529,8 +656,13 @@ export default function PlanningFabrication({
               ))}
             </div>
           )}
-        </div>
+        </div>}
       </div>
+
+      {/* ── VUE CALENDRIER ─────────────────────────────────────────────────────── */}
+      {vue === "calendrier" && (
+        <PlanningCalendrier commandes={commandes} />
+      )}
 
       {/* ── VUE PAR POSTE ──────────────────────────────────────────────────────── */}
       {vue === "poste" && (
@@ -656,26 +788,32 @@ export default function PlanningFabrication({
                         )}
                       </td>
                       {POSTES_VUE_COMMANDE.map(p => {
-                        const val = cmdDates[cid]?.[p.id] ?? "";
+                        const manual = cmdDates[cid]?.[p.id] ?? "";
+                        const auto   = autoCmdDates[cid]?.[p.id] ?? "";
+                        const val    = manual || auto;
+                        const isAuto = !manual && !!auto;
                         return (
                           <td key={p.id} style={{
                             border: `1px solid ${C.border}`, padding: "4px 6px",
                             verticalAlign: "middle",
+                            background: isAuto ? C.s1 + "88" : "transparent",
                           }}>
                             <input
                               type="date"
                               value={val}
                               onChange={e => setCmdDate(cid, p.id, e.target.value)}
                               style={{
-                                background: val ? C.s2 : "transparent",
-                                border: `1px solid ${val ? C.bLight : C.border}`,
-                                borderRadius: 3, color: val ? C.text : C.muted,
+                                background: manual ? C.s2 : "transparent",
+                                border: `1px solid ${manual ? C.bLight : C.border}`,
+                                borderRadius: 3,
+                                color: manual ? C.text : isAuto ? C.sec : C.muted,
                                 fontSize: 10, padding: "2px 4px", width: "100%",
                               }}
                             />
                             {val && (
-                              <div style={{ fontSize: 9, color: C.sec, marginTop: 2 }}>
-                                {new Date(val).toLocaleDateString("fr-FR", {
+                              <div style={{ fontSize: 9, color: isAuto ? C.muted : C.sec, marginTop: 2 }}>
+                                {isAuto ? "auto · " : ""}
+                                {new Date(val + "T12:00:00").toLocaleDateString("fr-FR", {
                                   weekday: "short", day: "2-digit", month: "short",
                                 })}
                               </div>
@@ -693,7 +831,7 @@ export default function PlanningFabrication({
       )}
 
       {/* ── Résumé quantités hebdomadaires ────────────────────────────────────── */}
-      <div style={{
+      {vue !== "calendrier" && <div style={{
         marginTop: 16, padding: "12px 16px",
         background: C.s1, border: `1px solid ${C.border}`, borderRadius: 7,
       }}>
@@ -705,7 +843,7 @@ export default function PlanningFabrication({
           <ResumeStat label="Dormants à monter" value={resume.dormants} c={C.purple} />
           <ResumeStat label="Vitrages" value={resume.vitrages} c={C.green} />
         </div>
-      </div>
+      </div>}
 
       {/* ── Modal Planifier ────────────────────────────────────────────────────── */}
       {showPlanModal && (
