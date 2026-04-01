@@ -524,16 +524,12 @@ export default function PlanningFabrication({
               }}
               title="Double-clic pour éditer"
             >
-              <div style={{ color: C.blue, fontWeight: 700 }}>#{cmd.id}</div>
-              <div style={{ color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 115 }}>
+              <div style={{ color: C.text, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 115 }}>
                 {cmd.client ?? "—"}
               </div>
-              <div style={{ color: C.sec, fontSize: 9 }}>
-                {cmd.quantite} × {tm?.label ?? cmd.type}
-              </div>
-              {cell.operateur && (
-                <div style={{ fontSize: 9, color: C.green }}>
-                  {opLabel(cell.operateur)}
+              {(cmd as any).ref_chantier && (
+                <div style={{ color: C.sec, fontSize: 9, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 115 }}>
+                  {(cmd as any).ref_chantier}
                 </div>
               )}
               <button
