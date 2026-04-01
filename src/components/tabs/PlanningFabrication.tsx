@@ -439,12 +439,6 @@ export default function PlanningFabrication({
     [commandes]
   );
 
-  // ─── Opérateur label
-  const opLabel = (id?: string) => {
-    if (!id) return "";
-    return EQUIPE.find(e => e.id === id)?.nom ?? id;
-  };
-
   // ─── Imprimer
   const doPrint = (_mode: "poste" | "personne" | "complet") => {
     setShowPrintMenu(false);
@@ -506,7 +500,6 @@ export default function PlanningFabrication({
         {cells.map((cell, i) => {
           const cmd = cmdById(cell.commandeId);
           if (!cmd) return null;
-          const tm = TYPES_MENUISERIE[cmd.type];
           return (
             <div
               key={i}
