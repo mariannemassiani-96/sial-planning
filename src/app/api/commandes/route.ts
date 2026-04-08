@@ -45,6 +45,18 @@ function mapToDb(data: any) {
     montant_ht:              data.montant_ht != null ? parseFloat(data.montant_ht) || null : null,
     avancement:              parseInt(data.avancement)    || 0,
     statut:                  data.statut                  || "en_attente",
+    acompte_recu:              data.acompte_recu              ?? false,
+    acompte_montant:           data.acompte_montant != null ? parseFloat(data.acompte_montant) || null : null,
+    acompte_date:              data.acompte_date              || null,
+    reliquat_alu:              data.reliquat_alu              ?? false,
+    reliquat_alu_desc:         data.reliquat_alu_desc         || null,
+    reliquat_alu_date:         data.reliquat_alu_date         || null,
+    reliquat_pvc:              data.reliquat_pvc              ?? false,
+    reliquat_pvc_desc:         data.reliquat_pvc_desc         || null,
+    reliquat_pvc_date:         data.reliquat_pvc_date         || null,
+    reliquat_accessoires:      data.reliquat_accessoires      ?? false,
+    reliquat_accessoires_desc: data.reliquat_accessoires_desc || null,
+    reliquat_accessoires_date: data.reliquat_accessoires_date || null,
   };
 }
 

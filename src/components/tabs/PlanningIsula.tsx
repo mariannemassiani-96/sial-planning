@@ -4,6 +4,78 @@ import { calcCheminCritique, C, isWorkday, JOURS_FERIES, fmtDate, CommandeCC, TY
 import { H, Card, Bdg } from "@/components/ui";
 import { openPrintWindow, fmtDatePrint } from "@/lib/print-utils";
 
+// ── Warm Edge helpers ─────────────────────────────────────────────────────────
+function calcWeDim(dimMm: number): number {
+  if (dimMm <= 1800) return dimMm - 30;
+  if (dimMm <= 2000) return dimMm - 31;
+  return dimMm - 32;
+}
+function calcPerimetre(lWe: number, hWe: number): number {
+  return (lWe * 2) + (hWe * 2);
+}
+
+type WeLigne = {
+  id: string;
+  commandeId: string;
+  num_commande: string;
+  client: string;
+  ref_chantier: string;
+  composition: string;
+  quantite: number;
+  position: string;
+  largeur_mm: number | null;
+  hauteur_mm: number | null;
+  epaisseur_intercalaire: string;
+  coloris_intercalaire: string;
+  largeur_we: number | null;
+  hauteur_we: number | null;
+  perimetre_we: number | null;
+  date_fabrication: string;
+};
+
+type WeSaisieRow = {
+  key: string;
+  largeur: string;
+  hauteur: string;
+  epaisseur: string;
+  coloris: string;
+  quantite: string;
+  composition: string;
+  position: string;
+};
+
+function emptyWeSaisieRow(): WeSaisieRow {
+  return { key: Math.random().toString(36).slice(2), largeur: "", hauteur: "", epaisseur: "16mm", coloris: "argent", quantite: "1", composition: "", position: "" };
+}
+
+function parseWecsv(text: string): WeSaisieRow[] {
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const sep = lines[0].includes(";") ? ";" : ",";
+  const headers = lines[0].split(sep).map(h => h.toLowerCase().trim().replace(/['"]/g, ""));
+  const idx = (keys: string[]) => keys.reduce((acc, k) => acc >= 0 ? acc : headers.indexOf(k), -1);
+  const iL = idx(["largeur", "largeur_mm", "l (mm)", "l(mm)", "width"]);
+  const iH = idx(["hauteur", "hauteur_mm", "h (mm)", "h(mm)", "height"]);
+  const iE = idx(["epaisseur", "epaisseur_intercalaire", "ep", "thickness"]);
+  const iC = idx(["coloris", "couleur", "coloris_intercalaire", "color", "couleur_intercalaire"]);
+  const iQ = idx(["quantite", "qte", "qty", "quantity"]);
+  const iP = idx(["position", "pos"]);
+  const iCo = idx(["composition", "compo"]);
+  return lines.slice(1).map(line => {
+    const cols = line.split(sep).map(c => c.replace(/['"]/g, "").trim());
+    return {
+      key: Math.random().toString(36).slice(2),
+      largeur:     iL >= 0 ? cols[iL] || "" : "",
+      hauteur:     iH >= 0 ? cols[iH] || "" : "",
+      epaisseur:   iE >= 0 ? cols[iE] || "16mm" : "16mm",
+      coloris:     iC >= 0 ? cols[iC] || "argent" : "argent",
+      quantite:    iQ >= 0 ? cols[iQ] || "1" : "1",
+      position:    iP >= 0 ? cols[iP] || "" : "",
+      composition: iCo >= 0 ? cols[iCo] || "" : "",
+    };
+  }).filter(r => r.largeur || r.hauteur);
+}
+
 // ── Postes ISULA ──────────────────────────────────────────────────────────────
 const ISULA_POSTES = [
   { id:"debit",      label:"Débit verre",          c:"#4DB6AC", defaultOps:["bruno"] },
@@ -69,6 +141,17 @@ export default function PlanningIsula({ commandes }: { commandes: CommandeCC[] }
   const [saved,    setSaved]    = useState(false);
   const [dragOver, setDragOver] = useState<{day:string;poste:string}|null>(null);
   const dragRef = useRef<DragInfo|null>(null);
+
+  // ── Warm Edge state ──────────────────────────────────────────────────────────
+  const [weTab,      setWeTab]      = useState<"saisie"|"of_cmd"|"of_semaine">("saisie");
+  const [weLignes,   setWeLignes]   = useState<WeSaisieRow[]>([emptyWeSaisieRow()]);
+  const [weClient,   setWeClient]   = useState("");
+  const [weNumCmd,   setWeNumCmd]   = useState("");
+  const [weChantier, setWeChantier] = useState("");
+  const [weDateFab,  setWeDateFab]  = useState(today);
+  const [weShowCsv,  setWeShowCsv]  = useState(false);
+  const [weCsvText,  setWeCsvText]  = useState("");
+  const [weCsvErr,   setWeCsvErr]   = useState("");
 
   const weekDays = useMemo(() => Array.from({length:5},(_,i)=>addDays(anchor,i)), [anchor]);
   const semaine  = useMemo(() => semaineId(anchor), [anchor]);
@@ -185,6 +268,160 @@ export default function PlanningIsula({ commandes }: { commandes: CommandeCC[] }
   };
 
   const JOURS_FR = ["Lun","Mar","Mer","Jeu","Ven"];
+
+  // ── Warm Edge helpers ────────────────────────────────────────────────────────
+  const weComputed = useMemo<(WeSaisieRow & { lWe: number|null; hWe: number|null; perim: number|null })[]>(() =>
+    weLignes.map(r => {
+      const l = parseFloat(r.largeur);
+      const h = parseFloat(r.hauteur);
+      const lWe = isNaN(l) || l <= 0 ? null : calcWeDim(l);
+      const hWe = isNaN(h) || h <= 0 ? null : calcWeDim(h);
+      const perim = lWe != null && hWe != null ? calcPerimetre(lWe, hWe) : null;
+      return { ...r, lWe, hWe, perim };
+    }), [weLignes]);
+
+  // Summary grouped by coloris + epaisseur from saisie
+  const weSummary = useMemo(() => {
+    const map = new Map<string, { coloris: string; epaisseur: string; nbPieces: number; totalMl: number }>();
+    weComputed.forEach(r => {
+      if (r.perim == null) return;
+      const key = `${r.coloris}||${r.epaisseur}`;
+      const qte = parseInt(r.quantite) || 1;
+      const ml = (r.perim * qte) / 1000;
+      if (map.has(key)) {
+        const ex = map.get(key)!;
+        map.set(key, { ...ex, nbPieces: ex.nbPieces + qte, totalMl: ex.totalMl + ml });
+      } else {
+        map.set(key, { coloris: r.coloris, epaisseur: r.epaisseur, nbPieces: qte, totalMl: ml });
+      }
+    });
+    return Array.from(map.values());
+  }, [weComputed]);
+
+  // Populate saisie from SIAL commandes vitrages with WE data
+  const weCommandesVitrages = useMemo(() => {
+    return commandes.flatMap(c => {
+      const cmd = c as any;
+      const vitrages: any[] = cmd.vitrages || [];
+      return vitrages
+        .filter(v => v.largeur && v.hauteur && v.fournisseur === "isula")
+        .map(v => ({
+          commandeId: String(c.id),
+          num_commande: cmd.num_commande || "",
+          client: c.client || "",
+          ref_chantier: cmd.ref_chantier || "",
+          composition: v.composition || "",
+          quantite: parseInt(v.quantite) || 1,
+          position: v.position || "",
+          largeur_mm: parseFloat(v.largeur) || null,
+          hauteur_mm: parseFloat(v.hauteur) || null,
+          epaisseur_intercalaire: v.epaisseur_intercalaire || "",
+          coloris_intercalaire: v.couleur_intercalaire || v.coloris_intercalaire || "",
+        }));
+    });
+  }, [commandes]);
+
+  // Print OF
+  const handlePrintOF = (lignesOf: WeLigne[], titre: string) => {
+    if (lignesOf.length === 0) { alert("Aucune ligne à imprimer."); return; }
+
+    const detailRows = lignesOf.map(l => {
+      const perimM = l.perimetre_we != null ? (l.perimetre_we / 1000).toFixed(3) : "—";
+      const totalM = l.perimetre_we != null ? ((l.perimetre_we * l.quantite) / 1000).toFixed(3) : "—";
+      return `<tr>
+        <td class="mono center">${l.num_commande || "—"}</td>
+        <td><b>${l.client || "—"}</b>${l.ref_chantier ? `<br/><span style="font-size:9px;color:#555">${l.ref_chantier}</span>` : ""}</td>
+        <td class="center">${l.position || "—"}</td>
+        <td class="center">${l.composition || "—"}</td>
+        <td class="mono center">${l.largeur_we != null ? l.largeur_we : "—"}</td>
+        <td class="mono center">${l.hauteur_we != null ? l.hauteur_we : "—"}</td>
+        <td class="center">${l.epaisseur_intercalaire || "—"}</td>
+        <td class="center">${l.coloris_intercalaire || "—"}</td>
+        <td class="mono center">${l.quantite}</td>
+        <td class="mono center">${perimM} m</td>
+        <td class="mono center" style="font-weight:700">${totalM} m</td>
+      </tr>`;
+    }).join("");
+
+    // Groupement par coloris + épaisseur
+    const groupMap = new Map<string, { coloris: string; epaisseur: string; nbPieces: number; totalMl: number }>();
+    lignesOf.forEach(l => {
+      const key = `${l.coloris_intercalaire}||${l.epaisseur_intercalaire}`;
+      const ml = l.perimetre_we != null ? (l.perimetre_we * l.quantite) / 1000 : 0;
+      if (groupMap.has(key)) {
+        const ex = groupMap.get(key)!;
+        groupMap.set(key, { ...ex, nbPieces: ex.nbPieces + l.quantite, totalMl: ex.totalMl + ml });
+      } else {
+        groupMap.set(key, { coloris: l.coloris_intercalaire || "—", epaisseur: l.epaisseur_intercalaire || "—", nbPieces: l.quantite, totalMl: ml });
+      }
+    });
+    const totalGlobalMl = Array.from(groupMap.values()).reduce((s, g) => s + g.totalMl, 0);
+    const recapRows = Array.from(groupMap.values()).map(g => `<tr>
+      <td style="font-weight:700">${g.coloris}</td>
+      <td class="center">${g.epaisseur}</td>
+      <td class="mono center" style="font-weight:700">${g.nbPieces}</td>
+      <td class="mono center" style="font-weight:700;color:#166116">${g.totalMl.toFixed(3)} m</td>
+    </tr>`).join("");
+
+    const html = `
+      <div class="header">
+        <div class="header-left">
+          <h1>SIAL &nbsp;|&nbsp; <span>ISULA Vitrage</span></h1>
+          <div class="subtitle">OF Coupe Intercalaires Warm Edge — ${titre}</div>
+        </div>
+        <div class="header-right">
+          <div>Date fabrication : <b>${fmtDatePrint(lignesOf[0]?.date_fabrication || "")}</b></div>
+          <div>${lignesOf.length} ligne(s) · ${lignesOf.reduce((s,l)=>s+l.quantite,0)} pièce(s)</div>
+          <div>Total : <b>${totalGlobalMl.toFixed(3)} ml</b></div>
+        </div>
+      </div>
+      <h2>Détail par vitrage</h2>
+      <table>
+        <thead><tr>
+          <th>N° Cmd</th><th>Client / Chantier</th><th>Pos.</th><th>Composition</th>
+          <th>L WE (mm)</th><th>H WE (mm)</th><th>Épais.</th><th>Coloris</th>
+          <th>Qté</th><th>Périm.</th><th>Total</th>
+        </tr></thead>
+        <tbody>${detailRows}</tbody>
+      </table>
+      <h2>Récapitulatif par coloris & épaisseur</h2>
+      <table>
+        <thead><tr><th>Coloris</th><th>Épaisseur</th><th>Nb pièces</th><th>Longueur totale (ml)</th></tr></thead>
+        <tbody>${recapRows}
+          <tr style="border-top:2px solid #000;background:#e8e8e8">
+            <td colspan="2" style="font-weight:700">TOTAL</td>
+            <td class="mono center" style="font-weight:700">${Array.from(groupMap.values()).reduce((s,g)=>s+g.nbPieces,0)}</td>
+            <td class="mono center" style="font-weight:800;font-size:12px">${totalGlobalMl.toFixed(3)} m</td>
+          </tr>
+        </tbody>
+      </table>`;
+    openPrintWindow(`OF WE — ${titre}`, html);
+  };
+
+  // Print OF from saisie directe
+  const handlePrintOfSaisie = () => {
+    const dedupLignes: WeLigne[] = weComputed
+      .filter(r => r.lWe != null && r.hWe != null)
+      .map(r => ({
+        id: r.key,
+        commandeId: "",
+        num_commande: weNumCmd,
+        client: weClient,
+        ref_chantier: weChantier,
+        composition: r.composition,
+        quantite: parseInt(r.quantite) || 1,
+        position: r.position,
+        largeur_mm: parseFloat(r.largeur) || null,
+        hauteur_mm: parseFloat(r.hauteur) || null,
+        epaisseur_intercalaire: r.epaisseur,
+        coloris_intercalaire: r.coloris,
+        largeur_we: r.lWe,
+        hauteur_we: r.hWe,
+        perimetre_we: r.perim,
+        date_fabrication: weDateFab,
+      }));
+    handlePrintOF(dedupLignes, `${weClient || "saisie directe"} — ${fmtDatePrint(weDateFab)}`);
+  };
 
   if (loading) return <div style={{textAlign:"center",padding:60,color:C.sec}}>Chargement…</div>;
 
@@ -402,6 +639,285 @@ export default function PlanningIsula({ commandes }: { commandes: CommandeCC[] }
           })}
         </div>
       </Card>
+
+      {/* ── Module Intercalaires Warm Edge ──────────────────────────────────── */}
+      <div style={{marginTop:24}}>
+        <H c={C.purple}>Intercalaires Warm Edge — Calcul &amp; OF</H>
+
+        {/* Onglets */}
+        <div style={{display:"flex",gap:6,marginBottom:14}}>
+          {([["saisie","Saisie / Calcul"],[`of_cmd`,"OF par commande"],["of_semaine","OF semaine"]] as const).map(([id,lbl])=>(
+            <button key={id} onClick={()=>setWeTab(id as any)}
+              style={{padding:"5px 14px",borderRadius:4,border:`1px solid ${weTab===id?C.purple:C.border}`,background:weTab===id?C.purple+"33":"none",color:weTab===id?C.purple:C.sec,fontSize:11,fontWeight:700,cursor:"pointer"}}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Tab Saisie ── */}
+        {weTab === "saisie" && (
+          <Card>
+            <div style={{fontSize:10,color:C.sec,fontWeight:700,marginBottom:10}}>SAISIE DES VITRAGES</div>
+
+            {/* Entête commande */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:10}}>
+              <div><label style={{fontSize:9,color:C.orange,display:"block",marginBottom:2}}>N° COMMANDE</label><input style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:4,padding:"5px 8px",color:C.text,fontSize:11,width:"100%",outline:"none"}} value={weNumCmd} onChange={e=>setWeNumCmd(e.target.value)} placeholder="ex: O_2026-047" /></div>
+              <div><label style={{fontSize:9,color:C.sec,display:"block",marginBottom:2}}>CLIENT</label><input style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:4,padding:"5px 8px",color:C.text,fontSize:11,width:"100%",outline:"none"}} value={weClient} onChange={e=>setWeClient(e.target.value)} placeholder="Nom client" /></div>
+              <div><label style={{fontSize:9,color:C.teal,display:"block",marginBottom:2}}>CHANTIER</label><input style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:4,padding:"5px 8px",color:C.text,fontSize:11,width:"100%",outline:"none"}} value={weChantier} onChange={e=>setWeChantier(e.target.value)} placeholder="Réf. chantier" /></div>
+              <div><label style={{fontSize:9,color:C.blue,display:"block",marginBottom:2}}>DATE FABRICATION</label><input type="date" style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:4,padding:"5px 8px",color:C.text,fontSize:11,width:"100%",outline:"none"}} value={weDateFab} onChange={e=>setWeDateFab(e.target.value)} /></div>
+            </div>
+
+            {/* Import CSV */}
+            <div style={{marginBottom:10}}>
+              <button onClick={()=>{setWeShowCsv(p=>!p);setWeCsvErr("");}}
+                style={{padding:"4px 12px",background:weShowCsv?C.cyan+"33":"none",border:`1px solid ${weShowCsv?C.cyan:C.border}`,borderRadius:4,color:weShowCsv?C.cyan:C.sec,fontSize:10,fontWeight:700,cursor:"pointer",marginBottom:weShowCsv?8:0}}>
+                📥 Import CSV / Excel exporté Pro F2
+              </button>
+              {weShowCsv && (
+                <div style={{padding:10,background:C.s2,borderRadius:5,border:`1px solid ${C.cyan}33`}}>
+                  <div style={{fontSize:10,color:C.sec,marginBottom:6}}>Colonnes attendues : largeur, hauteur, epaisseur, coloris, quantite, position, composition (séparateur ; ou ,)</div>
+                  <textarea value={weCsvText} onChange={e=>{setWeCsvText(e.target.value);setWeCsvErr("");}}
+                    placeholder="Collez le contenu CSV ici…"
+                    style={{width:"100%",boxSizing:"border-box",minHeight:80,padding:"6px 8px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:4,color:C.text,fontSize:11,resize:"vertical",outline:"none"}}/>
+                  <div style={{display:"flex",gap:8,marginTop:6,alignItems:"center"}}>
+                    <button onClick={()=>{
+                      const rows=parseWecsv(weCsvText);
+                      if(rows.length===0){setWeCsvErr("Aucune ligne valide trouvée.");return;}
+                      setWeLignes(rows);setWeShowCsv(false);setWeCsvText("");setWeCsvErr("");
+                    }} style={{padding:"4px 14px",background:C.cyan+"33",border:`1px solid ${C.cyan}`,borderRadius:4,color:C.cyan,fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                      Importer
+                    </button>
+                    {weCsvErr && <span style={{fontSize:10,color:C.red}}>{weCsvErr}</span>}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Pré-remplir depuis SIAL commandes */}
+            {weCommandesVitrages.length > 0 && (
+              <div style={{marginBottom:10,padding:"8px 12px",background:C.s1,borderRadius:5,border:`1px solid ${C.border}`}}>
+                <div style={{fontSize:10,color:C.teal,fontWeight:700,marginBottom:6}}>VITRAGES ISULA DEPUIS COMMANDES SIAL</div>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                  {commandes.filter(c=>{
+                    const cmd=c as any;
+                    return (cmd.vitrages||[]).some((v:any)=>v.largeur&&v.hauteur&&v.fournisseur==="isula");
+                  }).slice(0,20).map(c=>{
+                    const cmd=c as any;
+                    const nbVit=(cmd.vitrages||[]).filter((v:any)=>v.largeur&&v.hauteur&&v.fournisseur==="isula").length;
+                    return (
+                      <button key={String(c.id)} onClick={()=>{
+                        const rows=(cmd.vitrages||[]).filter((v:any)=>v.largeur&&v.hauteur&&v.fournisseur==="isula").map((v:any)=>({
+                          key:Math.random().toString(36).slice(2),
+                          largeur:v.largeur||"",hauteur:v.hauteur||"",
+                          epaisseur:v.epaisseur_intercalaire||"16mm",
+                          coloris:v.couleur_intercalaire||v.coloris_intercalaire||"argent",
+                          quantite:String(v.quantite||"1"),
+                          composition:v.composition||"",position:v.position||"",
+                        }));
+                        setWeLignes(rows.length>0?rows:[emptyWeSaisieRow()]);
+                        setWeNumCmd(cmd.num_commande||"");
+                        setWeClient(c.client||"");
+                        setWeChantier(cmd.ref_chantier||"");
+                      }} style={{padding:"3px 10px",background:C.teal+"18",border:`1px solid ${C.teal}44`,borderRadius:4,fontSize:9,color:C.teal,cursor:"pointer"}}>
+                        {cmd.num_commande||c.client} ({nbVit} vit.)
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Tableau saisie */}
+            <div style={{overflowX:"auto",marginBottom:10}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                <thead>
+                  <tr style={{background:C.s2}}>
+                    {["Pos.","Composition","L vitrage (mm)","H vitrage (mm)","L WE (mm)","H WE (mm)","Épais.","Coloris","Qté","Périm. (mm)","Total ml",""].map(h=>(
+                      <th key={h} style={{padding:"4px 6px",border:`1px solid ${C.border}`,fontSize:9,color:C.sec,textAlign:"center",whiteSpace:"nowrap"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {weComputed.map((r,i)=>(
+                    <tr key={r.key} style={{borderBottom:`1px solid ${C.border}22`}}>
+                      <td style={{padding:"3px 4px",border:`1px solid ${C.border}`}}>
+                        <input style={{width:40,background:C.bg,border:"none",color:C.orange,fontSize:10,padding:"2px 3px",outline:"none"}} value={r.position} onChange={e=>setWeLignes(p=>{const n=[...p];n[i]={...n[i],position:e.target.value};return n;})} placeholder="A1"/>
+                      </td>
+                      <td style={{padding:"3px 4px",border:`1px solid ${C.border}`}}>
+                        <input style={{width:80,background:C.bg,border:"none",color:C.text,fontSize:10,padding:"2px 3px",outline:"none"}} value={r.composition} onChange={e=>setWeLignes(p=>{const n=[...p];n[i]={...n[i],composition:e.target.value};return n;})} placeholder="4/16/4"/>
+                      </td>
+                      <td style={{padding:"3px 4px",border:`1px solid ${C.border}`}}>
+                        <input type="number" style={{width:65,background:C.bg,border:"none",color:C.purple,fontWeight:700,fontSize:11,padding:"2px 3px",outline:"none",textAlign:"right"}} value={r.largeur} onChange={e=>setWeLignes(p=>{const n=[...p];n[i]={...n[i],largeur:e.target.value};return n;})} placeholder="1200"/>
+                      </td>
+                      <td style={{padding:"3px 4px",border:`1px solid ${C.border}`}}>
+                        <input type="number" style={{width:65,background:C.bg,border:"none",color:C.purple,fontWeight:700,fontSize:11,padding:"2px 3px",outline:"none",textAlign:"right"}} value={r.hauteur} onChange={e=>setWeLignes(p=>{const n=[...p];n[i]={...n[i],hauteur:e.target.value};return n;})} placeholder="1400"/>
+                      </td>
+                      <td style={{padding:"3px 6px",border:`1px solid ${C.border}`,textAlign:"right",color:C.teal,fontWeight:700,background:C.teal+"0A",fontFamily:"monospace"}}>{r.lWe ?? "—"}</td>
+                      <td style={{padding:"3px 6px",border:`1px solid ${C.border}`,textAlign:"right",color:C.teal,fontWeight:700,background:C.teal+"0A",fontFamily:"monospace"}}>{r.hWe ?? "—"}</td>
+                      <td style={{padding:"3px 4px",border:`1px solid ${C.border}`}}>
+                        <input list={`ep-list-${i}`} style={{width:55,background:C.bg,border:"none",color:C.cyan,fontSize:10,padding:"2px 3px",outline:"none"}} value={r.epaisseur} onChange={e=>setWeLignes(p=>{const n=[...p];n[i]={...n[i],epaisseur:e.target.value};return n;})}/>
+                        <datalist id={`ep-list-${i}`}><option value="12mm"/><option value="14mm"/><option value="16mm"/><option value="18mm"/><option value="20mm"/></datalist>
+                      </td>
+                      <td style={{padding:"3px 4px",border:`1px solid ${C.border}`}}>
+                        <input list={`col-list-${i}`} style={{width:65,background:C.bg,border:"none",color:C.sec,fontSize:10,padding:"2px 3px",outline:"none"}} value={r.coloris} onChange={e=>setWeLignes(p=>{const n=[...p];n[i]={...n[i],coloris:e.target.value};return n;})}/>
+                        <datalist id={`col-list-${i}`}><option value="argent"/><option value="noir"/><option value="bronze"/><option value="blanc"/><option value="gris"/></datalist>
+                      </td>
+                      <td style={{padding:"3px 4px",border:`1px solid ${C.border}`}}>
+                        <input type="number" min={1} style={{width:40,background:C.bg,border:"none",color:C.blue,fontWeight:700,fontSize:11,padding:"2px 3px",outline:"none",textAlign:"center"}} value={r.quantite} onChange={e=>setWeLignes(p=>{const n=[...p];n[i]={...n[i],quantite:e.target.value};return n;})}/>
+                      </td>
+                      <td style={{padding:"3px 6px",border:`1px solid ${C.border}`,textAlign:"right",color:r.perim!=null?C.green:C.muted,fontFamily:"monospace"}}>{r.perim != null ? r.perim : "—"}</td>
+                      <td style={{padding:"3px 6px",border:`1px solid ${C.border}`,textAlign:"right",color:r.perim!=null?C.green:C.muted,fontWeight:700,fontFamily:"monospace"}}>
+                        {r.perim != null ? ((r.perim*(parseInt(r.quantite)||1))/1000).toFixed(3) : "—"}
+                      </td>
+                      <td style={{padding:"3px 4px",border:`1px solid ${C.border}`,textAlign:"center"}}>
+                        <button onClick={()=>setWeLignes(p=>p.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:C.sec,cursor:"pointer",fontSize:13,padding:0}}>✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
+              <button onClick={()=>setWeLignes(p=>[...p,emptyWeSaisieRow()])}
+                style={{padding:"4px 12px",background:C.purple+"22",border:`1px solid ${C.purple}`,borderRadius:4,color:C.purple,fontSize:10,fontWeight:700,cursor:"pointer"}}>
+                + Ajouter ligne
+              </button>
+              <button onClick={()=>setWeLignes([emptyWeSaisieRow()])}
+                style={{padding:"4px 10px",background:"none",border:`1px solid ${C.border}`,borderRadius:4,color:C.sec,fontSize:10,cursor:"pointer"}}>
+                Tout effacer
+              </button>
+            </div>
+
+            {/* Récapitulatif saisie */}
+            {weSummary.length > 0 && (
+              <div style={{marginBottom:10,padding:"8px 12px",background:C.s1,borderRadius:5,border:`1px solid ${C.purple}33`}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.purple,marginBottom:8}}>RÉCAPITULATIF PAR COLORIS & ÉPAISSEUR</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                  <thead>
+                    <tr style={{background:C.s2}}>
+                      {["Coloris","Épaisseur","Nb pièces","Total (ml)"].map(h=><th key={h} style={{padding:"4px 8px",border:`1px solid ${C.border}`,fontSize:9,color:C.sec,textAlign:"center"}}>{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {weSummary.map((g,i)=>(
+                      <tr key={i}>
+                        <td style={{padding:"3px 8px",border:`1px solid ${C.border}`,fontWeight:700,color:C.text}}>{g.coloris||"—"}</td>
+                        <td style={{padding:"3px 8px",border:`1px solid ${C.border}`,textAlign:"center",color:C.cyan}}>{g.epaisseur||"—"}</td>
+                        <td style={{padding:"3px 8px",border:`1px solid ${C.border}`,textAlign:"center",fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{g.nbPieces}</td>
+                        <td style={{padding:"3px 8px",border:`1px solid ${C.border}`,textAlign:"right",fontWeight:700,color:C.green,fontFamily:"monospace"}}>{g.totalMl.toFixed(3)} m</td>
+                      </tr>
+                    ))}
+                    <tr style={{background:C.s2,borderTop:`2px solid ${C.border}`}}>
+                      <td colSpan={2} style={{padding:"4px 8px",fontWeight:700,color:C.text,border:`1px solid ${C.border}`}}>TOTAL</td>
+                      <td style={{padding:"4px 8px",textAlign:"center",fontWeight:700,color:C.blue,fontFamily:"monospace",border:`1px solid ${C.border}`}}>{weSummary.reduce((s,g)=>s+g.nbPieces,0)}</td>
+                      <td style={{padding:"4px 8px",textAlign:"right",fontWeight:800,color:C.green,fontFamily:"monospace",border:`1px solid ${C.border}`}}>{weSummary.reduce((s,g)=>s+g.totalMl,0).toFixed(3)} m</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={handlePrintOfSaisie}
+                style={{padding:"6px 18px",background:"#000",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontSize:11,fontWeight:700}}>
+                🖨️ Imprimer OF
+              </button>
+            </div>
+          </Card>
+        )}
+
+        {/* ── Tab OF par commande ── */}
+        {weTab === "of_cmd" && (
+          <Card>
+            <div style={{fontSize:10,color:C.sec,fontWeight:700,marginBottom:10}}>GÉNÉRER L&apos;OF PAR COMMANDE</div>
+            <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:10}}>
+              {commandes.filter(c=>{
+                const cmd=c as any;
+                return (cmd.vitrages||[]).some((v:any)=>v.largeur&&v.hauteur&&v.fournisseur==="isula");
+              }).map(c=>{
+                const cmd=c as any;
+                const nbVit=(cmd.vitrages||[]).filter((v:any)=>v.largeur&&v.hauteur&&v.fournisseur==="isula").length;
+                return (
+                  <button key={String(c.id)} onClick={()=>{
+                    // Compute WE from vitrages JSON
+                    const lv: WeLigne[]=(cmd.vitrages||[]).filter((v:any)=>v.largeur&&v.hauteur&&v.fournisseur==="isula").map((v:any,idx:number)=>{
+                      const lMm=parseFloat(v.largeur)||0;
+                      const hMm=parseFloat(v.hauteur)||0;
+                      const lWe=lMm>0?calcWeDim(lMm):null;
+                      const hWe=hMm>0?calcWeDim(hMm):null;
+                      const perim=lWe!=null&&hWe!=null?calcPerimetre(lWe,hWe):null;
+                      return {
+                        id:String(idx),commandeId:String(c.id),num_commande:cmd.num_commande||"",
+                        client:c.client||"",ref_chantier:cmd.ref_chantier||"",
+                        composition:v.composition||"",quantite:parseInt(v.quantite)||1,
+                        position:v.position||"",largeur_mm:lMm,hauteur_mm:hMm,
+                        epaisseur_intercalaire:v.epaisseur_intercalaire||"",
+                        coloris_intercalaire:v.couleur_intercalaire||v.coloris_intercalaire||"",
+                        largeur_we:lWe,hauteur_we:hWe,perimetre_we:perim,
+                        date_fabrication:today,
+                      };
+                    });
+                    handlePrintOF(lv,`${cmd.num_commande||c.client} — ${c.client||""}`);
+                  }}
+                  style={{padding:"5px 12px",background:C.teal+"18",border:`1px solid ${C.teal}44`,borderRadius:4,fontSize:10,color:C.teal,cursor:"pointer",fontWeight:700}}>
+                    {cmd.num_commande||"—"} · {c.client} ({nbVit} vit.)
+                  </button>
+                );
+              })}
+            </div>
+            {commandes.filter(c=>{const cmd=c as any;return(cmd.vitrages||[]).some((v:any)=>v.largeur&&v.hauteur&&v.fournisseur==="isula");}).length===0 && (
+              <div style={{fontSize:11,color:C.muted,padding:12,textAlign:"center"}}>Aucune commande avec vitrages ISULA (dimensions renseignées) dans le carnet.</div>
+            )}
+          </Card>
+        )}
+
+        {/* ── Tab OF Semaine ── */}
+        {weTab === "of_semaine" && (
+          <Card>
+            <div style={{fontSize:10,color:C.sec,fontWeight:700,marginBottom:10}}>
+              OF SEMAINE — {getWeekNum(anchor)} · {new Date(anchor+"T00:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})} → {new Date(weekDays[4]+"T00:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"short"})}
+            </div>
+            {(() => {
+              // All commandes with vitrages ISULA + WE data for the week (date_livraison in week)
+              const semanLignes: WeLigne[] = commandes.flatMap(c=>{
+                const cmd=c as any;
+                if(!cmd.date_livraison_souhaitee) return [];
+                const livDate=cmd.date_livraison_souhaitee||"";
+                if(livDate<weekDays[0]||livDate>weekDays[4]) return [];
+                return (cmd.vitrages||[]).filter((v:any)=>v.largeur&&v.hauteur&&v.fournisseur==="isula").map((v:any,idx:number)=>{
+                  const lMm=parseFloat(v.largeur)||0;
+                  const hMm=parseFloat(v.hauteur)||0;
+                  const lWe=lMm>0?calcWeDim(lMm):null;
+                  const hWe=hMm>0?calcWeDim(hMm):null;
+                  const perim=lWe!=null&&hWe!=null?calcPerimetre(lWe,hWe):null;
+                  return {
+                    id:String(c.id)+idx,commandeId:String(c.id),num_commande:cmd.num_commande||"",
+                    client:c.client||"",ref_chantier:cmd.ref_chantier||"",
+                    composition:v.composition||"",quantite:parseInt(v.quantite)||1,
+                    position:v.position||"",largeur_mm:lMm,hauteur_mm:hMm,
+                    epaisseur_intercalaire:v.epaisseur_intercalaire||"",
+                    coloris_intercalaire:v.couleur_intercalaire||v.coloris_intercalaire||"",
+                    largeur_we:lWe,hauteur_we:hWe,perimetre_we:perim,
+                    date_fabrication:weekDays[0],
+                  };
+                });
+              });
+              if(semanLignes.length===0) return <div style={{fontSize:11,color:C.muted,padding:12,textAlign:"center"}}>Aucun vitrage ISULA avec dimensions cette semaine.</div>;
+              return (
+                <div>
+                  <div style={{marginBottom:10,fontSize:11,color:C.sec}}>
+                    {semanLignes.length} ligne(s) · {semanLignes.reduce((s,l)=>s+l.quantite,0)} pièce(s) au total
+                  </div>
+                  <button onClick={()=>handlePrintOF(semanLignes,`Semaine ${getWeekNum(anchor)}`)}
+                    style={{padding:"6px 18px",background:"#000",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontSize:11,fontWeight:700}}>
+                    🖨️ Imprimer OF Semaine {getWeekNum(anchor)}
+                  </button>
+                </div>
+              );
+            })()}
+          </Card>
+        )}
+      </div>
     </div>
   );
 }

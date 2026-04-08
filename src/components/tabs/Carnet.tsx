@@ -404,6 +404,32 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
                     {cmd.cmd_volet_necessaire && <span style={{ color: cmd.cmd_volet_passee ? C.green : C.red }}>{cmd.cmd_volet_passee ? "✓" : "⚠"} Volet{cmd.date_volet_roulant ? " "+fmtDate(cmd.date_volet_roulant) : ""}</span>}
                   </div>
                 )}
+                {/* Acompte & Reliquats */}
+                {(cmd.acompte_recu || cmd.reliquat_alu || cmd.reliquat_pvc || cmd.reliquat_accessoires) && (
+                  <div style={{ fontSize: 9, display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
+                    {cmd.acompte_recu && (
+                      <span style={{ padding: "1px 6px", background: C.yellow+"22", border: `1px solid ${C.yellow}55`, borderRadius: 3, color: C.yellow, fontWeight: 700 }}>
+                        Acompte{cmd.acompte_montant ? ` ${Number(cmd.acompte_montant).toLocaleString("fr-FR")}€` : ""}
+                        {cmd.acompte_date ? ` — ${fmtDate(cmd.acompte_date)}` : ""}
+                      </span>
+                    )}
+                    {cmd.reliquat_alu && (
+                      <span style={{ padding: "1px 6px", background: C.cyan+"18", border: `1px solid ${C.cyan}44`, borderRadius: 3, color: C.cyan }}>
+                        Reliquat ALU{cmd.reliquat_alu_date ? ` ${fmtDate(cmd.reliquat_alu_date)}` : ""}
+                      </span>
+                    )}
+                    {cmd.reliquat_pvc && (
+                      <span style={{ padding: "1px 6px", background: C.blue+"18", border: `1px solid ${C.blue}44`, borderRadius: 3, color: C.blue }}>
+                        Reliquat PVC{cmd.reliquat_pvc_date ? ` ${fmtDate(cmd.reliquat_pvc_date)}` : ""}
+                      </span>
+                    )}
+                    {cmd.reliquat_accessoires && (
+                      <span style={{ padding: "1px 6px", background: C.orange+"18", border: `1px solid ${C.orange}44`, borderRadius: 3, color: C.orange }}>
+                        Reliquat Access.{cmd.reliquat_accessoires_date ? ` ${fmtDate(cmd.reliquat_accessoires_date)}` : ""}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {/* Statut + Type commande */}
                 <div style={{ marginTop: 7, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>

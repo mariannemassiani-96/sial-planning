@@ -6,7 +6,7 @@ import { H, Card } from "@/components/ui";
 const inp = { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, padding: "7px 11px", color: C.text, fontSize: 13, width: "100%", outline: "none" };
 
 const emptyLigne = { type: "ob1_pvc", quantite: 1, coloris: "blanc", hs_nb_profils: "", hs_t_coupe: "", hs_t_montage: "", hs_t_vitrage: "", hs_op_montage: "jp", hs_op_vitrage: "quentin", hs_notes: "" };
-const emptyVitrage = { composition: "", quantite: "1", surface_m2: "", fournisseur: "isula", cmd_passee: false, date_reception: "", position: "", couleur_intercalaire: "", largeur: "", hauteur: "", forme: "", prix_m2: "", prix_total: "", largeur_origine: "", hauteur_origine: "", surface_m2_origine: "" };
+const emptyVitrage = { composition: "", quantite: "1", surface_m2: "", fournisseur: "isula", cmd_passee: false, date_reception: "", position: "", couleur_intercalaire: "", epaisseur_intercalaire: "", largeur: "", hauteur: "", forme: "", prix_m2: "", prix_total: "", largeur_origine: "", hauteur_origine: "", surface_m2_origine: "" };
 const FOURNISSEURS_VITRAGE = [
   { id: "isula",  label: "ISULA VITRAGE" },
   { id: "sigma",  label: "SIGMA" },
@@ -35,6 +35,10 @@ const empty = {
   cmd_panneau_passee: false, cmd_volet_passee: false,
   cmd_alu_necessaire: false, cmd_pvc_necessaire: false, cmd_accessoires_necessaire: false,
   cmd_panneau_necessaire: false, cmd_volet_necessaire: false,
+  acompte_recu: false, acompte_montant: "", acompte_date: "",
+  reliquat_alu: false, reliquat_alu_desc: "", reliquat_alu_date: "",
+  reliquat_pvc: false, reliquat_pvc_desc: "", reliquat_pvc_date: "",
+  reliquat_accessoires: false, reliquat_accessoires_desc: "", reliquat_accessoires_date: "",
   lignes: [{ ...emptyLigne }],
   vitrages: [{ ...emptyVitrage }],
 };
@@ -44,7 +48,7 @@ type FormType = typeof empty;
 function cmdToForm(cmd: any): FormType {
   const lignes = cmd.lignes?.length > 0 ? cmd.lignes : [];
   const vitrages = cmd.vitrages?.length > 0
-    ? cmd.vitrages.map((v: any) => ({ composition: v.composition || "", quantite: String(v.quantite || "1"), surface_m2: v.surface_m2 || "", fournisseur: v.fournisseur || "isula", cmd_passee: v.cmd_passee || false, date_reception: v.date_reception || "", position: v.position || "", couleur_intercalaire: v.couleur_intercalaire || "", largeur: v.largeur || "", hauteur: v.hauteur || "", forme: v.forme || "", prix_m2: v.prix_m2 || "", prix_total: v.prix_total || "", largeur_origine: v.largeur_origine || "", hauteur_origine: v.hauteur_origine || "", surface_m2_origine: v.surface_m2_origine || "" }))
+    ? cmd.vitrages.map((v: any) => ({ composition: v.composition || "", quantite: String(v.quantite || "1"), surface_m2: v.surface_m2 || "", fournisseur: v.fournisseur || "isula", cmd_passee: v.cmd_passee || false, date_reception: v.date_reception || "", position: v.position || "", couleur_intercalaire: v.couleur_intercalaire || "", epaisseur_intercalaire: v.epaisseur_intercalaire || "", largeur: v.largeur || "", hauteur: v.hauteur || "", forme: v.forme || "", prix_m2: v.prix_m2 || "", prix_total: v.prix_total || "", largeur_origine: v.largeur_origine || "", hauteur_origine: v.hauteur_origine || "", surface_m2_origine: v.surface_m2_origine || "" }))
     : [];
   return {
     num_commande: cmd.num_commande || "", client: cmd.client || "", ref_chantier: cmd.ref_chantier || "",
@@ -61,6 +65,10 @@ function cmdToForm(cmd: any): FormType {
     cmd_alu_necessaire: cmd.cmd_alu_necessaire || false, cmd_pvc_necessaire: cmd.cmd_pvc_necessaire || false,
     cmd_accessoires_necessaire: cmd.cmd_accessoires_necessaire || false,
     cmd_panneau_necessaire: cmd.cmd_panneau_necessaire || false, cmd_volet_necessaire: cmd.cmd_volet_necessaire || false,
+    acompte_recu: cmd.acompte_recu || false, acompte_montant: cmd.acompte_montant != null ? String(cmd.acompte_montant) : "", acompte_date: cmd.acompte_date || "",
+    reliquat_alu: cmd.reliquat_alu || false, reliquat_alu_desc: cmd.reliquat_alu_desc || "", reliquat_alu_date: cmd.reliquat_alu_date || "",
+    reliquat_pvc: cmd.reliquat_pvc || false, reliquat_pvc_desc: cmd.reliquat_pvc_desc || "", reliquat_pvc_date: cmd.reliquat_pvc_date || "",
+    reliquat_accessoires: cmd.reliquat_accessoires || false, reliquat_accessoires_desc: cmd.reliquat_accessoires_desc || "", reliquat_accessoires_date: cmd.reliquat_accessoires_date || "",
     lignes, vitrages,
   };
 }
@@ -432,7 +440,7 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
                     </div>
                   )}
                   {/* Ligne principale */}
-                  <div style={{ display: "grid", gridTemplateColumns: "2fr 0.6fr 1fr 1.2fr auto", gap: 8, alignItems: "end" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 0.6fr 1fr 1fr 1.2fr auto", gap: 8, alignItems: "end" }}>
                     <div>
                       <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>COMPOSITION</label>
                       <input list="compo-datalist" style={inp} value={vg.composition} onChange={e => setVitrage(i, "composition", e.target.value)} placeholder="ex: 4/16/4 ou code Pro F2…" />
@@ -452,6 +460,11 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
                         {FOURNISSEURS_VITRAGE.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
                       </select>
                     </div>
+                    <div>
+                      <label style={{ fontSize: 9, color: C.teal, display: "block", marginBottom: 2 }}>ÉPAIS. INTERCAL.</label>
+                      <input list="epaisseur-main-list" style={{ ...inp, color: C.teal, borderColor: C.teal+"44" }} value={v.epaisseur_intercalaire || ""} onChange={e => setVitrage(i, "epaisseur_intercalaire", e.target.value)} placeholder="16mm" />
+                      <datalist id="epaisseur-main-list"><option value="12mm" /><option value="14mm" /><option value="16mm" /><option value="18mm" /><option value="20mm" /></datalist>
+                    </div>
                     <button onClick={() => delVitrage(i)} style={{ padding: "6px 10px", background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 }}>✕</button>
                   </div>
                   {/* Détails Pro F2 */}
@@ -459,6 +472,7 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
                     <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "0.5fr 1.2fr 0.8fr 0.8fr 0.8fr 1fr 1fr", gap: 6 }}>
                       <div><label style={{ fontSize: 8, color: C.orange, display: "block", marginBottom: 2 }}>POS.</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px", color: C.orange }} value={v.position || ""} onChange={e => setVitrage(i, "position", e.target.value)} /></div>
                       <div><label style={{ fontSize: 8, color: C.sec, display: "block", marginBottom: 2 }}>COLORIS INTERCALAIRE</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px" }} value={v.couleur_intercalaire || ""} onChange={e => setVitrage(i, "couleur_intercalaire", e.target.value)} /></div>
+                      <div><label style={{ fontSize: 8, color: C.teal, display: "block", marginBottom: 2 }}>ÉPAISSEUR INTERCALAIRE</label><input list="epaisseur-list" style={{ ...inp, fontSize: 11, padding: "3px 6px", color: C.teal, borderColor: C.teal+"44" }} value={v.epaisseur_intercalaire || ""} onChange={e => setVitrage(i, "epaisseur_intercalaire", e.target.value)} placeholder="ex: 16mm" /><datalist id="epaisseur-list"><option value="12mm" /><option value="14mm" /><option value="16mm" /><option value="18mm" /><option value="20mm" /></datalist></div>
                       <div>
                         <label style={{ fontSize: 8, color: isRevised && v.largeur !== v.largeur_origine ? C.orange : C.purple, display: "block", marginBottom: 2 }}>
                           L (mm){isRevised && v.largeur !== v.largeur_origine ? " ✎" : ""}
@@ -557,6 +571,69 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
           </div>
         </div>
       )}
+
+      {/* ── Acompte & Reliquats ── */}
+      <div style={{ marginTop: 10, padding: 10, background: C.bg, borderRadius: 6, border: `1px solid ${C.border}` }}>
+        <div style={{ fontSize: 10, color: C.yellow, fontWeight: 700, marginBottom: 10 }}>ACOMPTE & RELIQUATS MATIÈRE</div>
+
+        {/* Acompte */}
+        <div style={{ marginBottom: 10, padding: "8px 10px", background: C.s1, borderRadius: 5, border: `1px solid ${(f as any).acompte_recu ? C.yellow + "99" : C.border}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: (f as any).acompte_recu ? 8 : 0 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: (f as any).acompte_recu ? C.yellow : C.muted }}>Acompte client</span>
+            <button type="button" onClick={() => set("acompte_recu" as any, !(f as any).acompte_recu)}
+              style={{ fontSize: 10, padding: "3px 10px", borderRadius: 3, border: `1px solid ${(f as any).acompte_recu ? C.yellow : C.border}`, background: (f as any).acompte_recu ? C.yellow + "22" : "none", color: (f as any).acompte_recu ? C.yellow : C.sec, cursor: "pointer", fontWeight: 700 }}>
+              {(f as any).acompte_recu ? "✓ Acompte reçu" : "Non reçu"}
+            </button>
+          </div>
+          {(f as any).acompte_recu && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div>
+                <label style={{ fontSize: 9, color: C.yellow, display: "block", marginBottom: 2 }}>MONTANT (€)</label>
+                <input type="number" min={0} step={0.01} style={{ ...inp, borderColor: C.yellow + "66", color: C.yellow, fontWeight: 700 }} value={(f as any).acompte_montant} onChange={e => set("acompte_montant" as any, e.target.value)} placeholder="ex: 2500.00" />
+              </div>
+              <div>
+                <label style={{ fontSize: 9, color: C.yellow, display: "block", marginBottom: 2 }}>DATE DE RÉCEPTION</label>
+                <input type="date" style={{ ...inp, borderColor: C.yellow + "66" }} value={(f as any).acompte_date} onChange={e => set("acompte_date" as any, e.target.value)} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Reliquats */}
+        <div style={{ fontSize: 10, color: C.sec, fontWeight: 700, marginBottom: 6 }}>RELIQUATS MATIÈRE</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+          {[
+            { key: "reliquat_alu",         descKey: "reliquat_alu_desc",         dateKey: "reliquat_alu_date",         label: "ALU",         color: C.cyan },
+            { key: "reliquat_pvc",         descKey: "reliquat_pvc_desc",         dateKey: "reliquat_pvc_date",         label: "PVC",         color: C.blue },
+            { key: "reliquat_accessoires", descKey: "reliquat_accessoires_desc", dateKey: "reliquat_accessoires_date", label: "Accessoires", color: C.orange },
+          ].map(({ key, descKey, dateKey, label, color }) => {
+            const active = (f as any)[key] as boolean;
+            return (
+              <div key={key} style={{ padding: "8px 10px", background: C.s1, borderRadius: 5, border: `1px solid ${active ? color + "99" : C.border}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: active ? 6 : 0 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: active ? color : C.muted }}>{label}</span>
+                  <button type="button" onClick={() => set(key as any, !active)}
+                    style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, border: `1px solid ${active ? color : C.border}`, background: active ? color + "22" : "none", color: active ? color : C.sec, cursor: "pointer", fontWeight: 700 }}>
+                    {active ? "✓ Reliquat" : "Complet"}
+                  </button>
+                </div>
+                {active && (
+                  <>
+                    <div style={{ marginBottom: 4 }}>
+                      <label style={{ fontSize: 8, color: color, display: "block", marginBottom: 2 }}>DESCRIPTION</label>
+                      <input style={{ ...inp, fontSize: 11, padding: "4px 6px", borderColor: color + "66" }} value={(f as any)[descKey]} onChange={e => set(descKey as any, e.target.value)} placeholder="ex: manque 6 baguettes…" />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 8, color: color, display: "block", marginBottom: 2 }}>DATE RÉC. PRÉVUE</label>
+                      <input type="date" style={{ ...inp, fontSize: 11, padding: "4px 6px", borderColor: color + "66" }} value={(f as any)[dateKey]} onChange={e => set(dateKey as any, e.target.value)} />
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       <div style={{ marginTop: 10 }}>
         <label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>LIVRAISON SOUHAITÉE</label>

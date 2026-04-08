@@ -68,8 +68,41 @@ model Commande {
   type_commande           String?
   atelier                 String   @default("SIAL")
   montant_ht              Float?
+  acompte_recu              Boolean  @default(false)
+  acompte_montant           Float?
+  acompte_date              String?
+  reliquat_alu              Boolean  @default(false)
+  reliquat_alu_desc         String?
+  reliquat_alu_date         String?
+  reliquat_pvc              Boolean  @default(false)
+  reliquat_pvc_desc         String?
+  reliquat_pvc_date         String?
+  reliquat_accessoires      Boolean  @default(false)
+  reliquat_accessoires_desc String?
+  reliquat_accessoires_date String?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
+}
+
+model LigneVitrage {
+  id                     String   @id @default(cuid())
+  commandeId             String
+  num_commande           String?
+  client                 String?
+  ref_chantier           String?
+  composition            String?
+  quantite               Int      @default(1)
+  position               String?
+  largeur_mm             Float?
+  hauteur_mm             Float?
+  epaisseur_intercalaire String?
+  coloris_intercalaire   String?
+  largeur_we             Float?
+  hauteur_we             Float?
+  perimetre_we           Float?
+  date_fabrication       String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 }
 
 model ControleQualite {
