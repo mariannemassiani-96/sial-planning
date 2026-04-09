@@ -205,3 +205,232 @@ model MembreEquipe {
   naissance  String @default("")
   actif      Boolean @default(true)
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NOUVEAU PLANNING INDUSTRIEL — Modèles spec section 1
+// ═══════════════════════════════════════════════════════════════════════════
+
+model Operator {
+  id              String            @id @default(cuid())
+  name            String
+  weekHours       Float
+  posts           String[]
+  active          Boolean           @default(true)
+  absences        OperatorAbsence[]
+  taskAssignments TaskAssignment[]
+}
+
+model OperatorAbsence {
+  id         String   @id @default(cuid())
+  operatorId String
+  date       DateTime
+  reason     String?
+  operator   Operator @relation(fields: [operatorId], references: [id])
+}
+
+model WorkPost {
+  id               String           @id
+  label            String
+  atelier          Atelier
+  capacityMinDay   Int
+  defaultOperators String[]
+  tasks            ProductionTask[]
+}
+
+enum Atelier {
+  SIAL
+  ISULA
+}
+
+model Order {
+  id           String        @id @default(cuid())
+  refProF2     String        @unique
+  refChantier  String
+  clientName   String
+  deliveryDate DateTime
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  status       OrderStatus   @default(A_LANCER)
+  items        FabItem[]
+  bufferStocks BufferStock[]
+  notes        String?
+}
+
+enum OrderStatus {
+  A_LANCER
+  EN_COURS
+  ATTENTE_VITRAGE
+  ATTENTE_IGU
+  PRET_LIVRAISON
+  LIVRE
+  SUSPENDU
+}
+
+model FabItem {
+  id             String         @id @default(cuid())
+  orderId        String
+  menuiserieType MenuiserieType
+  quantity       Int
+  label          String
+  isSpecial      Boolean        @default(false)
+  specialType    SpecialType?
+  matiere        Matiere
+  widthMm        Int?
+  heightMm       Int?
+  fabOrder       Order          @relation(fields: [orderId], references: [id])
+  tasks          ProductionTask[]
+  qcChecks       QCCheck[]
+}
+
+enum MenuiserieType {
+  OB1_PVC
+  OB2_PVC
+  OF1_PVC
+  OF2_PVC
+  FIXE_PVC
+  PF1_PVC
+  PF2_PVC
+  OB1_ALU
+  OB2_ALU
+  OF1_ALU
+  OF2_ALU
+  FIXE_ALU
+  PF1_ALU
+  PF2_ALU
+  P1_ALU
+  P2_ALU
+  C2V2R
+  C3V3R
+  C4V4R
+  C4V2R
+  G1V1R
+  G2V1R
+  G2V2R
+  G3V3R
+  G4V2R
+  HORS_STANDARD
+  INTERVENTION_CHANTIER
+}
+
+enum SpecialType {
+  COULISSANT_GRAND_FORMAT
+  GALANDAGE_GRAND_FORMAT
+  HORS_NORME
+  INTERVENTION
+}
+
+enum Matiere {
+  ALU
+  PVC
+  ALU_PVC
+}
+
+model ProductionTask {
+  id               String         @id @default(cuid())
+  fabItemId        String
+  workPostId       String
+  label            String
+  estimatedMinutes Int
+  actualMinutes    Int?
+  status           TaskStatus     @default(PENDING)
+  scheduledDate    DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  blockedReason    String?
+  sortOrder        Int            @map("sort_order")
+  isBlocking       Boolean        @default(false)
+  assignments      TaskAssignment[]
+  qcChecks         QCCheck[]
+  fabItem          FabItem        @relation(fields: [fabItemId], references: [id])
+  workPost         WorkPost       @relation(fields: [workPostId], references: [id])
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+  BLOCKED
+  SKIPPED
+}
+
+model TaskAssignment {
+  id         String         @id @default(cuid())
+  taskId     String
+  operatorId String
+  task       ProductionTask @relation(fields: [taskId], references: [id])
+  operator   Operator       @relation(fields: [operatorId], references: [id])
+}
+
+model QCCheck {
+  id          String          @id @default(cuid())
+  fabItemId   String
+  taskId      String?
+  qcRef       String
+  label       String
+  result      QCResult?
+  value       String?
+  checkedAt   DateTime?
+  checkedBy   String?
+  actionTaken String?
+  fabItem     FabItem         @relation(fields: [fabItemId], references: [id])
+  task        ProductionTask? @relation(fields: [taskId], references: [id])
+}
+
+enum QCResult {
+  OK
+  NOK
+  REPRISE
+  REBUT
+}
+
+model BufferStock {
+  id        String     @id @default(cuid())
+  orderId   String?
+  type      BufferType
+  quantity  Float      @default(0)
+  unit      String
+  updatedAt DateTime   @updatedAt
+  fabOrder  Order?     @relation(fields: [orderId], references: [id])
+}
+
+enum BufferType {
+  PROFILES_COUPES
+  VITRAGES_ISULA
+  OUVRANTS_VITRES
+  ACCESSOIRES_PREPARES
+  PROFILES_BRUTS
+  VERRE_BRUT_ISULA
+}
+
+model NonConformity {
+  id          String     @id @default(cuid())
+  fabItemId   String
+  qcRef       String?
+  description String
+  severity    NCSeverity
+  status      NCStatus   @default(DETECTED)
+  cause       String?
+  action      String?
+  resolvedAt  DateTime?
+  createdAt   DateTime   @default(now())
+}
+
+enum NCSeverity {
+  MINOR
+  MAJOR
+  BLOCKING
+}
+
+enum NCStatus {
+  DETECTED
+  IN_QUARANTINE
+  UNDER_REPAIR
+  RESOLVED
+  SCRAPPED
+}
+
+model DayConfig {
+  date      String   @id
+  mode      String   @default("FRAPPES")
+  updatedAt DateTime @updatedAt
+}

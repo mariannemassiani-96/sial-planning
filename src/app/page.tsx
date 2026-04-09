@@ -21,10 +21,14 @@ import ImportCSV from "@/components/tabs/ImportCSV";
 import Pointage from "@/components/tabs/Pointage";
 import AffichageAtelier from "@/components/tabs/AffichageAtelier";
 import PlanningAtelier from "@/components/tabs/PlanningAtelier";
+import DashboardMatin from "@/components/tabs/DashboardMatin";
+import PlanningSemaine from "@/components/tabs/PlanningSemaine";
+import DetailCommande from "@/components/tabs/DetailCommande";
 
 export default function HomePage() {
   const { data: session, status } = useSession();
-  const [ong, setOng] = useState("dashboard");
+  const [ong, setOng] = useState("dashboard_matin");
+  const [planningOrderId, setPlanningOrderId] = useState<string | null>(null);
   const [commandes, setCommandes] = useState<CommandeCC[]>([]);
   const [cmdEdit, setCmdEdit] = useState<CommandeCC | null>(null);
   const [stocks, setStocks] = useState<Record<string, { actuel: number }>>({});
@@ -55,7 +59,9 @@ export default function HomePage() {
   const isAdmin = (session?.user as any)?.role === "ADMIN";
 
   const nav = [
-    { id: "dashboard",    l: "🏠 Tableau de bord",        alert: critiques },
+    { id: "dashboard_matin", l: "🌅 Matin SIAL+ISULA",    alert: critiques },
+    { id: "planning_fab",    l: "📅 Planning semaine" },
+    { id: "dashboard",       l: "🏠 Tableau de bord",     alert: critiques },
     { id: "livraison",    l: "🚚 Livraisons" },
     { id: "saisie",       l: "➕ Ajouter une commande" },
     { id: "carnet",       l: `📂 Commandes (${commandes.length})` },
@@ -172,6 +178,12 @@ export default function HomePage() {
           </div>
         ) : (
           <>
+            {ong === "dashboard_matin" && <DashboardMatin />}
+            {ong === "planning_fab" && (
+              planningOrderId
+                ? <DetailCommande orderId={planningOrderId} onBack={() => setPlanningOrderId(null)} />
+                : <PlanningSemaine onSelectOrder={(id) => setPlanningOrderId(id)} />
+            )}
             {ong === "dashboard" && <Dashboard commandes={commandes} stocks={stocks} onNav={setOng} onRefresh={fetchAll} />}
             {ong === "saisie" && <SaisieCommande key={String(cmdEdit?.id || "new")} onAjouter={addCommande} commande={cmdEdit} onModifier={modifCommande} />}
             {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} onEdit={editCommande} onPatch={patchCommande} />}
