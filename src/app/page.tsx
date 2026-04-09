@@ -24,6 +24,7 @@ import PlanningAtelier from "@/components/tabs/PlanningAtelier";
 import DashboardMatin from "@/components/tabs/DashboardMatin";
 import PlanningSemaine from "@/components/tabs/PlanningSemaine";
 import DetailCommande from "@/components/tabs/DetailCommande";
+import StatsAdmin from "@/components/tabs/StatsAdmin";
 
 export default function HomePage() {
   const { data: session, status } = useSession();
@@ -80,6 +81,7 @@ export default function HomePage() {
       { id: "nomenclature", l: "📐 Nomenclature" },
       { id: "simulateur",   l: "🎯 Simulateur" },
       { id: "import_csv",   l: "📥 Import CSV" },
+      { id: "stats_admin",  l: "📊 Statistiques" },
     ] : []),
   ];
 
@@ -203,6 +205,7 @@ export default function HomePage() {
             {ong === "nomenclature" && <Nomenclature />}
             {ong === "simulateur" && <Simulateur />}
             {ong === "import_csv" && <ImportCSV onRefresh={fetchAll} />}
+            {ong === "stats_admin" && <StatsAdmin />}
           </>
         )}
       </div>
