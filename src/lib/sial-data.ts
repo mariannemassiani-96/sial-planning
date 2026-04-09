@@ -441,12 +441,12 @@ export function calcCheminCritique(cmd: CommandeCC) {
 }
 
 export const C = {
-  bg:"#0D1B2A", s1:"#112236", s2:"#162C42",
-  border:"#1E3A5F", bLight:"#254A70",
+  bg:"#161616", s1:"#1E1E1E", s2:"#252525",
+  border:"#2E2E2E", bLight:"#3D3D3D",
   blue:"#42A5F5", orange:"#FFA726", green:"#66BB6A",
   red:"#EF5350", yellow:"#FFCA28", cyan:"#26C6DA",
   purple:"#CE93D8", teal:"#4DB6AC",
-  text:"#DCE8F5", sec:"#6B8BAD", muted:"#3D5A73",
+  text:"#F0F0F0", sec:"#A0A0A0", muted:"#5A5A5A",
 };
 
 export const CMAT: Record<string, string> = { PVC: C.blue, ALU: C.cyan };
