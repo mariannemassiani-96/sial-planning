@@ -65,6 +65,32 @@ function fmtDateCourt(dateStr: string): string {
   return `${JOURS_COURTS[idx] ?? ""} ${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")}`;
 }
 
+// ── Détection de conflits opérateurs (même créneau, postes différents) ────────
+function getConflictOps(plan: PlanPoste, date: string, slot: "am" | "pm"): Set<string> {
+  const count: Record<string, number> = {};
+  POSTES_PLANNING.forEach(p => {
+    (plan[p.id]?.[date]?.[slot]?.ops ?? []).forEach(opId => {
+      count[opId] = (count[opId] ?? 0) + 1;
+    });
+  });
+  return new Set(Object.entries(count).filter(([, n]) => n > 1).map(([id]) => id));
+}
+
+// ── Commandes actives triées par priorité ─────────────────────────────────────
+const PRIO_ORDER: Record<string, number> = { chantier_bloque: 0, urgente: 1, normale: 2 };
+function activeCmds(commandes: CommandeCC[]): CommandeCC[] {
+  return commandes
+    .filter(c => {
+      const s = (c as any).statut;
+      return s !== "terminee" && s !== "livre";
+    })
+    .sort((a, b) => {
+      const pa = PRIO_ORDER[(a as any).priorite] ?? 2;
+      const pb = PRIO_ORDER[(b as any).priorite] ?? 2;
+      return pa - pb;
+    });
+}
+
 // ── Calcul temps avec diviseur opérateurs ─────────────────────────────────────
 function calcTempsDJ(
   posteId: string,
@@ -222,7 +248,7 @@ export default function PlanningPoste({ commandes }: { commandes: CommandeCC[] }
                 {/* Cellules jours */}
                 {days.map(date => {
                   if (!isWorkday(date)) return (
-                    <td key={date} style={{ ...tdBase, background: "#0a1520" }}>
+                    <td key={date} style={{ ...tdBase, background: "#111111" }}>
                       <div style={{ textAlign: "center", color: C.muted, fontSize: 9, padding: "30px 0" }}>—</div>
                     </td>
                   );
@@ -238,12 +264,13 @@ export default function PlanningPoste({ commandes }: { commandes: CommandeCC[] }
                         const barCol = over ? C.red : pct > 80 ? C.orange : pct > 0 ? C.green : C.muted;
                         const nbOps = dj.ops.length;
 
-                        const availOps   = opsPoste(poste.id).filter(m => !dj.ops.includes(m.id));
-                        const cellKey    = `${poste.id}|${date}|${slot}`;
-                        const showAddOp  = addOpKey  === cellKey;
-                        const showAddCmd = addCmdKey === cellKey;
+                        const availOps    = opsPoste(poste.id).filter(m => !dj.ops.includes(m.id));
+                        const cellKey     = `${poste.id}|${date}|${slot}`;
+                        const showAddOp   = addOpKey  === cellKey;
+                        const showAddCmd  = addCmdKey === cellKey;
+                        const conflictOps = getConflictOps(plan, date, slot);
 
-                        const cmdsDispos = commandes.filter(c => {
+                        const cmdsDispos = activeCmds(commandes).filter(c => {
                           if (dj.cmds.find(ac => ac.commandeId === String(c.id))) return false;
                           const t = calcTempsType(c.type, c.quantite, (c as any).hsTemps ?? null);
                           return t && (t.par_poste[poste.id as PosteId] ?? 0) > 0;
@@ -273,12 +300,13 @@ export default function PlanningPoste({ commandes }: { commandes: CommandeCC[] }
                               {dj.ops.map(opId => {
                                 const op = EQUIPE.find(m => m.id === opId);
                                 if (!op) return null;
+                                const conflict = conflictOps.has(opId);
                                 return (
                                   <span key={opId}
-                                    title={`${op.nom} — cliquer pour retirer`}
+                                    title={conflict ? `⚠ ${op.nom} est déjà sur un autre poste ce créneau` : `${op.nom} — cliquer pour retirer`}
                                     onClick={() => doRemoveOp(poste.id, date, slot, opId)}
-                                    style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: poste.color + "28", border: `1px solid ${poste.color}66`, color: poste.color, cursor: "pointer", fontWeight: 600, userSelect: "none" }}>
-                                    {op.nom.split(/[\s-]/)[0]}
+                                    style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: conflict ? C.red + "22" : poste.color + "28", border: `1px solid ${conflict ? C.red : poste.color}66`, color: conflict ? C.red : poste.color, cursor: "pointer", fontWeight: 600, userSelect: "none" }}>
+                                    {conflict ? "⚠ " : ""}{op.nom.split(/[\s-]/)[0]}
                                   </span>
                                 );
                               })}
@@ -329,13 +357,15 @@ export default function PlanningPoste({ commandes }: { commandes: CommandeCC[] }
                                     onChange={e => e.target.value && doAddCmd(poste.id, date, slot, e.target.value)}>
                                     <option value="">— commande</option>
                                     {cmdsDispos.map(c => {
-                                      const t  = calcTempsType(c.type, c.quantite, (c as any).hsTemps ?? null);
-                                      const tP = t?.par_poste[poste.id as PosteId] ?? 0;
-                                      const num = (c as any).num_commande ?? String(c.id);
-                                      const cli = (c as any).client ?? "";
+                                      const t    = calcTempsType(c.type, c.quantite, (c as any).hsTemps ?? null);
+                                      const tP   = t?.par_poste[poste.id as PosteId] ?? 0;
+                                      const num  = (c as any).num_commande ?? String(c.id);
+                                      const cli  = (c as any).client ?? "";
+                                      const prio = (c as any).priorite;
+                                      const tag  = prio === "chantier_bloque" ? "🔴 " : prio === "urgente" ? "🟠 " : "";
                                       return (
                                         <option key={String(c.id)} value={String(c.id)}>
-                                          {num} — {cli} ({hm(tP)})
+                                          {tag}{num} — {cli} ({hm(tP)})
                                         </option>
                                       );
                                     })}
