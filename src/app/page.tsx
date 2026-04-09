@@ -25,6 +25,7 @@ import DashboardMatin from "@/components/tabs/DashboardMatin";
 import PlanningSemaine from "@/components/tabs/PlanningSemaine";
 import DetailCommande from "@/components/tabs/DetailCommande";
 import StatsAdmin from "@/components/tabs/StatsAdmin";
+import TutoAJ from "@/components/TutoAJ";
 
 export default function HomePage() {
   const { data: session, status } = useSession();
@@ -209,6 +210,8 @@ export default function HomePage() {
           </>
         )}
       </div>
+      {/* Tutoriel interactif — bouton "?" fixe + ouverture auto premier login AJ */}
+      <TutoAJ onGoToDashboard={() => setOng("dashboard_matin")} />
     </div>
   );
 }
