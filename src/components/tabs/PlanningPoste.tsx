@@ -186,7 +186,7 @@ export default function PlanningPoste({ commandes }: { commandes: CommandeCC[] }
           </span>
         ))}
         <span style={{ fontSize: 9, color: C.muted }}>
-          · Cliquer un opérateur ou une commande pour retirer · Le temps se divise automatiquement selon le nombre d'opérateurs
+          · Cliquer un opérateur ou une commande pour retirer · Le temps se divise automatiquement selon le nombre d&apos;opérateurs
         </span>
       </div>
 
