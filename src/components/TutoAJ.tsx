@@ -21,188 +21,186 @@ const T = {
   amber:   "#FFB300",
 };
 
-// ── Visuels inline SVG / mockups ─────────────────────────────────────────────
+// ── Visuels inline — mockups ─────────────────────────────────────────────────
 
-function MockupToggle() {
+function MockupMatin() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, marginTop: 12 }}>
-      <div style={{ position: "relative", display: "inline-flex", gap: 0, border: `2px solid ${T.bAccent}`, borderRadius: 8, overflow: "hidden" }}>
-        <div style={{ padding: "12px 28px", background: T.orange, color: "#000", fontWeight: 800, fontSize: 15 }}>
-          Coulissants / Gal / Portes
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
+      {/* Toggle mode */}
+      <div style={{ display: "flex", gap: 0, border: `1px solid ${T.bAccent}`, borderRadius: 6, overflow: "hidden", alignSelf: "flex-start" }}>
+        <div style={{ padding: "9px 18px", background: T.orange, color: "#000", fontWeight: 800, fontSize: 13 }}>
+          Coulissants / Gal / Portes ✓
         </div>
-        <div style={{ padding: "12px 28px", background: T.card, color: T.muted, fontWeight: 600, fontSize: 15 }}>
+        <div style={{ padding: "9px 18px", background: T.card, color: T.muted, fontSize: 13 }}>
           Frappes
         </div>
-        {/* Flèche d'annotation */}
-        <div style={{ position: "absolute", top: -36, left: 60, display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <span style={{ fontSize: 12, color: T.orange, fontWeight: 700, whiteSpace: "nowrap" }}>← Clique ici pour choisir</span>
-          <span style={{ fontSize: 22, color: T.orange, lineHeight: 1 }}>↓</span>
-        </div>
       </div>
-      <div style={{ fontSize: 13, color: T.sec, fontStyle: "italic" }}>
-        Le bouton sélectionné s'allume en orange
+      {/* Alertes */}
+      <div style={{ background: `${T.red}20`, border: `1px solid ${T.red}88`, borderRadius: 5, padding: "8px 12px", display: "flex", gap: 8, alignItems: "center" }}>
+        <span>🔴</span>
+        <span style={{ fontSize: 13, color: T.red, fontWeight: 700 }}>Retard — Chantier Martin (3j)</span>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: T.red }}>Règle en premier →</span>
+      </div>
+      {/* Postes SIAL */}
+      <div style={{ background: T.panel, border: `1px solid ${T.bAccent}`, borderRadius: 5, padding: "8px 12px" }}>
+        <div style={{ fontSize: 11, color: T.muted, marginBottom: 6 }}>SIAL — postes actifs aujourd'hui</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {[["C1 — Coupe", "Dupont (3h) · Blanc (2h30)"], ["M2 — Montage", "Martin (4h)"]].map(([poste, cmd]) => (
+            <div key={poste} style={{ display: "flex", gap: 8, alignItems: "center", background: T.card, borderRadius: 4, padding: "5px 8px" }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: T.orange, width: 80 }}>{poste}</span>
+              <span style={{ fontSize: 11, color: T.sec }}>{cmd}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-function MockupAlertes() {
+function MockupAffectation() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12, maxWidth: 500 }}>
-      <div style={{ background: `${T.red}22`, border: `2px solid ${T.red}`, borderRadius: 6, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 22 }}>🔴</span>
-        <div>
-          <div style={{ fontWeight: 700, color: T.red, fontSize: 14 }}>URGENT — Commande en retard</div>
-          <div style={{ fontSize: 12, color: T.sec }}>Chantier Martin — livraison dépassée de 3 jours</div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, maxWidth: 380 }}>
+      {/* Carte commande ouverte */}
+      <div style={{ background: T.panel, border: `1px solid ${T.bAccent}`, borderRadius: 6, padding: "12px 14px" }}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>
+          Chantier Dupont — Coupe profilés
         </div>
-        <div style={{ marginLeft: "auto", fontSize: 11, color: T.red, fontWeight: 700 }}>← ROUGE</div>
-      </div>
-      <div style={{ background: `${T.orange}22`, border: `2px solid ${T.orange}`, borderRadius: 6, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 22 }}>🟠</span>
-        <div>
-          <div style={{ fontWeight: 700, color: T.orange, fontSize: 14 }}>Attente vitrages depuis 4 jours</div>
-          <div style={{ fontSize: 12, color: T.sec }}>3 cadres SIAL attendent ISULA</div>
-        </div>
-        <div style={{ marginLeft: "auto", fontSize: 11, color: T.orange, fontWeight: 700 }}>← ORANGE</div>
-      </div>
-      <div style={{ background: `${T.yellow}22`, border: `2px solid ${T.yellow}`, borderRadius: 6, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 22 }}>🟡</span>
-        <div>
-          <div style={{ fontWeight: 700, color: T.yellow, fontSize: 14 }}>Pièce spéciale en cours</div>
-          <div style={{ fontSize: 12, color: T.sec }}>Coulissant 5m20 — poste C3 — 4h30 estimées</div>
-        </div>
-        <div style={{ marginLeft: "auto", fontSize: 11, color: T.yellow, fontWeight: 700 }}>← JAUNE</div>
-      </div>
-    </div>
-  );
-}
-
-function MockupTaskCard() {
-  return (
-    <div style={{ marginTop: 12, maxWidth: 420 }}>
-      <div style={{ background: T.panel, border: `2px solid ${T.bAccent}`, borderRadius: 8, padding: "14px 16px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>Chantier Dupont</div>
-            <div style={{ fontSize: 13, color: T.sec }}>Montage — 3 coulissants PVC</div>
-          </div>
-          <div style={{ fontSize: 12, color: T.muted }}>≈ 2h30</div>
-        </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          {/* Bouton cible - entouré */}
-          <div style={{ position: "relative" }}>
-            <button style={{ padding: "10px 20px", background: T.blue, color: "#fff", border: "none", borderRadius: 6, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
-              ✓ Marquer terminé
-            </button>
-            {/* Cercle d'annotation */}
-            <div style={{ position: "absolute", inset: -4, border: `3px solid ${T.red}`, borderRadius: 10, pointerEvents: "none" }} />
-            <div style={{ position: "absolute", top: -28, left: 0, fontSize: 12, color: T.red, fontWeight: 700, whiteSpace: "nowrap" }}>
-              ← Ce bouton !
+        {/* Tâches avec sélecteur opérateur */}
+        {[
+          { label: "Coupe alu", op: "Laurent" },
+          { label: "Coupe PVC", op: "" },
+        ].map((t, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: `1px solid ${T.border}` }}>
+            <span style={{ fontSize: 12, flex: 1, color: T.text }}>{t.label}</span>
+            <div style={{ position: "relative" }}>
+              <select
+                disabled
+                style={{ padding: "4px 24px 4px 8px", background: t.op ? T.card : T.bg, border: `1px solid ${t.op ? T.green : T.amber}`, borderRadius: 4, color: t.op ? T.green : T.amber, fontSize: 12, cursor: "pointer", appearance: "none" }}
+              >
+                <option>{t.op || "— choisir —"}</option>
+              </select>
+              <span style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", fontSize: 9, color: T.muted, pointerEvents: "none" }}>▼</span>
             </div>
           </div>
-          <button style={{ padding: "10px 16px", background: "transparent", color: T.muted, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13, cursor: "pointer" }}>
-            Problème
-          </button>
+        ))}
+        {/* Annotation */}
+        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ width: 10, height: 10, borderRadius: "50%", background: T.green, flexShrink: 0 }} />
+          <span style={{ fontSize: 11, color: T.green }}>Laurent — affecté</span>
+          <div style={{ width: 10, height: 10, borderRadius: "50%", background: T.amber, flexShrink: 0, marginLeft: 10 }} />
+          <span style={{ fontSize: 11, color: T.amber }}>À affecter</span>
         </div>
+      </div>
+      <div style={{ fontSize: 11, color: T.muted, fontStyle: "italic" }}>
+        La liste ne propose que les opérateurs formés sur ce poste
       </div>
     </div>
   );
 }
 
-function MockupBloquer() {
-  const [shown, setShown] = useState(false);
+function MockupAlertesSurveillance() {
   return (
-    <div style={{ marginTop: 12, maxWidth: 420 }}>
-      <div style={{ background: T.panel, border: `2px solid ${T.bAccent}`, borderRadius: 8, padding: "14px 16px" }}>
-        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>Chantier Martin — Coupe profilés</div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button style={{ padding: "10px 16px", background: T.blue, color: "#fff", border: "none", borderRadius: 6, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
-            ✓ Marquer terminé
-          </button>
-          <div style={{ position: "relative" }}>
-            <button
-              onClick={() => setShown(!shown)}
-              style={{ padding: "10px 16px", background: T.orange, color: "#000", border: "none", borderRadius: 6, fontWeight: 700, fontSize: 14, cursor: "pointer" }}
-            >
-              ⚠ Signaler un problème
-            </button>
-            <div style={{ position: "absolute", top: -28, left: 0, fontSize: 12, color: T.orange, fontWeight: 700, whiteSpace: "nowrap" }}>
-              ← Bouton orange
-            </div>
-          </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+      <div style={{ background: `${T.red}20`, border: `2px solid ${T.red}`, borderRadius: 6, padding: "10px 14px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 18 }}>🔴</span>
+          <strong style={{ color: T.red, fontSize: 14 }}>Commande Petit — livraison demain</strong>
         </div>
-        {shown && (
-          <div style={{ marginTop: 12, padding: "10px 12px", background: T.card, border: `1px solid ${T.amber}`, borderRadius: 6 }}>
-            <div style={{ fontSize: 13, color: T.sec, marginBottom: 6 }}>Décris le problème en 2 mots :</div>
-            <input
-              readOnly
-              value="joint manquant"
-              style={{ width: "100%", padding: "8px 10px", background: T.bg, border: `1px solid ${T.bAccent}`, borderRadius: 4, color: T.text, fontSize: 14 }}
-            />
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button style={{ flex: 1, padding: "8px", background: T.orange, color: "#000", border: "none", borderRadius: 4, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-                Confirmer
-              </button>
-              <button onClick={() => setShown(false)} style={{ padding: "8px 14px", background: "transparent", color: T.muted, border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
-                Annuler
-              </button>
-            </div>
-          </div>
-        )}
-        {!shown && (
-          <div style={{ fontSize: 12, color: T.muted, marginTop: 8, fontStyle: "italic" }}>
-            Clique sur "Signaler un problème" pour voir le formulaire →
-          </div>
-        )}
+        <div style={{ fontSize: 12, color: T.sec, paddingLeft: 26 }}>3 tâches encore en attente · à traiter en priorité</div>
+      </div>
+      <div style={{ background: `${T.orange}20`, border: `2px solid ${T.orange}`, borderRadius: 6, padding: "10px 14px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 18 }}>🟠</span>
+          <strong style={{ color: T.orange, fontSize: 14 }}>Chantier Simon — attente vitrage ISULA</strong>
+        </div>
+        <div style={{ fontSize: 12, color: T.sec, paddingLeft: 26 }}>En attente depuis 4 jours → contacter ISULA</div>
+      </div>
+      <div style={{ background: T.card, border: `1px solid ${T.bAccent}`, borderRadius: 5, padding: "8px 12px", fontSize: 12, color: T.sec }}>
+        💡 Si un opérateur vient te voir avec un problème : clique "Signaler un problème" sur sa tâche pour que ça reste tracé.
       </div>
     </div>
   );
 }
 
-function MockupPlanning() {
+function MockupCloture() {
+  const taches = [
+    { label: "Coupe alu — Dupont", poste: "C1", done: true },
+    { label: "Montage coulissant — Martin", poste: "M2", done: true },
+    { label: "Vitrage — Blanc", poste: "V1", done: false },
+  ];
+  return (
+    <div style={{ marginTop: 8, maxWidth: 380 }}>
+      <div style={{ background: T.panel, border: `1px solid ${T.bAccent}`, borderRadius: 6, padding: "12px 14px" }}>
+        <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>Tâches du jour à clôturer :</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {taches.map((t, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: T.card, borderRadius: 5, border: `1px solid ${t.done ? T.green + "55" : T.border}` }}>
+              <div style={{ width: 20, height: 20, borderRadius: 4, background: t.done ? T.green : T.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0 }}>
+                {t.done ? "✓" : ""}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, color: t.done ? T.green : T.text }}>{t.label}</div>
+                <div style={{ fontSize: 10, color: T.muted }}>{t.poste}</div>
+              </div>
+              {t.done ? (
+                <span style={{ fontSize: 11, color: T.green }}>Terminé</span>
+              ) : (
+                <button style={{ padding: "4px 10px", background: T.blue, color: "#fff", border: "none", borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  Marquer terminé
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: 11, color: T.muted, marginTop: 8, fontStyle: "italic" }}>
+          Ce qui n'est pas coché reste automatiquement pour demain
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MockupPlanningSemaine() {
   const days = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
   const tasks = [
-    { day: 0, label: "Dupont — Coupe", color: T.muted,   status: "⬜" },
-    { day: 0, label: "Martin — Coupe", color: T.red,     status: "🔴" },
-    { day: 1, label: "Durand — Montage", color: T.blue,  status: "🔵" },
-    { day: 2, label: "Bernard — Vitrage", color: T.green,status: "🟢" },
-    { day: 3, label: "Simon — Montage", color: T.muted,  status: "⬜" },
-    { day: 4, label: "Blanc — Coupe", color: T.muted,    status: "⬜" },
+    { day: 0, label: "Dupont", color: T.muted,   special: false },
+    { day: 0, label: "Martin", color: T.red,     special: false },
+    { day: 1, label: "Bernard", color: T.blue,   special: false },
+    { day: 1, label: "Grand format", color: T.amber, special: true },
+    { day: 2, label: "Durand", color: T.green,   special: false },
+    { day: 3, label: "Simon",  color: T.muted,   special: false },
+    { day: 4, label: "Blanc",  color: T.muted,   special: false },
   ];
-  const charges = [85, 70, 60, 40, 50];
+  const charges = [92, 80, 55, 40, 45];
   return (
-    <div style={{ marginTop: 12, overflowX: "auto" }}>
-      <div style={{ display: "flex", gap: 6, minWidth: 500 }}>
+    <div style={{ marginTop: 8, overflowX: "auto" }}>
+      <div style={{ display: "flex", gap: 5, minWidth: 460 }}>
         {days.map((d, i) => {
           const c = charges[i];
           const barColor = c > 90 ? T.red : c > 70 ? T.orange : T.green;
           return (
-            <div key={d} style={{ flex: 1, background: T.panel, border: `1px solid ${T.bAccent}`, borderRadius: 6, padding: "8px 8px 10px", minWidth: 90 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.sec, marginBottom: 6, textAlign: "center" }}>{d}</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div key={d} style={{ flex: 1, background: T.panel, border: `1px solid ${i === 0 ? T.red : T.bAccent}`, borderRadius: 5, padding: "7px 6px 8px", minWidth: 80 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: i === 0 ? T.red : T.sec, marginBottom: 5, textAlign: "center" }}>{d}{i === 0 ? " ⚠" : ""}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                 {tasks.filter((t) => t.day === i).map((t, j) => (
-                  <div key={j} style={{ background: T.card, border: `1px solid ${t.color}44`, borderLeft: `3px solid ${t.color}`, borderRadius: 3, padding: "4px 6px", fontSize: 10, color: T.text }}>
-                    {t.status} {t.label}
+                  <div key={j} style={{ background: T.card, borderLeft: `3px solid ${t.color}`, borderRadius: 3, padding: "3px 5px", fontSize: 9, color: T.text, display: "flex", alignItems: "center", gap: 4 }}>
+                    {t.label}
+                    {t.special && <span style={{ background: T.amber, color: "#000", fontSize: 8, fontWeight: 700, padding: "0 3px", borderRadius: 2 }}>SPÉCIAL</span>}
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: 8 }}>
-                <div style={{ height: 5, background: T.border, borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{ width: `${c}%`, height: "100%", background: barColor, borderRadius: 3 }} />
+              <div style={{ marginTop: 6 }}>
+                <div style={{ height: 4, background: T.border, borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{ width: `${c}%`, height: "100%", background: barColor, borderRadius: 2 }} />
                 </div>
-                <div style={{ fontSize: 9, color: barColor, marginTop: 2, textAlign: "right" }}>{c}%</div>
+                <div style={{ fontSize: 8, color: barColor, marginTop: 1, textAlign: "right" }}>{c}%</div>
               </div>
             </div>
           );
         })}
       </div>
-      <div style={{ display: "flex", gap: 16, marginTop: 10, flexWrap: "wrap" }}>
-        {[["⬜ Gris", "Pas encore démarré", T.muted], ["🔵 Bleu", "En cours", T.blue], ["🟢 Vert", "Prêt à livrer", T.green], ["🔴 Rouge", "En retard", T.red]].map(([emoji, label, color]) => (
-          <div key={label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11 }}>
-            <span style={{ color: color as string }}>{emoji}</span>
-            <span style={{ color: T.sec }}>{label}</span>
-          </div>
-        ))}
+      <div style={{ fontSize: 11, color: T.sec, marginTop: 8 }}>
+        Glisse une carte pour la déplacer d'un jour à l'autre →
       </div>
     </div>
   );
@@ -212,7 +210,6 @@ function MockupPlanning() {
 
 interface Step {
   titre: string;
-  sous_titre?: string;
   contenu: React.ReactNode;
   note?: React.ReactNode;
   visuel: React.ReactNode;
@@ -220,176 +217,179 @@ interface Step {
 }
 
 const STEPS: Step[] = [
+  // ── Étape 1 ──────────────────────────────────────────────────────────────
   {
-    titre: "Chaque matin : le tableau de bord",
+    titre: "Matin — tu prépares la journée",
     contenu: (
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <p style={{ margin: 0 }}>
-          Quand tu arrives à l'atelier, ouvre l'appli et tu vois directement la page <strong style={{ color: T.orange }}>"Matin SIAL+ISULA"</strong>.
+          Ouvre l'appli sur <strong style={{ color: T.orange }}>"Matin SIAL+ISULA"</strong>. C'est de là que tu organises la journée.
         </p>
-        <p style={{ margin: 0 }}>
-          <strong>Première chose à faire : choisir le mode du jour.</strong>
-        </p>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 12, borderLeft: `3px solid ${T.bAccent}` }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <span style={{ color: T.orange, fontWeight: 800, fontSize: 18, lineHeight: 1.2 }}>→</span>
-            <span>Si aujourd'hui tu fais des <strong>coulissants, galandages ou portes</strong> : clique sur <strong style={{ color: T.orange }}>[Coulissants / Gal / Portes]</strong></span>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <span style={{ color: T.orange, fontWeight: 800, fontSize: 18, lineHeight: 1.2 }}>→</span>
-            <span>Si aujourd'hui tu fais des <strong>frappes</strong> : clique sur <strong style={{ color: T.orange }}>[Frappes]</strong></span>
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[
+            {
+              n: "1",
+              titre: "Choisis le mode du jour",
+              detail: "Coulissants / Galandages / Portes — ou — Frappes. L'appli affiche les bons postes selon ton choix.",
+            },
+            {
+              n: "2",
+              titre: "Regarde les alertes en haut",
+              detail: "Si quelque chose est en rouge, règle-le avant de commencer à affecter.",
+            },
+            {
+              n: "3",
+              titre: "Dans la section SIAL, tu vois les postes actifs",
+              detail: "Pour chaque poste : tu vois les commandes planifiées du jour. Tu peux alors assigner les opérateurs.",
+            },
+          ].map((item) => (
+            <div key={item.n} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: T.orange, color: "#000", fontWeight: 800, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                {item.n}
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>{item.titre}</div>
+                <div style={{ fontSize: 13, color: T.sec, lineHeight: 1.5 }}>{item.detail}</div>
+              </div>
+            </div>
+          ))}
         </div>
-        <p style={{ margin: 0 }}>
-          L'appli va alors t'afficher les bons postes pour la journée.
-        </p>
       </div>
     ),
     note: (
       <div style={{ background: `${T.amber}18`, border: `1px solid ${T.amber}`, borderRadius: 6, padding: "10px 14px", display: "flex", gap: 10, alignItems: "flex-start" }}>
-        <span style={{ fontSize: 18 }}>⚠</span>
-        <span style={{ fontSize: 14, color: T.amber }}>
+        <span style={{ fontSize: 16 }}>⚠</span>
+        <span style={{ fontSize: 13, color: T.amber }}>
           <strong>Mercredi et vendredi :</strong> ISULA ne travaille pas. La section ISULA disparaît automatiquement ces jours-là.
         </span>
       </div>
     ),
-    visuel: <MockupToggle />,
+    visuel: <MockupMatin />,
   },
+
+  // ── Étape 2 ──────────────────────────────────────────────────────────────
   {
-    titre: "Les alertes en rouge et orange : agis en premier",
+    titre: "Qui fait quoi aujourd'hui ?",
     contenu: (
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <p style={{ margin: 0 }}>En haut de la page, tu vois les alertes du jour.</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <p style={{ margin: 0 }}>
+          Sur chaque commande, tu choisis <strong>quel opérateur travaille dessus aujourd'hui.</strong>
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 12, borderLeft: `3px solid ${T.bAccent}` }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <span style={{ color: T.orange, fontWeight: 800 }}>→</span>
+            <span style={{ fontSize: 15 }}>Clique sur une commande dans la liste du poste</span>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <span style={{ color: T.orange, fontWeight: 800 }}>→</span>
+            <span style={{ fontSize: 15 }}>Dans le détail, tu vois les tâches du jour</span>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <span style={{ color: T.orange, fontWeight: 800 }}>→</span>
+            <span style={{ fontSize: 15 }}>Pour chaque tâche : sélectionne l'opérateur dans la liste déroulante</span>
+          </div>
+        </div>
+        <div style={{ background: T.card, border: `1px solid ${T.bAccent}`, borderRadius: 6, padding: "10px 14px", fontSize: 14, color: T.sec }}>
+          La liste ne propose que les opérateurs formés sur ce poste.
+          <br />
+          <strong style={{ color: T.text }}>Si quelqu'un est absent :</strong> ne l'affecte pas, et préviens Marianne pour qu'elle ajuste le planning.
+        </div>
+      </div>
+    ),
+    visuel: <MockupAffectation />,
+  },
+
+  // ── Étape 3 ──────────────────────────────────────────────────────────────
+  {
+    titre: "Dans la journée — les alertes",
+    contenu: (
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <p style={{ margin: 0 }}>
+          Tu n'as pas besoin de rester sur l'appli toute la journée. Mais si tu vois quelque chose changer :
+        </p>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-            <span style={{ fontSize: 20 }}>🔴</span>
+            <span style={{ fontSize: 18 }}>🔴</span>
             <div>
-              <strong style={{ color: T.red }}>ROUGE = urgent, ça bloque une livraison</strong>
-              <div style={{ color: T.sec, fontSize: 14, marginTop: 3 }}>Commandes en retard · Stock de profilés ou de vitrages trop bas</div>
+              <strong style={{ color: T.red }}>Une commande passe en rouge</strong>
+              <div style={{ color: T.sec, fontSize: 14, marginTop: 2 }}>Retard sur la date de livraison — à traiter en priorité</div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-            <span style={{ fontSize: 20 }}>🟠</span>
+            <span style={{ fontSize: 18 }}>🟠</span>
             <div>
-              <strong style={{ color: T.orange }}>ORANGE = attention, à surveiller</strong>
-              <div style={{ color: T.sec, fontSize: 14, marginTop: 3 }}>Des cadres SIAL attendent les vitrages ISULA depuis trop longtemps</div>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-            <span style={{ fontSize: 20 }}>🟡</span>
-            <div>
-              <strong style={{ color: T.yellow }}>JAUNE = pièces spéciales en cours cette semaine</strong>
-              <div style={{ color: T.sec, fontSize: 14, marginTop: 3 }}>Coulissants ou galandages &gt; 4m qui prennent beaucoup de temps sur un poste</div>
+              <strong style={{ color: T.orange }}>"En attente vitrage" depuis trop longtemps</strong>
+              <div style={{ color: T.sec, fontSize: 14, marginTop: 2 }}>Contacter directement ISULA pour débloquer</div>
             </div>
           </div>
         </div>
-        <p style={{ margin: 0, color: T.sec, fontSize: 14 }}>
-          Si tu vois une alerte que tu ne comprends pas ou que tu ne peux pas régler seul : <strong style={{ color: T.text }}>appelle Marianne.</strong>
-        </p>
-      </div>
-    ),
-    visuel: <MockupAlertes />,
-  },
-  {
-    titre: "Un lot est fini ? Tu coches ici",
-    contenu: (
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <p style={{ margin: 0 }}>
-          Dans la section <strong style={{ color: T.orange }}>"Aujourd'hui — SIAL"</strong>, tu vois les postes actifs du jour et les commandes à traiter sur chaque poste.
-        </p>
-        <p style={{ margin: 0 }}>Quand un lot est terminé sur un poste :</p>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {[
-            ["1", "Trouve la commande dans la liste du poste"],
-            ["2", <>Clique sur le bouton bleu <strong style={{ color: T.blue }}>"Marquer terminé"</strong></> ],
-            ["3", "L'appli te demande combien de minutes ça a pris (optionnel — tu peux laisser vide si tu ne sais pas)"],
-            ["4", <>La commande passe en <strong style={{ color: T.green }}>vert ✓</strong></> ],
-          ].map(([n, text]) => (
-            <div key={String(n)} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-              <div style={{ width: 26, height: 26, borderRadius: "50%", background: T.blue, color: "#fff", fontWeight: 800, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                {n}
-              </div>
-              <div style={{ paddingTop: 3, fontSize: 15 }}>{text}</div>
-            </div>
-          ))}
+        <div style={{ background: T.card, border: `1px solid ${T.bAccent}`, borderRadius: 6, padding: "10px 14px", fontSize: 14, color: T.sec }}>
+          <strong style={{ color: T.text }}>Si un opérateur vient te signaler un problème :</strong>
+          <br />
+          Clique sur sa tâche → "Signaler un problème" → note ce qui bloque en 2 mots. C'est tracé, Marianne est prévenue.
         </div>
-        <div style={{ fontSize: 14, color: T.muted, fontStyle: "italic" }}>C'est tout. Pas besoin de faire autre chose.</div>
       </div>
     ),
-    note: (
-      <div style={{ background: `${T.red}15`, border: `1px solid ${T.red}55`, borderRadius: 6, padding: "10px 14px", display: "flex", gap: 10, alignItems: "flex-start" }}>
-        <span style={{ fontSize: 18 }}>❗</span>
-        <span style={{ fontSize: 14, color: T.sec }}>
-          Si tu ne marques pas les tâches terminées, <strong style={{ color: T.text }}>Marianne ne peut pas voir l'avancement réel</strong> et les plannings seront faux.
-        </span>
-      </div>
-    ),
-    visuel: <MockupTaskCard />,
+    visuel: <MockupAlertesSurveillance />,
   },
+
+  // ── Étape 4 ──────────────────────────────────────────────────────────────
   {
-    titre: "Quelque chose ne va pas : bouton orange",
+    titre: "Soir — tu coches ce qui est fait",
     contenu: (
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <p style={{ margin: 0 }}>
-          Si tu ne peux pas avancer sur une tâche <span style={{ color: T.sec }}>(pièce manquante, machine en panne, défaut sur un profil…)</span> :
+          Avant de partir, <strong>prends 5 minutes</strong> pour marquer les tâches terminées de la journée.
         </p>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {[
-            ["1", <>Clique sur <strong style={{ color: T.orange }}>"Signaler un problème"</strong> (bouton orange)</> ],
-            ["2", <>Écris en 2 mots ce qui bloque <span style={{ color: T.muted }}>(ex: "joint manquant", "machine coupe en panne")</span></> ],
-            ["3", "Clique Confirmer"],
+            ["1", <>Ouvre chaque poste actif de la journée</>],
+            ["2", <>Pour chaque tâche faite : clique <strong style={{ color: T.blue }}>"Marquer terminé"</strong></>],
+            ["3", "Si une tâche n'est pas finie : laisse-la telle quelle, elle reste pour demain"],
           ].map(([n, text]) => (
             <div key={String(n)} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-              <div style={{ width: 26, height: 26, borderRadius: "50%", background: T.orange, color: "#000", fontWeight: 800, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: T.blue, color: "#fff", fontWeight: 800, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 {n}
               </div>
-              <div style={{ paddingTop: 3, fontSize: 15 }}>{text}</div>
+              <div style={{ paddingTop: 4, fontSize: 15 }}>{text}</div>
             </div>
           ))}
         </div>
-        <p style={{ margin: 0, padding: "10px 14px", background: T.card, border: `1px solid ${T.bAccent}`, borderRadius: 6, fontSize: 14, color: T.sec }}>
-          La commande passe en statut <strong style={{ color: T.red }}>"Bloqué"</strong> et Marianne est prévenue automatiquement.<br /><br />
-          Tu n'as pas besoin de chercher comment débloquer — <strong style={{ color: T.text }}>c'est Marianne qui gère la suite.</strong>
-        </p>
+        <div style={{ background: `${T.blue}15`, border: `1px solid ${T.blue}55`, borderRadius: 6, padding: "10px 14px", fontSize: 14, color: T.sec }}>
+          C'est ces informations qui permettent à Marianne de voir <strong style={{ color: T.text }}>l'avancement réel</strong> et de préparer les stats du lendemain.
+        </div>
       </div>
     ),
-    visuel: <MockupBloquer />,
+    visuel: <MockupCloture />,
   },
+
+  // ── Étape 5 ──────────────────────────────────────────────────────────────
   {
-    titre: "Le planning de la semaine",
+    titre: "Organiser la semaine à l'avance",
     contenu: (
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <p style={{ margin: 0 }}>
-          Tu veux voir tout ce qui est prévu cette semaine ? Clique sur l'onglet <strong style={{ color: T.orange }}>"Planning semaine"</strong> en haut.
+          Dans l'onglet <strong style={{ color: T.orange }}>"Planning semaine"</strong>, tu vois les 5 jours avec toutes les commandes planifiées.
         </p>
-        <p style={{ margin: 0 }}>Tu vois un calendrier avec les 5 jours. <strong>Chaque carte = une tâche planifiée sur un poste.</strong></p>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {[
-            ["⬜ Gris", "Pas encore démarré", T.muted],
-            ["🔵 Bleu", "En cours", T.blue],
-            ["🟢 Vert", "Prêt à livrer", T.green],
-            ["🔴 Rouge", "En retard", T.red],
-          ].map(([icon, label]) => (
-            <div key={label} style={{ display: "flex", gap: 8, alignItems: "center", background: T.card, border: `1px solid ${T.border}`, borderRadius: 4, padding: "6px 10px" }}>
-              <span style={{ fontSize: 16 }}>{icon}</span>
-              <span style={{ fontSize: 13, color: T.sec }}>{label}</span>
+            { icon: "↔", label: "Déplace une commande d'un jour à l'autre en la faisant glisser" },
+            { icon: "📊", label: "Barre rouge sous un jour = poste surchargé, à rééquilibrer" },
+            { icon: "⚠", label: "Badge SPÉCIAL en amber = grand format qui bloque un poste toute la journée — à anticiper" },
+          ].map((item) => (
+            <div key={item.label} style={{ display: "flex", gap: 10, alignItems: "flex-start", background: T.card, borderRadius: 5, padding: "8px 10px" }}>
+              <span style={{ fontSize: 18, flexShrink: 0 }}>{item.icon}</span>
+              <span style={{ fontSize: 14, color: T.text }}>{item.label}</span>
             </div>
           ))}
         </div>
-        <div style={{ background: T.card, border: `1px solid ${T.bAccent}`, borderRadius: 6, padding: "10px 14px", fontSize: 14 }}>
-          <strong>La barre en bas de chaque jour :</strong>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6 }}>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}><div style={{ width: 30, height: 8, background: T.green, borderRadius: 3 }} /> <span style={{ color: T.sec }}>Vert = OK, bon rythme</span></div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}><div style={{ width: 30, height: 8, background: T.orange, borderRadius: 3 }} /> <span style={{ color: T.sec }}>Orange = attention, c'est chargé</span></div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}><div style={{ width: 30, height: 8, background: T.red, borderRadius: 3 }} /> <span style={{ color: T.sec }}>Rouge = trop chargé, parle à Marianne</span></div>
-          </div>
+        <div style={{ background: `${T.green}15`, border: `1px solid ${T.green}44`, borderRadius: 6, padding: "10px 14px", fontSize: 14 }}>
+          <strong style={{ color: T.green }}>Conseil :</strong>
+          <span style={{ color: T.sec }}> Regarde le planning <strong style={{ color: T.text }}>le vendredi</strong> pour organiser la semaine suivante et détecter les surcharges à l'avance.</span>
         </div>
-        <p style={{ margin: 0, fontSize: 14, color: T.sec }}>
-          Tu peux <strong style={{ color: T.text }}>déplacer une carte d'un jour à l'autre en la faisant glisser.</strong> L'appli vérifiera si c'est possible.
-        </p>
       </div>
     ),
-    visuel: <MockupPlanning />,
+    visuel: <MockupPlanningSemaine />,
     boutonFinal: "J'ai compris, je commence →",
   },
 ];
