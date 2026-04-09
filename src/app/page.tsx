@@ -21,7 +21,7 @@ import ImportCSV from "@/components/tabs/ImportCSV";
 import PlanningFabrication from "@/components/tabs/PlanningFabrication";
 import AvancementDashboard from "@/components/tabs/AvancementDashboard";
 import AffichageAtelier from "@/components/tabs/AffichageAtelier";
-import PlanningPoste from "@/components/tabs/PlanningPoste";
+import PlanningAtelier from "@/components/tabs/PlanningAtelier";
 
 export default function HomePage() {
   const { data: session, status } = useSession();
@@ -61,12 +61,11 @@ export default function HomePage() {
     { id: "saisie",       l: "➕ Ajouter une commande" },
     { id: "carnet",       l: `📂 Commandes (${commandes.length})` },
     { id: "crise",        l: `🚨 Crise${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
-    { id: "charge",       l: "📊 Charge SIAL" },
-    { id: "rh",           l: "👥 Équipe SIAL" },
-    { id: "planning_poste", l: "🗂 Planning postes" },
-    { id: "fabrication",    l: "🏭 Planning" },
-    { id: "avancement",     l: "📋 Avancement" },
-    { id: "atelier",        l: "📺 Affichage Atelier" },
+    { id: "rh",                l: "👥 Équipe SIAL" },
+    { id: "atelier",           l: "🏭 Planning Atelier" },
+    { id: "fabrication",       l: "📋 Planning tâches" },
+    { id: "avancement",        l: "📈 Avancement" },
+    { id: "affichage_atelier", l: "📺 Affichage Atelier" },
     { id: "isula",           l: "🔷 Planning ISULA VITRAGE" },
     { id: "besoins_vitrages", l: "🔢 Besoins Vitrages" },
     { id: "charge_isula",    l: "📊 Charge ISULA VITRAGE" },
@@ -182,10 +181,10 @@ export default function HomePage() {
             {ong === "livraison" && <PlanningLivraison commandes={commandes} onPatch={patchCommande} onEdit={editCommande} />}
             {ong === "charge" && <ChargeSemaine commandes={commandes} />}
             {ong === "rh" && <PlanningRH commandes={commandes} />}
-            {ong === "planning_poste" && <PlanningPoste commandes={commandes} />}
+            {ong === "atelier" && <PlanningAtelier commandes={commandes} />}
             {ong === "fabrication" && <PlanningFabrication commandes={commandes} onEdit={editCommande} />}
             {ong === "avancement" && <AvancementDashboard commandes={commandes} />}
-            {ong === "atelier" && <AffichageAtelier commandes={commandes} stocks={stocks} />}
+            {ong === "affichage_atelier" && <AffichageAtelier commandes={commandes} stocks={stocks} />}
             {ong === "isula" && <PlanningIsula commandes={commandes} />}
             {ong === "besoins_vitrages" && <BesoinVitrages commandes={commandes} />}
             {ong === "charge_isula" && <div style={{ padding: 40, color: C.sec, textAlign: "center" }}>📊 Charge ISULA VITRAGE — à venir</div>}
