@@ -64,6 +64,10 @@ model Commande {
   etape_montage_ok        Boolean  @default(false)
   etape_vitrage_ok        Boolean  @default(false)
   etape_palette_ok        Boolean  @default(false)
+  etape_coupe_date        String?
+  etape_montage_date      String?
+  etape_vitrage_date      String?
+  etape_palette_date      String?
   notes                   String?
   type_commande           String?
   atelier                 String   @default("SIAL")

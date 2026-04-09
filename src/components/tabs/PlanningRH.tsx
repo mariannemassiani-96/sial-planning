@@ -1,16 +1,29 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { C, JOURS_FERIES, isWorkday } from "@/lib/sial-data";
+import { C, JOURS_FERIES, isWorkday, EQUIPE, POSTES_COMPETENCES } from "@/lib/sial-data";
 import { H, Card } from "@/components/ui";
 
-// ── Équipe SIAL ───────────────────────────────────────────────────────────────
-const EQUIPE_SIAL = [
-  { id: "jean-pierre", nom: "Jean-Pierre",   poste: "Montage Frappes",  c: "#FF7043" },
-  { id: "quentin",     nom: "Quentin",       poste: "Vitrage",          c: "#42A5F5" },
-  { id: "jf",          nom: "Jean-François", poste: "Montage / Coupe",  c: "#66BB6A" },
-  { id: "jp2",         nom: "JP2",           poste: "Coupe",            c: "#AB47BC" },
-  { id: "ali",         nom: "Ali",           poste: "Polyvalent",       c: "#26C6DA" },
-];
+// ── Couleurs par opérateur ────────────────────────────────────────────────────
+const OP_COLORS: Record<string, string> = {
+  guillaume: "#CE93D8", momo: "#4DB6AC", bruno: "#FFA726",
+  ali: "#26C6DA", jp: "#FF7043", jf: "#66BB6A",
+  michel: "#42A5F5", alain: "#FFCA28", francescu: "#AB47BC",
+  julien: "#80CBC4", laurent: "#A5D6A7",
+};
+
+const POSTES_LABELS: Record<string, string> = {
+  magasin: "Magasin", isula: "ISULA", hors_std: "Hors-std",
+  frappes: "Frappes", coulissant: "Coulissant", coupe: "Coupe", vitrage_ov: "Vitrage OV",
+};
+
+// Build EQUIPE_SIAL from central EQUIPE config
+const EQUIPE_SIAL = EQUIPE.map(op => ({
+  id: op.id,
+  nom: op.nom,
+  poste: POSTES_LABELS[op.poste] || op.poste,
+  c: OP_COLORS[op.id] || C.sec,
+  competences: op.competences,
+}));
 
 const STD_MIN = 480; // 8h par jour ouvré
 
@@ -531,7 +544,7 @@ export default function PlanningRH({ commandes: _c }: { commandes: any[] }) {
       </div>
 
       {/* Legend */}
-      <Card style={{ padding: "10px 14px" }}>
+      <Card style={{ padding: "10px 14px", marginBottom: 24 }}>
         <div style={{ fontSize: 10, color: C.sec, fontWeight: 700, marginBottom: 8 }}>LÉGENDE</div>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -551,6 +564,114 @@ export default function PlanningRH({ commandes: _c }: { commandes: any[] }) {
           </span>
         </div>
       </Card>
+
+      {/* Compétences */}
+      <CompetencesPanel />
+    </div>
+  );
+}
+
+// ── Compétences Panel ─────────────────────────────────────────────────────────
+function CompetencesPanel() {
+  const [competences, setCompetences] = useState<Record<string, string[]>>(() =>
+    Object.fromEntries(EQUIPE_SIAL.map(op => [op.id, op.competences]))
+  );
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(true);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const toggle = (opId: string, compId: string) => {
+    setCompetences(prev => {
+      const cur = prev[opId] || [];
+      const next = cur.includes(compId) ? cur.filter(c => c !== compId) : [...cur, compId];
+      const updated = { ...prev, [opId]: next };
+      setSaved(false);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(async () => {
+        setSaving(true);
+        try {
+          await fetch("/api/competences", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(updated),
+          });
+          setSaved(true);
+        } finally {
+          setSaving(false);
+        }
+      }, 600);
+      return updated;
+    });
+  };
+
+  useEffect(() => {
+    fetch("/api/competences")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setCompetences(d); })
+      .catch(() => {});
+  }, []);
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <H c={C.teal}>Compétences par opérateur</H>
+        <span style={{ fontSize: 10, color: saving ? C.orange : saved ? C.green : C.sec, marginLeft: "auto" }}>
+          {saving ? "Sauvegarde…" : saved ? "✓ Sauvegardé" : ""}
+        </span>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+          <colgroup>
+            <col style={{ width: 150 }} />
+            {POSTES_COMPETENCES.map(p => <col key={p.id} />)}
+          </colgroup>
+          <thead>
+            <tr>
+              <th style={{ padding: "8px 10px", background: C.s2, border: `1px solid ${C.border}`, fontSize: 10, color: C.sec, textAlign: "left" }}>
+                OPÉRATEUR
+              </th>
+              {POSTES_COMPETENCES.map(p => (
+                <th key={p.id} style={{ padding: "8px 6px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10 }}>
+                  <div style={{ fontWeight: 700, color: p.c }}>{p.label}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {EQUIPE_SIAL.map(op => (
+              <tr key={op.id}>
+                <td style={{ padding: "8px 10px", background: C.s1, border: `1px solid ${C.border}` }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: op.c }}>{op.nom}</div>
+                  <div style={{ fontSize: 9, color: C.sec }}>{op.poste}</div>
+                </td>
+                {POSTES_COMPETENCES.map(p => {
+                  const has = (competences[op.id] || []).includes(p.id);
+                  return (
+                    <td key={p.id} style={{
+                      padding: "6px 4px",
+                      background: has ? p.c + "18" : C.bg,
+                      border: `1px solid ${has ? p.c + "44" : C.border}`,
+                      textAlign: "center",
+                      cursor: "pointer",
+                      transition: "background 0.1s",
+                    }}
+                      onClick={() => toggle(op.id, p.id)}
+                    >
+                      {has
+                        ? <span style={{ fontSize: 14, color: p.c }}>✓</span>
+                        : <span style={{ fontSize: 11, color: C.muted }}>—</span>
+                      }
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ fontSize: 10, color: C.muted, marginTop: 6 }}>
+        Cliquer une case pour ajouter / retirer une compétence
+      </div>
     </div>
   );
 }

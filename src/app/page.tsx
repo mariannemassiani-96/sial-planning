@@ -18,8 +18,7 @@ import PlanningIsula from "@/components/tabs/PlanningIsula";
 import BesoinVitrages from "@/components/tabs/BesoinVitrages";
 import Qualite from "@/components/tabs/Qualite";
 import ImportCSV from "@/components/tabs/ImportCSV";
-import PlanningFabrication from "@/components/tabs/PlanningFabrication";
-import AvancementDashboard from "@/components/tabs/AvancementDashboard";
+import Pointage from "@/components/tabs/Pointage";
 import AffichageAtelier from "@/components/tabs/AffichageAtelier";
 import PlanningAtelier from "@/components/tabs/PlanningAtelier";
 
@@ -63,8 +62,7 @@ export default function HomePage() {
     { id: "crise",        l: `🚨 Crise${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
     { id: "rh",                l: "👥 Équipe SIAL" },
     { id: "atelier",           l: "🏭 Planning Atelier" },
-    { id: "fabrication",       l: "📋 Planning tâches" },
-    { id: "avancement",        l: "📈 Avancement" },
+    { id: "pointage",          l: "✅ Pointage" },
     { id: "affichage_atelier", l: "📺 Affichage Atelier" },
     { id: "isula",           l: "🔷 Planning ISULA VITRAGE" },
     { id: "besoins_vitrages", l: "🔢 Besoins Vitrages" },
@@ -182,8 +180,7 @@ export default function HomePage() {
             {ong === "charge" && <ChargeSemaine commandes={commandes} />}
             {ong === "rh" && <PlanningRH commandes={commandes} />}
             {ong === "atelier" && <PlanningAtelier commandes={commandes} />}
-            {ong === "fabrication" && <PlanningFabrication commandes={commandes} onEdit={editCommande} />}
-            {ong === "avancement" && <AvancementDashboard commandes={commandes} />}
+            {ong === "pointage" && <Pointage commandes={commandes} onPatch={patchCommande} />}
             {ong === "affichage_atelier" && <AffichageAtelier commandes={commandes} stocks={stocks} />}
             {ong === "isula" && <PlanningIsula commandes={commandes} />}
             {ong === "besoins_vitrages" && <BesoinVitrages commandes={commandes} />}

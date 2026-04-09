@@ -242,20 +242,28 @@ export const STOCKS_DEF: Record<string, {
   verre_brut:       { label:"Verre brut ISULA",              localisation:"Stockage verre ISULA",        unite:"m²",       cap_unite:1,   min:100,max:400,cible:250, raison:"Délai fournisseur >1 semaine — ISULA 300 vitrages/sem",          c:"#4DB6AC" },
 };
 
+// Compétences postes : coupe, frappes, coulissant, vitrage_ov, isula, magasin
+export const POSTES_COMPETENCES = [
+  { id:"coupe",      label:"Coupe",       c:"#42A5F5" },
+  { id:"frappes",    label:"Frappes",     c:"#FFA726" },
+  { id:"coulissant", label:"Coulissant",  c:"#66BB6A" },
+  { id:"vitrage_ov", label:"Vitrage OV",  c:"#26C6DA" },
+  { id:"isula",      label:"ISULA",       c:"#4DB6AC" },
+  { id:"magasin",    label:"Magasin",     c:"#CE93D8" },
+];
+
 export const EQUIPE = [
-  { id:"bruno",     nom:"Bruno",         poste:"isula",      h:39, vendrediOff:false, remplace:["isula_op"], note:"Responsable QC+procédures ISULA+SIAL · Supervision · Soutien ponctuel production" },
-  { id:"momo",      nom:"Momo",          poste:"isula",      h:39, vendrediOff:false, remplace:["vitrage_ov"], note:"Opérateur ISULA A→Z · Présent tous les jours · Remplace Quentin" },
-  { id:"ali",       nom:"Ali",           poste:"isula",      h:39, vendrediOff:false, remplace:[], note:"Opérateur ISULA A→Z · Présent tous les jours" },
-  { id:"guillaume", nom:"Guillaume",     poste:"magasin",    h:39, vendrediOff:false, remplace:["isula_op","vitrage_ov"], note:"Réceptions · Rangement · Prépa accessoires · Chargements" },
-  { id:"julien",    nom:"Julien",        poste:"coupe",      h:39, vendrediOff:false, remplace:[], specialite:"Double tête", note:"Prépa + coupe LMT + coupe double tête (seul)" },
-  { id:"laurent",   nom:"Laurent",       poste:"coupe",      h:39, vendrediOff:false, remplace:["vitrage_ov"], specialite:"Soudure PVC", note:"Prépa + coupe LMT + soudure PVC (seul) + soutien expédition" },
-  { id:"mateo",     nom:"Mateo",         poste:"coupe",      h:39, vendrediOff:false, remplace:[], specialite:"Renfort acier", note:"Prépa + coupe LMT + coupe renfort acier (seul)" },
-  { id:"alain",     nom:"Alain",         poste:"coulissant", h:30, vendrediOff:true,  remplace:["frappes"], note:"Montage dormants coulissant+galandage · SEUL sur ce poste · Absent vendredi" },
-  { id:"michel",    nom:"Michel",        poste:"frappes",    h:36, vendrediOff:false, remplace:["coulissant","soudure_pvc"], note:"Montage frappes jusqu'au vitrage · Polyvalent coulissant+soudure PVC" },
-  { id:"jf",        nom:"Jean-François", poste:"frappes",    h:39, vendrediOff:false, remplace:["coulissant","vitrage_ov"], note:"Montage frappes jusqu'au vitrage · Polyvalent coulissant+vitrage OV" },
-  { id:"quentin",   nom:"Quentin",       poste:"vitrage_ov", h:39, vendrediOff:false, remplace:[], note:"Vitrage ouvrants coulissant · Mise sur palette · 6 remplaçants" },
-  { id:"apprenti",  nom:"Apprenti",      poste:"frappes",    h:35, vendrediOff:false, remplace:["vitrage_ov"], note:"Soutien vitrage frappes + mise sur palette · Renforce Quentin si besoin" },
-  { id:"jp",        nom:"Jean-Pierre",   poste:"hors_std",   h:36, vendrediOff:false, remplace:["frappes","coulissant","vitrage_ov"], note:"Sur-mesure / Luxe / Hors-normes · HORS PÉRIMÈTRE planning standard" },
+  { id:"guillaume", nom:"Guillaume",     poste:"magasin",    h:39, vendrediOff:false, remplace:["isula_op","vitrage_ov"], competences:["magasin","vitrage_ov","isula"],         note:"Réceptions · Rangement · Prépa accessoires · Chargements" },
+  { id:"momo",      nom:"Momo",          poste:"isula",      h:39, vendrediOff:false, remplace:["vitrage_ov"],            competences:["isula","vitrage_ov"],                   note:"Opérateur ISULA A→Z · Présent tous les jours · Remplace vitrage OV" },
+  { id:"bruno",     nom:"Bruno",         poste:"isula",      h:39, vendrediOff:false, remplace:["isula_op"],              competences:["isula","frappes","coulissant"],          note:"Responsable QC+procédures ISULA+SIAL · Supervision · Soutien ponctuel production" },
+  { id:"ali",       nom:"Ali",           poste:"isula",      h:39, vendrediOff:false, remplace:[],                        competences:["isula"],                                note:"Opérateur ISULA A→Z · Présent tous les jours" },
+  { id:"jp",        nom:"Jean-Pierre",   poste:"hors_std",   h:36, vendrediOff:false, remplace:["frappes","coulissant","vitrage_ov"], competences:["frappes","coulissant","vitrage_ov","coupe"], note:"Sur-mesure / Luxe / Hors-normes · Polyvalent tous postes" },
+  { id:"jf",        nom:"Jean-François", poste:"frappes",    h:39, vendrediOff:false, remplace:["coulissant","vitrage_ov"], competences:["frappes","coulissant","vitrage_ov","coupe"], note:"Montage frappes jusqu'au vitrage · Polyvalent coulissant+vitrage OV+coupe" },
+  { id:"michel",    nom:"Michel",        poste:"frappes",    h:36, vendrediOff:false, remplace:["coulissant","soudure_pvc"], competences:["frappes","coulissant","coupe"],       note:"Montage frappes jusqu'au vitrage · Polyvalent coulissant+soudure PVC" },
+  { id:"alain",     nom:"Alain",         poste:"coulissant", h:30, vendrediOff:true,  remplace:["frappes"],               competences:["coulissant","frappes"],                 note:"Montage dormants coulissant+galandage · SEUL sur ce poste · Absent vendredi" },
+  { id:"francescu", nom:"Francescu",     poste:"frappes",    h:39, vendrediOff:false, remplace:[],                        competences:["frappes","coupe"],                      note:"Montage frappes · Soutien coupe" },
+  { id:"julien",    nom:"Julien",        poste:"coupe",      h:39, vendrediOff:false, remplace:[], specialite:"Double tête", competences:["coupe"],                             note:"Prépa + coupe LMT + coupe double tête (seul)" },
+  { id:"laurent",   nom:"Laurent",       poste:"coupe",      h:39, vendrediOff:false, remplace:["vitrage_ov"], specialite:"Soudure PVC", competences:["coupe","vitrage_ov"],    note:"Prépa + coupe LMT + soudure PVC (seul) + soutien expédition" },
 ];
 
 export const ZONES = ["SIAL","Porto-Vecchio","Balagne","Ajaccio","Plaine Orientale","Continent","Sur chantier","Autre"];
@@ -346,13 +354,24 @@ export function dateDemarrage(cmd: { date_alu?: string | null; date_pvc?: string
 export interface CommandeCC extends CommandeCalc {
   id?: string | number;
   client?: string;
+  ref_chantier?: string | null;
+  num_commande?: string;
   priorite?: string;
+  statut?: string;
   date_alu?: string | null;
   date_pvc?: string | null;
   date_accessoires?: string | null;
   date_panneau_porte?: string | null;
   date_volet_roulant?: string | null;
   date_livraison_souhaitee?: string | null;
+  etape_coupe_ok?: boolean;
+  etape_montage_ok?: boolean;
+  etape_vitrage_ok?: boolean;
+  etape_palette_ok?: boolean;
+  etape_coupe_date?: string | null;
+  etape_montage_date?: string | null;
+  etape_vitrage_date?: string | null;
+  etape_palette_date?: string | null;
 }
 
 export function calcCheminCritique(cmd: CommandeCC) {
@@ -531,17 +550,15 @@ export const COMPETENCES_DEFAUT: Record<string, string[]> = {
 
 // Équipe pour affichage atelier (avec dates naissance pour anniversaires)
 export const EQUIPE_ANNIVERSAIRES: Array<{ id: string; nom: string; naissance: string }> = [
-  { id: "julien",    nom: "Julien",        naissance: "" },
-  { id: "laurent",   nom: "Laurent",       naissance: "" },
-  { id: "mateo",     nom: "Mateo",         naissance: "" },
-  { id: "alain",     nom: "Alain",         naissance: "" },
-  { id: "michel",    nom: "Michel",        naissance: "" },
-  { id: "jf",        nom: "Jean-François", naissance: "" },
-  { id: "quentin",   nom: "Quentin",       naissance: "" },
-  { id: "apprenti",  nom: "Apprenti",      naissance: "" },
   { id: "guillaume", nom: "Guillaume",     naissance: "" },
-  { id: "ali",       nom: "Ali",           naissance: "" },
   { id: "momo",      nom: "Momo",          naissance: "" },
   { id: "bruno",     nom: "Bruno",         naissance: "" },
+  { id: "ali",       nom: "Ali",           naissance: "" },
   { id: "jp",        nom: "Jean-Pierre",   naissance: "" },
+  { id: "jf",        nom: "Jean-François", naissance: "" },
+  { id: "michel",    nom: "Michel",        naissance: "" },
+  { id: "alain",     nom: "Alain",         naissance: "" },
+  { id: "francescu", nom: "Francescu",     naissance: "" },
+  { id: "julien",    nom: "Julien",        naissance: "" },
+  { id: "laurent",   nom: "Laurent",       naissance: "" },
 ];
