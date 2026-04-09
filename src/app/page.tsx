@@ -25,6 +25,7 @@ import DashboardMatin from "@/components/tabs/DashboardMatin";
 import PlanningSemaine from "@/components/tabs/PlanningSemaine";
 import DetailCommande from "@/components/tabs/DetailCommande";
 import StatsAdmin from "@/components/tabs/StatsAdmin";
+import GestionCompetences from "@/components/tabs/GestionCompetences";
 import TutoAJ from "@/components/TutoAJ";
 
 export default function HomePage() {
@@ -75,7 +76,8 @@ export default function HomePage() {
     { id: "isula",           l: "🔷 Planning ISULA VITRAGE" },
     { id: "besoins_vitrages", l: "🔢 Besoins Vitrages" },
     { id: "charge_isula",    l: "📊 Charge ISULA VITRAGE" },
-    { id: "equipe_isula", l: "👥 Équipe ISULA VITRAGE" },
+    { id: "equipe_isula",  l: "👥 Équipe ISULA VITRAGE" },
+    { id: "competences",   l: "👥 Compétences" },
     ...(isAdmin ? [
       { id: "qualite",      l: "✅ Qualité" },
       { id: "stocks",       l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
@@ -207,6 +209,7 @@ export default function HomePage() {
             {ong === "simulateur" && <Simulateur />}
             {ong === "import_csv" && <ImportCSV onRefresh={fetchAll} />}
             {ong === "stats_admin" && <StatsAdmin />}
+            {ong === "competences" && <GestionCompetences />}
           </>
         )}
       </div>

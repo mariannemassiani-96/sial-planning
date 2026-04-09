@@ -206,6 +206,363 @@ function MockupPlanningSemaine() {
   );
 }
 
+// ── Étape 0 — Configuration initiale ─────────────────────────────────────────
+
+const CONFIG_KEY = "config_done";
+
+const CFG_POST_GROUPS = [
+  { label: "Coupe",   ids: ["C1","C2","C3","C4","C5","C6"] },
+  { label: "Montage", ids: ["M1","M2","M3","F1","F2","F3"] },
+  { label: "Vitrage", ids: ["V1","V2"] },
+  { label: "ISULA",   ids: ["I1","I2","I3","I4","I5","I6","I7","I8"] },
+];
+
+const CFG_PRODUCT_TYPES = [
+  { key: "OB1_PVC",       label: "Frappe PVC" },
+  { key: "OB1_ALU",       label: "Frappe ALU" },
+  { key: "C2V2R",         label: "Coulissant" },
+  { key: "G2V1R",         label: "Galandage" },
+  { key: "P1_ALU",        label: "Porte ALU" },
+  { key: "FIXE_ALU",      label: "Vit. menuiserie" },
+  { key: "FIXE_PVC",      label: "Vitrage IGU" },
+  { key: "HORS_STANDARD", label: "Grand format / Hors std" },
+];
+
+const JOURS_ABBR = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
+
+interface OpData {
+  id: string;
+  name: string;
+  weekHours: number;
+  posts: string[];
+  workingDays: number[];
+  notes: string | null;
+  active: boolean;
+  skills: Array<{
+    id: string;
+    operatorId: string;
+    workPostId: string | null;
+    menuiserieType: string | null;
+    level: number;
+  }>;
+}
+
+interface LocalConfig {
+  weekHours: number;
+  workingDays: number[];
+  notes: string;
+  skills: Record<string, number>;
+}
+
+function cyclLevel(current: number): number {
+  return (current + 1) % 4;
+}
+
+function LevelBtn({ level, onClick }: { level: number; onClick: () => void }) {
+  const cfgs = [
+    { label: "—", bg: "transparent", color: T.muted,  border: T.muted  },
+    { label: "①", bg: T.muted,       color: "#fff",   border: T.muted  },
+    { label: "②", bg: T.orange,      color: "#000",   border: T.orange },
+    { label: "③", bg: T.green,       color: "#000",   border: T.green  },
+  ];
+  const c = cfgs[level] ?? cfgs[0];
+  return (
+    <button
+      onClick={onClick}
+      title="Clic pour changer le niveau"
+      style={{
+        width: 26, height: 26, borderRadius: "50%",
+        border: `1.5px solid ${c.border}`, background: c.bg,
+        color: c.color, fontSize: 11, fontWeight: 800,
+        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      {c.label}
+    </button>
+  );
+}
+
+function ConfigInitiale({ onDone, onClose }: { onDone: () => void; onClose: () => void }) {
+  const [operators, setOperators] = useState<OpData[]>([]);
+  const [configs, setConfigs]     = useState<Record<string, LocalConfig>>({});
+  const [expanded, setExpanded]   = useState<string | null>(null);
+  const [saving, setSaving]       = useState<Record<string, boolean>>({});
+  const [saved, setSaved]         = useState<Set<string>>(new Set());
+  const [loading, setLoading]     = useState(true);
+
+  useEffect(() => {
+    fetch("/api/operators")
+      .then((r) => r.json())
+      .then((ops: OpData[]) => {
+        const cfgs: Record<string, LocalConfig> = {};
+        const initialSaved = new Set<string>();
+        for (const op of ops) {
+          const skillMap: Record<string, number> = {};
+          for (const sk of op.skills) {
+            const key = sk.workPostId ?? sk.menuiserieType;
+            if (key) skillMap[key] = sk.level;
+          }
+          cfgs[op.id] = {
+            weekHours:   op.weekHours,
+            workingDays: [...op.workingDays],
+            notes:       op.notes ?? "",
+            skills:      skillMap,
+          };
+          if (op.weekHours > 0 || op.skills.length > 0) initialSaved.add(op.id);
+        }
+        setOperators(ops);
+        setConfigs(cfgs);
+        setSaved(initialSaved);
+        setLoading(false);
+      });
+  }, []);
+
+  const saveOp = async (opId: string) => {
+    setSaving((s) => ({ ...s, [opId]: true }));
+    const cfg = configs[opId];
+    const allPostIds = CFG_POST_GROUPS.flatMap((g) => g.ids);
+    const skillsPayload: Array<{ workPostId?: string | null; menuiserieType?: string | null; level: number }> = [];
+    for (const [key, level] of Object.entries(cfg.skills)) {
+      if (level === 0) continue;
+      if (allPostIds.includes(key)) {
+        skillsPayload.push({ workPostId: key, menuiserieType: null, level });
+      } else {
+        skillsPayload.push({ workPostId: null, menuiserieType: key, level });
+      }
+    }
+    const posts = skillsPayload.filter((s) => s.workPostId).map((s) => s.workPostId as string);
+    await fetch(`/api/operators/${opId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        weekHours:   cfg.weekHours,
+        workingDays: cfg.workingDays,
+        notes:       cfg.notes || null,
+        posts,
+        skills:      skillsPayload,
+      }),
+    });
+    setSaved((prev) => { const n = new Set(prev); n.add(opId); return n; });
+    setSaving((s) => ({ ...s, [opId]: false }));
+    setExpanded(null);
+  };
+
+  const setSkillLevel = (opId: string, key: string, level: number) => {
+    setConfigs((prev) => ({
+      ...prev,
+      [opId]: { ...prev[opId], skills: { ...prev[opId].skills, [key]: level } },
+    }));
+  };
+
+  const toggleDay = (opId: string, day: number) => {
+    setConfigs((prev) => {
+      const days = prev[opId].workingDays;
+      const next = days.includes(day)
+        ? days.filter((d) => d !== day)
+        : [...days, day].sort((a, b) => a - b);
+      return { ...prev, [opId]: { ...prev[opId], workingDays: next } };
+    });
+  };
+
+  const handleDone = () => {
+    localStorage.setItem(CONFIG_KEY, "true");
+    onDone();
+  };
+
+  const configuredCount = saved.size;
+  const totalCount      = operators.length;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* Header */}
+      <div style={{ background: T.panel, borderBottom: `1px solid ${T.bAccent}`, padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: T.orange }}>Configuration initiale</div>
+          <div style={{ fontSize: 12, color: T.sec, marginTop: 2 }}>Renseigne les compétences de chaque opérateur — à faire une seule fois</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: configuredCount === totalCount && totalCount > 0 ? T.green : T.orange }}>
+              {configuredCount}/{totalCount}
+            </div>
+            <div style={{ fontSize: 10, color: T.muted }}>configurés</div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ padding: "6px 14px", background: "transparent", border: `1px solid ${T.bAccent}`, borderRadius: 6, color: T.sec, cursor: "pointer", fontSize: 13 }}
+          >
+            Fermer
+          </button>
+        </div>
+      </div>
+
+      {/* Note explicative */}
+      <div style={{ background: `${T.blue}12`, border: `1px solid ${T.blue}33`, margin: "10px 20px 0", borderRadius: 6, padding: "8px 14px", flexShrink: 0 }}>
+        <span style={{ fontSize: 12, color: T.sec }}>
+          💡 Clique sur un opérateur pour ouvrir sa fiche. Pour les niveaux : chaque clic change le niveau — <strong style={{ color: T.muted }}>—</strong> → <strong>①</strong> → <strong style={{ color: T.orange }}>②</strong> → <strong style={{ color: T.green }}>③</strong>. Clique "Enregistrer" pour valider.
+        </span>
+      </div>
+
+      {/* Liste opérateurs */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "10px 20px 16px" }}>
+        {loading ? (
+          <div style={{ padding: 30, textAlign: "center", color: T.sec }}>⏳ Chargement…</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {operators.map((op) => {
+              const cfg = configs[op.id];
+              const isExpanded = expanded === op.id;
+              const isSaved    = saved.has(op.id);
+              if (!cfg) return null;
+              return (
+                <div key={op.id} style={{ background: T.card, border: `1px solid ${isSaved ? T.green + "55" : T.border}`, borderRadius: 6, overflow: "hidden" }}>
+                  {/* En-tête carte */}
+                  <div
+                    style={{ display: "flex", alignItems: "center", padding: "9px 14px", cursor: "pointer", gap: 8 }}
+                    onClick={() => setExpanded(isExpanded ? null : op.id)}
+                  >
+                    <span style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>{op.name}</span>
+                    {isSaved
+                      ? <span style={{ fontSize: 11, color: T.green, background: `${T.green}20`, padding: "2px 7px", borderRadius: 4 }}>✓ Enregistré</span>
+                      : <span style={{ fontSize: 11, color: T.muted,  background: `${T.muted}20`,  padding: "2px 7px", borderRadius: 4 }}>À configurer</span>
+                    }
+                    {cfg.weekHours > 0 && (
+                      <span style={{ fontSize: 11, color: T.sec }}>{cfg.weekHours}h</span>
+                    )}
+                    {cfg.workingDays.length > 0 && (
+                      <span style={{ fontSize: 11, color: T.sec }}>{cfg.workingDays.map((d) => JOURS_ABBR[d]).join(" ")}</span>
+                    )}
+                    <span style={{ fontSize: 13, color: T.muted, lineHeight: 1 }}>{isExpanded ? "▲" : "▼"}</span>
+                  </div>
+
+                  {/* Formulaire étendu */}
+                  {isExpanded && (
+                    <div style={{ borderTop: `1px solid ${T.border}`, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
+
+                      {/* Ligne 1 : Heures + Jours + Notes */}
+                      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+                        <div>
+                          <div style={{ fontSize: 10, color: T.muted, marginBottom: 4 }}>Heures / semaine</div>
+                          <input
+                            type="number" min={0} max={48} step={0.5}
+                            value={cfg.weekHours || ""}
+                            onChange={(e) => setConfigs((prev) => ({
+                              ...prev,
+                              [op.id]: { ...prev[op.id], weekHours: parseFloat(e.target.value) || 0 },
+                            }))}
+                            placeholder="35"
+                            style={{ width: 68, padding: "5px 8px", background: T.bg, border: `1px solid ${T.bAccent}`, borderRadius: 4, color: T.text, fontSize: 14 }}
+                          />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, color: T.muted, marginBottom: 4 }}>Jours travaillés</div>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            {JOURS_ABBR.map((j, i) => (
+                              <button
+                                key={j}
+                                onClick={() => toggleDay(op.id, i)}
+                                style={{
+                                  padding: "4px 7px", borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                                  background: cfg.workingDays.includes(i) ? T.orange : T.bg,
+                                  border: `1px solid ${cfg.workingDays.includes(i) ? T.orange : T.bAccent}`,
+                                  color: cfg.workingDays.includes(i) ? "#000" : T.muted,
+                                }}
+                              >
+                                {j}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 140 }}>
+                          <div style={{ fontSize: 10, color: T.muted, marginBottom: 4 }}>Notes (optionnel)</div>
+                          <input
+                            type="text"
+                            value={cfg.notes}
+                            onChange={(e) => setConfigs((prev) => ({
+                              ...prev,
+                              [op.id]: { ...prev[op.id], notes: e.target.value },
+                            }))}
+                            placeholder='Ex: "absent le vendredi"…'
+                            style={{ width: "100%", padding: "5px 8px", background: T.bg, border: `1px solid ${T.bAccent}`, borderRadius: 4, color: T.text, fontSize: 12, boxSizing: "border-box" }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Compétences postes */}
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: T.orange, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Compétences postes</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {CFG_POST_GROUPS.map((grp) => (
+                            <div key={grp.label} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 10, color: T.muted, width: 50, flexShrink: 0 }}>{grp.label}</span>
+                              {grp.ids.map((pid) => (
+                                <div key={pid} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                                  <span style={{ fontSize: 8, color: T.muted }}>{pid}</span>
+                                  <LevelBtn
+                                    level={cfg.skills[pid] ?? 0}
+                                    onClick={() => setSkillLevel(op.id, pid, cyclLevel(cfg.skills[pid] ?? 0))}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Compétences produits */}
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: T.orange, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Compétences produits</div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {CFG_PRODUCT_TYPES.map((pt) => (
+                            <div key={pt.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                              <span style={{ fontSize: 8, color: T.muted, textAlign: "center", maxWidth: 44, lineHeight: 1.2 }}>{pt.label}</span>
+                              <LevelBtn
+                                level={cfg.skills[pt.key] ?? 0}
+                                onClick={() => setSkillLevel(op.id, pt.key, cyclLevel(cfg.skills[pt.key] ?? 0))}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Bouton sauvegarder */}
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <button
+                          onClick={() => saveOp(op.id)}
+                          disabled={saving[op.id]}
+                          style={{ padding: "8px 20px", background: T.orange, border: "none", borderRadius: 5, color: "#000", fontWeight: 800, fontSize: 13, cursor: saving[op.id] ? "wait" : "pointer" }}
+                        >
+                          {saving[op.id] ? "Enregistrement…" : "Enregistrer ✓"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div style={{ background: T.panel, borderTop: `1px solid ${T.bAccent}`, padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+        <div style={{ fontSize: 12, color: T.sec }}>
+          {configuredCount < totalCount
+            ? `${totalCount - configuredCount} opérateur(s) restant(s) à configurer`
+            : "✅ Tous les opérateurs sont configurés !"}
+        </div>
+        <button
+          onClick={handleDone}
+          style={{ padding: "10px 28px", borderRadius: 6, fontSize: 14, fontWeight: 800, cursor: "pointer", background: T.green, border: "none", color: "#000" }}
+        >
+          Configuration terminée →
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Contenu des 5 étapes ─────────────────────────────────────────────────────
 
 interface Step {
@@ -404,14 +761,20 @@ interface TutoAJProps {
 }
 
 export function TutoAJModal({ onClose, onFinish }: TutoAJProps) {
-  const [step, setStep] = useState(0);
+  const [step, setStep]           = useState(0);
+  const [showConfig, setShowConfig] = useState(false);
+
+  useEffect(() => {
+    setShowConfig(!localStorage.getItem(CONFIG_KEY));
+  }, []);
+
   const current = STEPS[step];
-  const isLast = step === STEPS.length - 1;
+  const isLast  = step === STEPS.length - 1;
 
   const close = useCallback(() => {
-    localStorage.setItem(STORAGE_KEY, "true");
+    if (!showConfig) localStorage.setItem(STORAGE_KEY, "true");
     onClose?.();
-  }, [onClose]);
+  }, [onClose, showConfig]);
 
   const finish = useCallback(() => {
     localStorage.setItem(STORAGE_KEY, "true");
@@ -432,107 +795,112 @@ export function TutoAJModal({ onClose, onFinish }: TutoAJProps) {
         display: "flex", flexDirection: "column",
         boxShadow: "0 24px 80px rgba(0,0,0,0.7)",
       }}>
-        {/* Header */}
-        <div style={{ background: T.panel, borderBottom: `1px solid ${T.bAccent}`, padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-            <div style={{ fontSize: 22, fontWeight: 800, color: T.orange }}>Guide atelier</div>
-            <div style={{ fontSize: 13, color: T.muted }}>pour Ange-Joseph</div>
-          </div>
-          <button
-            onClick={close}
-            style={{ padding: "6px 14px", background: "transparent", border: `1px solid ${T.bAccent}`, borderRadius: 6, color: T.sec, cursor: "pointer", fontSize: 13 }}
-          >
-            Fermer
-          </button>
-        </div>
-
-        {/* Stepper indicateur */}
-        <div style={{ background: T.panel, borderBottom: `1px solid ${T.border}`, padding: "12px 24px", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          {STEPS.map((s, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {showConfig ? (
+          <ConfigInitiale
+            onDone={() => setShowConfig(false)}
+            onClose={close}
+          />
+        ) : (
+          <>
+            {/* Header */}
+            <div style={{ background: T.panel, borderBottom: `1px solid ${T.bAccent}`, padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+              <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: T.orange }}>Guide atelier</div>
+                <div style={{ fontSize: 13, color: T.muted }}>pour Ange-Joseph</div>
+              </div>
               <button
-                onClick={() => setStep(i)}
+                onClick={close}
+                style={{ padding: "6px 14px", background: "transparent", border: `1px solid ${T.bAccent}`, borderRadius: 6, color: T.sec, cursor: "pointer", fontSize: 13 }}
+              >
+                Fermer
+              </button>
+            </div>
+
+            {/* Stepper indicateur */}
+            <div style={{ background: T.panel, borderBottom: `1px solid ${T.border}`, padding: "12px 24px", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              {STEPS.map((_s, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button
+                    onClick={() => setStep(i)}
+                    style={{
+                      width: 32, height: 32, borderRadius: "50%",
+                      background: i === step ? T.orange : i < step ? T.green : T.card,
+                      border: `2px solid ${i === step ? T.orange : i < step ? T.green : T.border}`,
+                      color: i <= step ? "#000" : T.muted,
+                      fontWeight: 800, fontSize: 13, cursor: "pointer",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {i < step ? "✓" : i + 1}
+                  </button>
+                  {i < STEPS.length - 1 && (
+                    <div style={{ width: 40, height: 2, background: i < step ? T.green : T.border, borderRadius: 1 }} />
+                  )}
+                </div>
+              ))}
+              <div style={{ marginLeft: "auto", fontSize: 12, color: T.muted }}>
+                Étape {step + 1} / {STEPS.length}
+              </div>
+            </div>
+
+            {/* Contenu */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 20 }}>
+              <div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: T.text, marginBottom: 4 }}>
+                  {current.titre}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 28, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <div style={{ flex: "1 1 300px", fontSize: 16, lineHeight: 1.65, color: T.text }}>
+                  {current.contenu}
+                  {current.note && (
+                    <div style={{ marginTop: 16 }}>{current.note}</div>
+                  )}
+                </div>
+                <div style={{ flex: "1 1 280px" }}>
+                  {current.visuel}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer navigation */}
+            <div style={{ background: T.panel, borderTop: `1px solid ${T.bAccent}`, padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+              <button
+                onClick={() => setStep((s) => s - 1)}
+                disabled={step === 0}
                 style={{
-                  width: 32, height: 32, borderRadius: "50%",
-                  background: i === step ? T.orange : i < step ? T.green : T.card,
-                  border: `2px solid ${i === step ? T.orange : i < step ? T.green : T.border}`,
-                  color: i <= step ? "#000" : T.muted,
-                  fontWeight: 800, fontSize: 13, cursor: "pointer",
-                  transition: "all 0.15s",
+                  padding: "10px 24px", fontSize: 15, fontWeight: 600, borderRadius: 6, cursor: step === 0 ? "not-allowed" : "pointer",
+                  background: step === 0 ? "transparent" : T.card,
+                  border: `1px solid ${step === 0 ? T.border : T.bAccent}`,
+                  color: step === 0 ? T.muted : T.text,
                 }}
               >
-                {i < step ? "✓" : i + 1}
+                ← Précédent
               </button>
-              {i < STEPS.length - 1 && (
-                <div style={{ width: 40, height: 2, background: i < step ? T.green : T.border, borderRadius: 1 }} />
+
+              <div style={{ fontSize: 12, color: T.muted }}>
+                {step + 1} / {STEPS.length}
+              </div>
+
+              {isLast ? (
+                <button
+                  onClick={finish}
+                  style={{ padding: "12px 32px", fontSize: 16, fontWeight: 800, borderRadius: 6, cursor: "pointer", background: T.green, border: "none", color: "#000" }}
+                >
+                  {current.boutonFinal ?? "J'ai compris, je commence →"}
+                </button>
+              ) : (
+                <button
+                  onClick={() => setStep((s) => s + 1)}
+                  style={{ padding: "12px 32px", fontSize: 16, fontWeight: 800, borderRadius: 6, cursor: "pointer", background: T.orange, border: "none", color: "#000" }}
+                >
+                  Suivant →
+                </button>
               )}
             </div>
-          ))}
-          <div style={{ marginLeft: "auto", fontSize: 12, color: T.muted }}>
-            Étape {step + 1} / {STEPS.length}
-          </div>
-        </div>
-
-        {/* Contenu */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 20 }}>
-          {/* Titre de l'étape */}
-          <div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: T.text, marginBottom: 4 }}>
-              {current.titre}
-            </div>
-          </div>
-
-          {/* Layout : contenu + visuel côte à côte si assez large */}
-          <div style={{ display: "flex", gap: 28, alignItems: "flex-start", flexWrap: "wrap" }}>
-            <div style={{ flex: "1 1 300px", fontSize: 16, lineHeight: 1.65, color: T.text }}>
-              {current.contenu}
-              {current.note && (
-                <div style={{ marginTop: 16 }}>
-                  {current.note}
-                </div>
-              )}
-            </div>
-            <div style={{ flex: "1 1 280px" }}>
-              {current.visuel}
-            </div>
-          </div>
-        </div>
-
-        {/* Footer navigation */}
-        <div style={{ background: T.panel, borderTop: `1px solid ${T.bAccent}`, padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-          <button
-            onClick={() => setStep((s) => s - 1)}
-            disabled={step === 0}
-            style={{
-              padding: "10px 24px", fontSize: 15, fontWeight: 600, borderRadius: 6, cursor: step === 0 ? "not-allowed" : "pointer",
-              background: step === 0 ? "transparent" : T.card,
-              border: `1px solid ${step === 0 ? T.border : T.bAccent}`,
-              color: step === 0 ? T.muted : T.text,
-            }}
-          >
-            ← Précédent
-          </button>
-
-          <div style={{ fontSize: 12, color: T.muted }}>
-            {step + 1} / {STEPS.length}
-          </div>
-
-          {isLast ? (
-            <button
-              onClick={finish}
-              style={{ padding: "12px 32px", fontSize: 16, fontWeight: 800, borderRadius: 6, cursor: "pointer", background: T.green, border: "none", color: "#000" }}
-            >
-              {current.boutonFinal ?? "J'ai compris, je commence →"}
-            </button>
-          ) : (
-            <button
-              onClick={() => setStep((s) => s + 1)}
-              style={{ padding: "12px 32px", fontSize: 16, fontWeight: 800, borderRadius: 6, cursor: "pointer", background: T.orange, border: "none", color: "#000" }}
-            >
-              Suivant →
-            </button>
-          )}
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -549,13 +917,14 @@ export default function TutoAJ({ onGoToDashboard }: TutoAJProps2) {
   const [open, setOpen] = useState(false);
 
   // Ouverture automatique au premier login d'Ange-Joseph
+  // Se déclenche si config pas encore faite OU si tuto pas encore vu
   useEffect(() => {
     if (status !== "authenticated") return;
     const userName = (session?.user as { name?: string })?.name ?? "";
     const isAJ = userName.toLowerCase().includes("ange") || userName.toLowerCase().includes("achilli");
-    const seen = localStorage.getItem(STORAGE_KEY);
-    if (isAJ && !seen) {
-      // Petit délai pour laisser le temps à la page de charger
+    const configDone = localStorage.getItem(CONFIG_KEY);
+    const seen       = localStorage.getItem(STORAGE_KEY);
+    if (isAJ && (!configDone || !seen)) {
       const t = setTimeout(() => setOpen(true), 800);
       return () => clearTimeout(t);
     }
