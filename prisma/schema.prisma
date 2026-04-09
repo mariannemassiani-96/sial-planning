@@ -137,6 +137,12 @@ model Backup {
   createdAt DateTime @default(now())
 }
 
+model PlanningPoste {
+  semaine   String   @id
+  plan      Json
+  updatedAt DateTime @updatedAt
+}
+
 model Tache {
   id               String   @id @default(cuid())
   nom              String

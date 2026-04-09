@@ -6,7 +6,7 @@ import { H, Card } from "@/components/ui";
 const inp = { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, padding: "7px 11px", color: C.text, fontSize: 13, width: "100%", outline: "none" };
 
 const emptyLigne = { type: "ob1_pvc", quantite: 1, coloris: "blanc", hs_nb_profils: "", hs_t_coupe: "", hs_t_montage: "", hs_t_vitrage: "", hs_op_montage: "jp", hs_op_vitrage: "quentin", hs_notes: "" };
-const emptyVitrage = { composition: "", quantite: "1", surface_m2: "", fournisseur: "isula", cmd_passee: false, date_reception: "", position: "", couleur_intercalaire: "", epaisseur_intercalaire: "", largeur: "", hauteur: "", forme: "", prix_m2: "", prix_total: "", largeur_origine: "", hauteur_origine: "", surface_m2_origine: "" };
+const emptyVitrage = { composition: "", quantite: "1", surface_m2: "", fournisseur: "isula", cmd_passee: false, date_reception: "", position: "", face_exterieure: "", face_interieure: "", couleur_intercalaire: "", epaisseur_intercalaire: "", largeur: "", hauteur: "", forme: "", prix_m2: "", prix_total: "", largeur_origine: "", hauteur_origine: "", surface_m2_origine: "" };
 const FOURNISSEURS_VITRAGE = [
   { id: "isula",  label: "ISULA VITRAGE" },
   { id: "sigma",  label: "SIGMA" },
@@ -48,7 +48,7 @@ type FormType = typeof empty;
 function cmdToForm(cmd: any): FormType {
   const lignes = cmd.lignes?.length > 0 ? cmd.lignes : [];
   const vitrages = cmd.vitrages?.length > 0
-    ? cmd.vitrages.map((v: any) => ({ composition: v.composition || "", quantite: String(v.quantite || "1"), surface_m2: v.surface_m2 || "", fournisseur: v.fournisseur || "isula", cmd_passee: v.cmd_passee || false, date_reception: v.date_reception || "", position: v.position || "", couleur_intercalaire: v.couleur_intercalaire || "", epaisseur_intercalaire: v.epaisseur_intercalaire || "", largeur: v.largeur || "", hauteur: v.hauteur || "", forme: v.forme || "", prix_m2: v.prix_m2 || "", prix_total: v.prix_total || "", largeur_origine: v.largeur_origine || "", hauteur_origine: v.hauteur_origine || "", surface_m2_origine: v.surface_m2_origine || "" }))
+    ? cmd.vitrages.map((v: any) => ({ composition: v.composition || "", quantite: String(v.quantite || "1"), surface_m2: v.surface_m2 || "", fournisseur: v.fournisseur || "isula", cmd_passee: v.cmd_passee || false, date_reception: v.date_reception || "", position: v.position || "", face_exterieure: v.face_exterieure || "", face_interieure: v.face_interieure || "", couleur_intercalaire: v.couleur_intercalaire || "", epaisseur_intercalaire: v.epaisseur_intercalaire || "", largeur: v.largeur || "", hauteur: v.hauteur || "", forme: v.forme || "", prix_m2: v.prix_m2 || "", prix_total: v.prix_total || "", largeur_origine: v.largeur_origine || "", hauteur_origine: v.hauteur_origine || "", surface_m2_origine: v.surface_m2_origine || "" }))
     : [];
   return {
     num_commande: cmd.num_commande || "", client: cmd.client || "", ref_chantier: cmd.ref_chantier || "",
@@ -71,6 +71,15 @@ function cmdToForm(cmd: any): FormType {
     reliquat_accessoires: cmd.reliquat_accessoires || false, reliquat_accessoires_desc: cmd.reliquat_accessoires_desc || "", reliquat_accessoires_date: cmd.reliquat_accessoires_date || "",
     lignes, vitrages,
   };
+}
+
+// ── Décomposition composition vitrage ────────────────────────────────────────
+function parseComposition(comp: string): { face_ext: string; face_int: string } {
+  const parts = comp.split("/").map(s => s.trim()).filter(Boolean);
+  if (parts.length >= 3) {
+    return { face_ext: parts[0], face_int: parts.slice(2).join("/") };
+  }
+  return { face_ext: "", face_int: "" };
 }
 
 // ── Parseur Pro F2 ────────────────────────────────────────────────────────────
@@ -159,23 +168,29 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
   };
   const applyF2 = () => {
     if (!previewF2) return;
-    const newVitrages = previewF2.rows.map(r => ({
-      ...emptyVitrage,
-      composition:          r.desc || r.code,
-      quantite:             String(r.quantite),
-      surface_m2:           String(Math.round(parseFloat(r.surface_m2 || "0") * r.quantite * 100) / 100),
-      fournisseur:          "isula",
-      position:             r.position,
-      couleur_intercalaire: r.couleur,
-      largeur:              r.largeur,
-      hauteur:              r.hauteur,
-      forme:                r.forme,
-      prix_m2:              r.prix_m2,
-      prix_total:           r.prix_total,
-      largeur_origine:      r.largeur,
-      hauteur_origine:      r.hauteur,
-      surface_m2_origine:   String(Math.round(parseFloat(r.surface_m2 || "0") * r.quantite * 100) / 100),
-    }));
+    const newVitrages = previewF2.rows.map(r => {
+      const { face_ext, face_int } = parseComposition(r.desc || r.code);
+      return {
+        ...emptyVitrage,
+        composition:          r.desc || r.code,
+        quantite:             String(r.quantite),
+        surface_m2:           String(Math.round(parseFloat(r.surface_m2 || "0") * r.quantite * 100) / 100),
+        fournisseur:          "isula",
+        position:             r.position,
+        face_exterieure:      face_ext,
+        face_interieure:      face_int,
+        couleur_intercalaire: r.couleur,
+        epaisseur_intercalaire: "", // non importé — à saisir manuellement
+        largeur:              r.largeur,
+        hauteur:              r.hauteur,
+        forme:                r.forme,
+        prix_m2:              r.prix_m2,
+        prix_total:           r.prix_total,
+        largeur_origine:      r.largeur,
+        hauteur_origine:      r.hauteur,
+        surface_m2_origine:   String(Math.round(parseFloat(r.surface_m2 || "0") * r.quantite * 100) / 100),
+      };
+    });
     setF(p => ({ ...p, vitrages: newVitrages }));
     setShowF2(false);
     setPasteF2("");
@@ -447,6 +462,16 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
                       <datalist id="compo-datalist">
                         {["4/16/4", "4/12/4", "4/20/4", "44.2/16/4 feuilleté", "VSG feuilleté", "Contrôle solaire", "Autre"].map(c => <option key={c} value={c} />)}
                       </datalist>
+                      <div style={{ marginTop: 4, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                        <div>
+                          <label style={{ fontSize: 8, color: C.muted, display: "block", marginBottom: 1 }}>FACE EXT.</label>
+                          <input style={{ ...inp, fontSize: 11, padding: "3px 6px" }} value={v.face_exterieure || ""} onChange={e => setVitrage(i, "face_exterieure", e.target.value)} placeholder="ex: 4 Planitherm" />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 8, color: C.muted, display: "block", marginBottom: 1 }}>FACE INT.</label>
+                          <input style={{ ...inp, fontSize: 11, padding: "3px 6px" }} value={v.face_interieure || ""} onChange={e => setVitrage(i, "face_interieure", e.target.value)} placeholder="ex: 4 Clair" />
+                        </div>
+                      </div>
                     </div>
                     <div><label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>QTÉ</label><input type="number" min={1} style={{ ...inp, color: C.purple, fontWeight: 700 }} value={vg.quantite} onChange={e => setVitrage(i, "quantite", e.target.value)} placeholder="1" /></div>
                     <div>
@@ -469,10 +494,9 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
                   </div>
                   {/* Détails Pro F2 */}
                   {hasProF2 && (
-                    <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "0.5fr 1.2fr 0.8fr 0.8fr 0.8fr 1fr 1fr", gap: 6 }}>
+                    <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "0.5fr 1.2fr 0.8fr 0.8fr 1fr 1fr", gap: 6 }}>
                       <div><label style={{ fontSize: 8, color: C.orange, display: "block", marginBottom: 2 }}>POS.</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px", color: C.orange }} value={v.position || ""} onChange={e => setVitrage(i, "position", e.target.value)} /></div>
                       <div><label style={{ fontSize: 8, color: C.sec, display: "block", marginBottom: 2 }}>COLORIS INTERCALAIRE</label><input style={{ ...inp, fontSize: 11, padding: "3px 6px" }} value={v.couleur_intercalaire || ""} onChange={e => setVitrage(i, "couleur_intercalaire", e.target.value)} /></div>
-                      <div><label style={{ fontSize: 8, color: C.teal, display: "block", marginBottom: 2 }}>ÉPAISSEUR INTERCALAIRE</label><input list="epaisseur-list" style={{ ...inp, fontSize: 11, padding: "3px 6px", color: C.teal, borderColor: C.teal+"44" }} value={v.epaisseur_intercalaire || ""} onChange={e => setVitrage(i, "epaisseur_intercalaire", e.target.value)} placeholder="ex: 16mm" /><datalist id="epaisseur-list"><option value="12mm" /><option value="14mm" /><option value="16mm" /><option value="18mm" /><option value="20mm" /></datalist></div>
                       <div>
                         <label style={{ fontSize: 8, color: isRevised && v.largeur !== v.largeur_origine ? C.orange : C.purple, display: "block", marginBottom: 2 }}>
                           L (mm){isRevised && v.largeur !== v.largeur_origine ? " ✎" : ""}

@@ -21,6 +21,7 @@ import ImportCSV from "@/components/tabs/ImportCSV";
 import PlanningFabrication from "@/components/tabs/PlanningFabrication";
 import AvancementDashboard from "@/components/tabs/AvancementDashboard";
 import AffichageAtelier from "@/components/tabs/AffichageAtelier";
+import PlanningPoste from "@/components/tabs/PlanningPoste";
 
 export default function HomePage() {
   const { data: session, status } = useSession();
@@ -57,11 +58,12 @@ export default function HomePage() {
   const nav = [
     { id: "dashboard",    l: "🏠 Tableau de bord",        alert: critiques },
     { id: "livraison",    l: "🚚 Livraisons" },
-    { id: "saisie",       l: "➕ Commande" },
-    { id: "carnet",       l: `📂 Carnet (${commandes.length})` },
+    { id: "saisie",       l: "➕ Ajouter une commande" },
+    { id: "carnet",       l: `📂 Commandes (${commandes.length})` },
     { id: "crise",        l: `🚨 Crise${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
     { id: "charge",       l: "📊 Charge SIAL" },
     { id: "rh",           l: "👥 Équipe SIAL" },
+    { id: "planning_poste", l: "🗂 Planning postes" },
     { id: "fabrication",    l: "🏭 Planning" },
     { id: "avancement",     l: "📋 Avancement" },
     { id: "atelier",        l: "📺 Affichage Atelier" },
@@ -180,6 +182,7 @@ export default function HomePage() {
             {ong === "livraison" && <PlanningLivraison commandes={commandes} onPatch={patchCommande} onEdit={editCommande} />}
             {ong === "charge" && <ChargeSemaine commandes={commandes} />}
             {ong === "rh" && <PlanningRH commandes={commandes} />}
+            {ong === "planning_poste" && <PlanningPoste commandes={commandes} />}
             {ong === "fabrication" && <PlanningFabrication commandes={commandes} onEdit={editCommande} />}
             {ong === "avancement" && <AvancementDashboard commandes={commandes} />}
             {ong === "atelier" && <AffichageAtelier commandes={commandes} stocks={stocks} />}
