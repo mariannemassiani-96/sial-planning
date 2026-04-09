@@ -1,3 +1,4 @@
+/* eslint-disable react/no-unescaped-entities */
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
@@ -368,7 +369,7 @@ const STEPS: Step[] = [
             ["🔵 Bleu", "En cours", T.blue],
             ["🟢 Vert", "Prêt à livrer", T.green],
             ["🔴 Rouge", "En retard", T.red],
-          ].map(([icon, label, color]) => (
+          ].map(([icon, label]) => (
             <div key={label} style={{ display: "flex", gap: 8, alignItems: "center", background: T.card, border: `1px solid ${T.border}`, borderRadius: 4, padding: "6px 10px" }}>
               <span style={{ fontSize: 16 }}>{icon}</span>
               <span style={{ fontSize: 13, color: T.sec }}>{label}</span>

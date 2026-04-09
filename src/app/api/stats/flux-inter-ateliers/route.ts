@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { BUFFER_THRESHOLDS } from "@/lib/planning-constants";
 
-export async function GET(request: Request) {
+export async function GET(_request: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
   if ((session.user as { role?: string }).role !== "ADMIN")

@@ -1,7 +1,7 @@
+/* eslint-disable react/no-unescaped-entities */
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { C } from "@/lib/sial-data";
-import { BUFFER_THRESHOLDS, STATUT_LABELS } from "@/lib/planning-constants";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

@@ -1,3 +1,4 @@
+/* eslint-disable react/no-unescaped-entities */
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
@@ -327,7 +328,6 @@ export default function StatsAdmin() {
   const tauxDepassement = totalTaches > 0 ? Math.round((totalDepassements / totalTaches) * 100) : 0;
 
   // ── Section 2 : Chart postes ────────────────────────────────────────────────
-  const maxEcart = Math.max(...postes.map((p) => Math.abs(p.ecartMoyenMin ?? 0)), 1);
   const postesChartData = postes.map((p) => ({
     name:         p.workPostId,
     ecart:        p.ecartMoyenMin ?? 0,

@@ -582,7 +582,7 @@ export default function PlanningSemaine({ onSelectOrder }: Props) {
             onClick={() => setWeekStart(getMonday(new Date()))}
             style={navBtnStyle}
           >
-            Aujourd'hui
+            {"Aujourd'hui"}
           </button>
           <button
             onClick={() => setWeekStart((d) => addWeek(d))}
