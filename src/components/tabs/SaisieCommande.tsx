@@ -229,7 +229,7 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
   );
 
   const submit = () => {
-    if (!f.client || !f.num_commande) return;
+    if (!f.client) return;
     const premType = f.lignes[0]?.type || null;
     const premHS = f.lignes[0]?.type === "hors_standard" ? { nb_profils: f.lignes[0].hs_nb_profils, t_coupe: f.lignes[0].hs_t_coupe, t_montage: f.lignes[0].hs_t_montage, t_vitrage: f.lignes[0].hs_t_vitrage, operateur_montage: f.lignes[0].hs_op_montage || "jp", operateur_vitrage: f.lignes[0].hs_op_vitrage || "quentin" } : null;
     const result = { ...f, id: commande?.id || Date.now(), type: premType, quantite: qteTotale, hsTemps: premHS, date_livraison_souhaitee: f.date_livraison_souhaitee || dlReelle() || dlAuto() };
@@ -243,9 +243,9 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
       <div style={{ padding: 10, background: C.bg, borderRadius: 5, border: `1px solid ${C.border}`, marginBottom: 10 }}>
         <div style={{ fontSize: 10, color: C.orange, fontWeight: 700, marginBottom: 8 }}>IDENTIFICATION</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-          <div><label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>N° COMMANDE *</label><input style={{ ...inp, fontWeight: 700, color: C.orange }} value={f.num_commande} onChange={e => set("num_commande", e.target.value)} placeholder="ex: 2026-047" /></div>
           <div><label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>CLIENT *</label><input style={inp} value={f.client} onChange={e => set("client", e.target.value)} placeholder="Nom du client" /></div>
           <div><label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>RÉF. CHANTIER</label><input style={inp} value={f.ref_chantier} onChange={e => set("ref_chantier", e.target.value)} placeholder="ex: Villa Marina T3" /></div>
+          <div><label style={{ fontSize: 10, color: C.muted, display: "block", marginBottom: 3 }}>N° COMMANDE</label><input style={{ ...inp, color: C.sec }} value={f.num_commande} onChange={e => set("num_commande", e.target.value)} placeholder="ex: 2026-047" /></div>
         </div>
       </div>
 
