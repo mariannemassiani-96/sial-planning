@@ -43,7 +43,7 @@ const POST_GROUPS = [
   { label: "Montage",       color: "#FFA726", phase: "montage", competence: "frappes", ids: ["M1","M2","M3","F1","F2","F3","MHS"] },
   { label: "Vitrage",       color: "#26C6DA", phase: "vitrage", competence: "vitrage", ids: ["V1","V2","V3"] },
   { label: "Logistique",    color: "#CE93D8", phase: "logistique", competence: "logistique", ids: ["L4","L6","L7"] },
-  { label: "ISULA",         color: "#4DB6AC", phase: "isula", competence: "isula", ids: ["I1","I2","I3","I4","I5","I6","I7","I8"] },
+  { label: "ISULA",         color: "#4DB6AC", phase: "isula", competence: "isula", ids: ["IL","IB","I3","I4","I5","I6","I7","I8"] },
   { label: "Autre",         color: "#78909C", phase: "autre", competence: "", ids: ["AUT"] },
 ];
 const POST_LABELS: Record<string, string> = {
@@ -52,7 +52,7 @@ const POST_LABELS: Record<string, string> = {
   MHS:"Montage HS",
   V1:"Vitr. Frappe",V2:"Vitr. Coul/Gal",V3:"Emballage",
   L4:"Prépa acc.",L6:"Palettes",L7:"Chargement",
-  I1:"Réception verre",I2:"Coupe verre",I3:"Coupe interc.",I4:"Butyle",I5:"Assemblage",I6:"Gaz+scell.",I7:"CQ CEKAL",I8:"Sortie chaîne",
+  IL:"Coupe Lisec",IB:"Coupe Bottero",I3:"Coupe interc.",I4:"Butyle",I5:"Assemblage",I6:"Gaz+scell.",I7:"CQ CEKAL",I8:"Sortie chaîne",
   AUT:"Autre",
 };
 const PHASE_FIELD: Record<string, string> = {
@@ -358,16 +358,30 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         if (existing) existing.min += data.min;
       }
 
-      // Postes ISULA : si la commande a des vitrages et est planifiée en vitrage cette semaine
-      if ((cmd as any).semaine_vitrage === viewWeek && !(cmd as any).aucun_vitrage) {
+      // Postes ISULA : si la commande a des vitrages ISULA et est planifiée cette semaine
+      const isulaField = (cmd as any).semaine_isula || (cmd as any).semaine_vitrage;
+      if (isulaField === viewWeek && !(cmd as any).aucun_vitrage) {
         const vitrages = Array.isArray((cmd as any).vitrages) ? (cmd as any).vitrages : [];
         const isulaVitrages = vitrages.filter((v: any) => (v.fournisseur || "").toLowerCase() === "isula");
         if (isulaVitrages.length > 0) {
           const nbVitrages = isulaVitrages.reduce((s: number, v: any) => s + (parseInt(v.quantite) || 1), 0);
-          // Temps estimés par poste ISULA (min par vitrage)
-          const ISULA_TIMES: Record<string, number> = { I1: 5, I2: 15, I3: 8, I4: 5, I5: 12, I6: 10, I7: 5, I8: 5 };
-          for (const [pid, tPerUnit] of Object.entries(ISULA_TIMES)) {
-            const min = tPerUnit * nbVitrages;
+          // Overrides par commande pour nb plaques
+          const cmdOvI = allCmdOverrides[String(cmd.id)] || {};
+          const nbPlaquesLisec = cmdOvI["_nb_plaques_lisec"] || 0;
+          const nbPlaquesBottero = cmdOvI["_nb_plaques_bottero"] || 0;
+
+          // Coupe Lisec : 15 min/plaque (ou estimé par nb vitrages si pas de plaques saisies)
+          const ilMin = nbPlaquesLisec > 0 ? nbPlaquesLisec * 15 : nbVitrages * 15;
+          // Coupe Bottero : 40 min/plaque
+          const ibMin = nbPlaquesBottero > 0 ? nbPlaquesBottero * 40 : 0; // 0 si pas de plaques saisies (pas toujours utilisé)
+
+          const ISULA_TIMES: Record<string, number> = {
+            IL: ilMin, IB: ibMin,
+            I3: 8 * nbVitrages, I4: 5 * nbVitrages, I5: 12 * nbVitrages,
+            I6: 10 * nbVitrages, I7: 5 * nbVitrages, I8: 5 * nbVitrages,
+          };
+          for (const [pid, min] of Object.entries(ISULA_TIMES)) {
+            if (min <= 0) continue;
             if (!work[pid]) work[pid] = { totalMin: 0, cmds: [] };
             work[pid].totalMin += min;
             if (!work[pid].cmds.some(c => c.client === client && c.chantier === chantier)) {
@@ -1721,6 +1735,44 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   </div>
                 );
               })()}
+
+              {/* Nombre de plaques ISULA */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                {[
+                  { key: "_nb_plaques_lisec", label: "IL — Plaques Lisec", minPerPlaque: 15, color: "#4DB6AC" },
+                  { key: "_nb_plaques_bottero", label: "IB — Plaques Bottero", minPerPlaque: 40, color: "#4DB6AC" },
+                ].map(machine => {
+                  const nbPlaques = cmdOverrides[machine.key] || 0;
+                  const savePlaques = (v: number) => {
+                    const postId = machine.key === "_nb_plaques_lisec" ? "IL" : "IB";
+                    const mins = v > 0 ? Math.round(v * machine.minPerPlaque) : 0;
+                    fetch(`/api/planning/affectations?semaine=cmd_temps_${detailCmd.cmdId}`)
+                      .then(r => r.ok ? r.json() : {})
+                      .then(existing => {
+                        const ov: Record<string, number> = (typeof existing === "object" && existing && !Array.isArray(existing)) ? { ...existing } : {};
+                        ov[machine.key] = v;
+                        if (mins > 0) ov[postId] = mins;
+                        return fetch("/api/planning/affectations", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ semaine: `cmd_temps_${detailCmd.cmdId}`, affectations: ov }) });
+                      }).catch(() => {});
+                    setAllCmdOverrides(prev => ({ ...prev, [detailCmd.cmdId]: { ...(prev[detailCmd.cmdId] || {}), [machine.key]: v, [machine.key === "_nb_plaques_lisec" ? "IL" : "IB"]: mins } }));
+                  };
+                  return (
+                    <div key={machine.key} style={{ flex: 1, padding: "6px 8px", background: C.bg, borderRadius: 4, border: `1px solid ${machine.color}44` }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: machine.color }}>{machine.label}</span>
+                        <span style={{ fontSize: 8, color: C.muted }}>{machine.minPerPlaque} min/plaque · min 2 pers.</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <input type="number" min={0} defaultValue={nbPlaques || ""} placeholder="Nb plaques"
+                          onBlur={ev => { const v = parseInt(ev.target.value); if (!isNaN(v)) savePlaques(v); }}
+                          onKeyDown={ev => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }}
+                          style={{ width: 60, padding: "3px 6px", fontSize: 12, fontWeight: 700, background: C.s1, border: `1px solid ${C.border}`, borderRadius: 4, color: machine.color, textAlign: "center", outline: "none" }} />
+                        {nbPlaques > 0 && <span className="mono" style={{ fontSize: 11, fontWeight: 700, color: machine.color }}>{hm(Math.round(nbPlaques * machine.minPerPlaque))}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
 
               <div style={{ fontSize: 11, color: C.orange, fontWeight: 700, marginBottom: 4 }}>
                 Total : {hm(totalMin)} · {allEtapes.length} étapes
