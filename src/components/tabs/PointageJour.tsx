@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { C, hm, CommandeCC } from "@/lib/sial-data";
+import { C, EQUIPE, hm, CommandeCC } from "@/lib/sial-data";
 
 function localStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -286,6 +286,72 @@ export default function PointageJour({ commandes, onPatch }: {
           })}
         </div>
       )}
+
+      {/* Résumé par opérateur — heures pointées vs théoriques */}
+      {dayTasks.length > 0 && (() => {
+        const isVendredi = dayOfWeek === 5;
+        const opSummary: Record<string, { pointed: number; theorique: number }> = {};
+        // Calculer heures pointées par opérateur
+        for (const task of dayTasks) {
+          const entry = pointage.entries[task.key];
+          if (!entry || !entry.realMin || entry.realMin <= 0) continue;
+          const ops = entry.realOps?.length > 0 ? entry.realOps : task.ops;
+          const perOp = ops.length > 0 ? Math.round(entry.realMin / ops.length) : 0;
+          for (const op of ops) {
+            if (!opSummary[op]) {
+              const eq = EQUIPE.find(e => e.nom === op);
+              const maxDay = isVendredi
+                ? (eq?.h === 39 ? 420 : eq?.h === 36 ? 240 : eq?.h === 35 ? 420 : eq?.h === 30 ? 0 : 420)
+                : (eq?.h === 39 ? 480 : eq?.h === 36 ? 480 : eq?.h === 35 ? 420 : eq?.h === 30 ? 450 : 480);
+              opSummary[op] = { pointed: 0, theorique: maxDay };
+            }
+            opSummary[op].pointed += perOp;
+          }
+        }
+        // Ajouter imprévus
+        for (const imp of pointage.imprevu) {
+          if (imp.ops?.length && imp.realMin > 0) {
+            const perOp = Math.round(imp.realMin / imp.ops.length);
+            for (const op of imp.ops) {
+              if (!opSummary[op]) opSummary[op] = { pointed: 0, theorique: 480 };
+              opSummary[op].pointed += perOp;
+            }
+          }
+        }
+        const entries = Object.entries(opSummary).filter(([,v]) => v.theorique > 0 || v.pointed > 0);
+        if (entries.length === 0) return null;
+
+        return (
+          <div style={{ marginTop: 16, background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Heures pointées par opérateur</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {entries.map(([op, data]) => {
+                const isOver = data.pointed > data.theorique && data.theorique > 0;
+                const isUnder = data.pointed < data.theorique * 0.7 && data.theorique > 0;
+                const pct = data.theorique > 0 ? Math.round(data.pointed / data.theorique * 100) : 0;
+                const col = isOver ? C.red : isUnder ? C.orange : C.green;
+                return (
+                  <div key={op} style={{ padding: "6px 10px", background: C.bg, border: `1px solid ${isOver ? C.red : C.border}`, borderRadius: 5, minWidth: 100, textAlign: "center" }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 2 }}>{op}</div>
+                    <div className="mono" style={{ fontSize: 13, fontWeight: 800, color: col }}>{hm(data.pointed)}</div>
+                    <div style={{ fontSize: 9, color: C.muted }}>/ {hm(data.theorique)} ({pct}%)</div>
+                    {isOver && (
+                      <div style={{ fontSize: 9, color: C.red, fontWeight: 700, marginTop: 2 }}>
+                        ⚠ +{hm(data.pointed - data.theorique)} heures sup ?
+                      </div>
+                    )}
+                    {isUnder && data.pointed > 0 && (
+                      <div style={{ fontSize: 9, color: C.orange, marginTop: 2 }}>
+                        {hm(data.theorique - data.pointed)} non justifiées
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Tâches imprévues / faites en avance */}
       <div style={{ marginTop: 16, background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px" }}>

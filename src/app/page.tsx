@@ -22,6 +22,7 @@ import AffichageAtelier from "@/components/tabs/AffichageAtelier";
 import PlanningCommandes from "@/components/tabs/PlanningCommandes";
 import PlanningAffectations from "@/components/tabs/PlanningAffectations";
 import StatsAdmin from "@/components/tabs/StatsAdmin";
+import AnalyseProduction from "@/components/tabs/AnalyseProduction";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
 import TutoAJ from "@/components/TutoAJ";
 
@@ -63,6 +64,7 @@ export default function HomePage() {
   const [rhSub, setRhSub] = useState<"planning" | "competences">("planning");
   const [isulaSub, setIsulaSub] = useState<"planning" | "besoins">("planning");
   const [refSub, setRefSub] = useState<"nomenclature" | "simulateur">("nomenclature");
+  const [statsSub, setStatsSub] = useState<"analyse" | "stats">("analyse");
 
   const fetchAll = useCallback(async () => {
     try {
@@ -288,7 +290,17 @@ export default function HomePage() {
             )}
 
             {ong === "import_csv" && <ImportCSV onRefresh={fetchAll} />}
-            {ong === "stats_admin" && <StatsAdmin />}
+            {ong === "stats_admin" && (
+              <>
+                <SubTabs
+                  tabs={[{ id: "analyse", l: "Analyse Production" }, { id: "stats", l: "Statistiques" }]}
+                  active={statsSub}
+                  onChange={(id) => setStatsSub(id as "analyse" | "stats")}
+                />
+                {statsSub === "analyse" && <AnalyseProduction />}
+                {statsSub === "stats" && <StatsAdmin />}
+              </>
+            )}
           </>
         )}
       </div>
