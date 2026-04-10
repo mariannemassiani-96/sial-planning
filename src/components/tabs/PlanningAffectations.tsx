@@ -4,6 +4,24 @@ import { C, EQUIPE, hm, CommandeCC } from "@/lib/sial-data";
 import { getRoutage } from "@/lib/routage-production";
 import { openPrintWindow } from "@/lib/print-utils";
 
+// ── Types opérateurs chargés depuis la base ──────────────────────────────────
+interface OpFromDB {
+  id: string;
+  name: string;
+  weekHours: number;
+  posts: string[];
+  workingDays: number[];
+  skills: Array<{ workPostId: string | null; level: number }>;
+}
+// Opérateur résolu avec les postes où il est compétent (niveau > 0)
+interface OpResolved {
+  id: string;     // cuid
+  key: string;    // clé EQUIPE (guillaume, julien...)
+  nom: string;
+  competentPosts: string[]; // ["C2","C3","F1","F2"...] — depuis les skills cochées en base
+  vendrediOff: boolean;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function localStr(d: Date): string {
@@ -34,7 +52,10 @@ const POST_LABELS: Record<string, string> = {
 const PHASE_FIELD: Record<string, string> = {
   coupe: "semaine_coupe", montage: "semaine_montage", vitrage: "semaine_vitrage", logistique: "semaine_logistique",
 };
-const OPS = EQUIPE.map(op => ({ id: op.id, nom: op.nom, competences: op.competences, vendrediOff: op.vendrediOff }));
+// Fallback statique (utilisé seulement si l'API ne répond pas)
+const OPS_FALLBACK = EQUIPE.map(op => ({
+  id: op.id, key: op.id, nom: op.nom, competentPosts: [] as string[], vendrediOff: op.vendrediOff,
+}));
 const OP_COLORS: Record<string, string> = {
   guillaume:"#CE93D8", momo:"#4DB6AC", bruno:"#FFA726", ali:"#26C6DA",
   jp:"#FF7043", jf:"#66BB6A", michel:"#42A5F5", alain:"#FFCA28",
@@ -60,11 +81,36 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
   viewWeek: string;
 }) {
   const [aff, setAff] = useState<AffMap>({});
+  const [ops, setOps] = useState<OpResolved[]>(OPS_FALLBACK);
   const [dragOp, setDragOp] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Charger les opérateurs + compétences depuis la base ──
+  useEffect(() => {
+    fetch("/api/operators")
+      .then(r => r.ok ? r.json() : [])
+      .then((data: OpFromDB[]) => {
+        if (!Array.isArray(data) || data.length === 0) return;
+        const resolved: OpResolved[] = data.map(op => {
+          const equipeEntry = EQUIPE.find(e => e.nom === op.name);
+          const competentPosts = op.skills
+            .filter(s => s.workPostId && s.level > 0)
+            .map(s => s.workPostId as string);
+          return {
+            id: op.id,
+            key: equipeEntry?.id || op.name.toLowerCase(),
+            nom: op.name,
+            competentPosts,
+            vendrediOff: equipeEntry?.vendrediOff || !op.workingDays.includes(4),
+          };
+        });
+        setOps(resolved);
+      })
+      .catch(() => {});
+  }, []);
 
   // ── Charger les affectations depuis la base ──
   useEffect(() => {
@@ -99,7 +145,7 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
 
   // ── Travail par poste ──
   const postWork = useMemo(() => {
-    const work: Record<string, { totalMin: number; cmds: Array<{ client: string; min: number }> }> = {};
+    const work: Record<string, { totalMin: number; cmds: Array<{ client: string; chantier: string; min: number }> }> = {};
     for (const cmd of commandes) {
       const s = (cmd as any).statut;
       if (s === "livre" || s === "terminee" || s === "annulee") continue;
@@ -109,9 +155,11 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
         if ((cmd as any)[PHASE_FIELD[grp.phase]] !== viewWeek) continue;
         for (const e of routage.filter(r => r.phase === grp.phase)) {
           if (!work[e.postId]) work[e.postId] = { totalMin: 0, cmds: [] };
-          if (!work[e.postId].cmds.some(c => c.client === (cmd as any).client)) {
+          const client = (cmd as any).client || "";
+          const chantier = (cmd as any).ref_chantier || "";
+          if (!work[e.postId].cmds.some(c => c.client === client && c.chantier === chantier)) {
             work[e.postId].totalMin += e.estimatedMin;
-            work[e.postId].cmds.push({ client: (cmd as any).client, min: e.estimatedMin });
+            work[e.postId].cmds.push({ client, chantier, min: e.estimatedMin });
           }
         }
       }
@@ -163,8 +211,8 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
         // Combien de demi-journées faut-il avec minPers opérateurs ?
         const slotsNeeded = Math.ceil(pw.totalMin / (DEMI_MIN * minPers));
 
-        // Opérateurs compétents
-        const competentOps = OPS.filter(op => op.competences.includes(grp.competence));
+        // Opérateurs compétents pour CE poste (basé sur les skills cochées en base)
+        const competentOps = ops.filter(op => op.competentPosts.includes(pid));
         if (competentOps.length === 0) continue;
 
         // Affecter par journée complète (AM+PM ensemble) pour ne pas faire sauter les gens d'un poste à l'autre
@@ -230,7 +278,7 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
       const jourIdx = parseInt(jourStr);
       const grp = POST_GROUPS.find(g => g.ids.includes(pid));
       const pw = postWork[pid];
-      const cmdLabels = pw?.cmds.map(c => c.client) || [];
+      const cmdLabels = pw?.cmds.map(c => c.chantier ? `${c.client} · ${c.chantier}` : c.client) || [];
 
       for (const opNom of ops) {
         if (!opPlannings[opNom]) opPlannings[opNom] = [];
@@ -256,7 +304,7 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
 
     // Générer le HTML
     let html = "";
-    const allOps = OPS.filter(op => opPlannings[op.nom]);
+    const allOps = ops.filter(op => opPlannings[op.nom]);
 
     for (const op of allOps) {
       const planning = opPlannings[op.nom];
@@ -279,7 +327,7 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
             ${op.nom}
           </h2>
           <p style="margin: 8px 0 16px; color: #555; font-size: 11px;">
-            Compétences : ${op.competences.join(", ")}
+            Postes : ${op.competentPosts.join(", ") || "aucun coché"}
           </p>
 
           <table>
@@ -369,9 +417,9 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
         <div style={{ flex: 1, background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px" }}>
           <div style={{ fontSize: 10, color: C.sec, marginBottom: 6, fontWeight: 700 }}>OPÉRATEURS — glisse vers un poste</div>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {OPS.map(op => (
+            {ops.map(op => (
               <div key={op.id} draggable onDragStart={(e) => { setDragOp(op.nom); e.dataTransfer.effectAllowed = "copy"; }}
-                style={{ padding: "4px 10px", borderRadius: 4, cursor: "grab", userSelect: "none", background: OP_COLORS[op.id] || C.s2, color: "#000", fontSize: 11, fontWeight: 700 }}>
+                style={{ padding: "4px 10px", borderRadius: 4, cursor: "grab", userSelect: "none", background: OP_COLORS[op.key] || C.s2, color: "#000", fontSize: 11, fontWeight: 700 }}>
                 {op.nom}
               </div>
             ))}
@@ -434,7 +482,11 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
                     <td style={{ padding: "5px 8px", background: C.s1, border: `1px solid ${C.border}`, verticalAlign: "top" }}>
                       <div style={{ fontWeight: 700, color: grp.color }}>{pid} <span style={{ fontWeight: 400, color: C.muted, fontSize: 9 }}>{POST_LABELS[pid]}</span></div>
                       {pw.cmds.map((c, i) => (
-                        <div key={i} style={{ fontSize: 9, color: C.sec, marginTop: 1 }}>{c.client} <span className="mono" style={{ color: C.muted }}>{hm(c.min)}</span></div>
+                        <div key={i} style={{ fontSize: 9, color: C.sec, marginTop: 1 }}>
+                          <span style={{ fontWeight: 600 }}>{c.client}</span>
+                          {c.chantier && <span style={{ color: C.muted }}> · {c.chantier}</span>}
+                          <span className="mono" style={{ color: C.muted, marginLeft: 3 }}>{hm(c.min)}</span>
+                        </div>
                       ))}
                     </td>
                     <td style={{ padding: "4px", border: `1px solid ${overCapacity ? C.red : C.border}`, textAlign: "center", verticalAlign: "top" }}>
@@ -465,12 +517,12 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
                           {assigned.length > 0 ? (
                             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                               {assigned.map(opNom => {
-                                const op = OPS.find(o => o.nom === opNom);
+                                const op = ops.find(o => o.nom === opNom);
                                 return (
                                   <div key={opNom} style={{
                                     display: "flex", alignItems: "center", justifyContent: "space-between",
                                     padding: "2px 4px", borderRadius: 3,
-                                    background: OP_COLORS[op?.id || ""] || C.s2,
+                                    background: OP_COLORS[op?.key || ""] || C.s2,
                                     color: "#000", fontSize: 9, fontWeight: 700,
                                   }}>
                                     {opNom}
