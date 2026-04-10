@@ -117,6 +117,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   // Popup détail chantier
   const [detailCmd, setDetailCmd] = useState<{ chantier: string; cmdId: string; cmd: any } | null>(null);
   const [cmdOverrides, setCmdOverrides] = useState<Record<string, number>>({});
+  // Overrides par commande pour recalcul postWork : { cmdId: { "C3": 1200 } }
+  const [allCmdOverrides, setAllCmdOverrides] = useState<Record<string, Record<string, number>>>({});
 
   // Charger les overrides quand on ouvre un détail
   useEffect(() => {
@@ -215,6 +217,17 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         setHiddenTasks(Array.isArray(hidden) ? new Set(hidden) : new Set());
       })
       .catch(() => { setLocked(false); setHiddenTasks(new Set()); });
+    // Charger les overrides par commande
+    const cmdIds = commandes.filter(c => { const s = (c as any).statut; return s !== "livre" && s !== "terminee" && s !== "annulee"; }).map(c => String(c.id));
+    Promise.all(cmdIds.slice(0, 50).map(id =>
+      fetch(`/api/planning/affectations?semaine=cmd_temps_${id}`).then(r => r.ok ? r.json() : null).then(d => ({ id, d })).catch(() => ({ id, d: null }))
+    )).then(results => {
+      const ov: Record<string, Record<string, number>> = {};
+      for (const { id, d } of results) {
+        if (d && typeof d === "object" && !Array.isArray(d) && Object.keys(d).length > 0) ov[id] = d as Record<string, number>;
+      }
+      setAllCmdOverrides(ov);
+    });
     // Charger les tâches extras de la semaine
     fetch(`/api/planning/affectations?semaine=extras_${viewWeek}`)
       .then(r => r.ok ? r.json() : [])
@@ -291,6 +304,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         ? (cmd as any).lignes
         : [{ type: cmd.type, quantite: cmd.quantite }];
 
+      // Agréger les temps par poste pour cette commande
+      const cmdPostTotals: Record<string, { min: number; phase: string }> = {};
       for (const ligne of lignes) {
         const lType = ligne.type || cmd.type;
         if (lType === "intervention_chantier") continue;
@@ -298,20 +313,32 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         const lHs = lType === "hors_standard" ? {
           t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage,
         } : (cmd as any).hsTemps;
-
         const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null);
-        for (const grp of POST_GROUPS) {
-          if ((cmd as any)[PHASE_FIELD[grp.phase]] !== viewWeek) continue;
-          for (const e of routage.filter(r => r.phase === grp.phase)) {
-            if (!work[e.postId]) work[e.postId] = { totalMin: 0, cmds: [] };
-            work[e.postId].totalMin += e.estimatedMin;
-            if (!work[e.postId].cmds.some(c => c.client === client && c.chantier === chantier)) {
-              work[e.postId].cmds.push({ client, chantier, min: 0 });
-            }
-            const existing = work[e.postId].cmds.find(c => c.client === client && c.chantier === chantier);
-            if (existing) existing.min += e.estimatedMin;
-          }
+        for (const e of routage) {
+          if (!cmdPostTotals[e.postId]) cmdPostTotals[e.postId] = { min: 0, phase: e.phase };
+          cmdPostTotals[e.postId].min += e.estimatedMin;
         }
+      }
+
+      // Appliquer les overrides par commande
+      const cmdOv = allCmdOverrides[String(cmd.id)] || {};
+      for (const [pid, ov] of Object.entries(cmdOv)) {
+        if (cmdPostTotals[pid]) cmdPostTotals[pid].min = ov;
+        else cmdPostTotals[pid] = { min: ov, phase: "coupe" };
+      }
+
+      // Ajouter au postWork
+      for (const [pid, data] of Object.entries(cmdPostTotals)) {
+        const grp = POST_GROUPS.find(g => g.ids.includes(pid));
+        if (!grp) continue;
+        if ((cmd as any)[PHASE_FIELD[grp.phase]] !== viewWeek) continue;
+        if (!work[pid]) work[pid] = { totalMin: 0, cmds: [] };
+        work[pid].totalMin += data.min;
+        if (!work[pid].cmds.some(c => c.client === client && c.chantier === chantier)) {
+          work[pid].cmds.push({ client, chantier, min: 0 });
+        }
+        const existing = work[pid].cmds.find(c => c.client === client && c.chantier === chantier);
+        if (existing) existing.min += data.min;
       }
 
       // Postes ISULA : si la commande a des vitrages et est planifiée en vitrage cette semaine
@@ -336,7 +363,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       }
     }
     return work;
-  }, [commandes, viewWeek]);
+  }, [commandes, viewWeek, allCmdOverrides]);
 
   const activePosts = useMemo(() =>
     POST_GROUPS.map(grp => {
@@ -1555,6 +1582,13 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                               })
                               .catch(() => {});
                             ev.target.style.color = C.orange;
+                            // Mettre à jour localement pour recalcul immédiat
+                            setAllCmdOverrides(prev => {
+                              const next = { ...prev };
+                              if (!next[detailCmd.cmdId]) next[detailCmd.cmdId] = {};
+                              next[detailCmd.cmdId] = { ...next[detailCmd.cmdId], [e.postId]: v };
+                              return next;
+                            });
                           }}
                           onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }}
                           style={{
