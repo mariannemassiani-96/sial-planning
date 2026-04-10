@@ -119,20 +119,35 @@ export default function PlanningCharge({ commandes, onPatch, viewWeek: externalW
     return commandes
       .filter(cmd => {
         const s = (cmd as any).statut;
-        return s !== "livre" && s !== "terminee" && s !== "annulee" && cmd.type && cmd.type !== "intervention_chantier";
+        return s !== "livre" && s !== "terminee" && s !== "annulee" && cmd.type;
       })
       .map(cmd => {
-        const routage = getRoutage(cmd.type, cmd.quantite, (cmd as any).hsTemps as Record<string, unknown> | null);
-        const totalMin = routage.reduce((s, e) => s + e.estimatedMin, 0);
+        // Traiter chaque ligne de la commande
+        const lignes = Array.isArray((cmd as any).lignes) && (cmd as any).lignes.length > 0
+          ? (cmd as any).lignes
+          : [{ type: cmd.type, quantite: cmd.quantite }];
+
+        const allEtapes: import("@/lib/routage-production").EtapeRoutage[] = [];
+        for (const ligne of lignes) {
+          const lType = ligne.type || cmd.type;
+          if (lType === "intervention_chantier") continue;
+          const lQte = parseInt(ligne.quantite) || cmd.quantite || 1;
+          const lHs = lType === "hors_standard" ? {
+            t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage,
+          } : (cmd as any).hsTemps;
+          allEtapes.push(...getRoutage(lType, lQte, lHs as Record<string, unknown> | null));
+        }
+
+        const totalMin = allEtapes.reduce((s, e) => s + e.estimatedMin, 0);
         const cc = calcCheminCritique(cmd);
         const tm = (TYPES_MENUISERIE as Record<string, any>)[cmd.type];
         const parPhase: Record<string, { min: number; postIds: string[] }> = {};
-        for (const e of routage) {
+        for (const e of allEtapes) {
           if (!parPhase[e.phase]) parPhase[e.phase] = { min: 0, postIds: [] };
           parPhase[e.phase].min += e.estimatedMin;
           if (!parPhase[e.phase].postIds.includes(e.postId)) parPhase[e.phase].postIds.push(e.postId);
         }
-        return { cmd, routage, totalMin, parPhase, cc, tm, famille: tm?.famille || "" };
+        return { cmd, routage: allEtapes, totalMin, parPhase, cc, tm, famille: tm?.famille || "" };
       })
       .sort((a, b) => {
         const da = (a.cmd as any).date_livraison_souhaitee || "9999";

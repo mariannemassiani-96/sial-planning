@@ -149,17 +149,33 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
     for (const cmd of commandes) {
       const s = (cmd as any).statut;
       if (s === "livre" || s === "terminee" || s === "annulee") continue;
-      if (!cmd.type || cmd.type === "intervention_chantier") continue;
-      const routage = getRoutage(cmd.type, cmd.quantite, (cmd as any).hsTemps as Record<string, unknown> | null);
-      for (const grp of POST_GROUPS) {
-        if ((cmd as any)[PHASE_FIELD[grp.phase]] !== viewWeek) continue;
-        for (const e of routage.filter(r => r.phase === grp.phase)) {
-          if (!work[e.postId]) work[e.postId] = { totalMin: 0, cmds: [] };
-          const client = (cmd as any).client || "";
-          const chantier = (cmd as any).ref_chantier || "";
-          if (!work[e.postId].cmds.some(c => c.client === client && c.chantier === chantier)) {
+      if (!cmd.type) continue;
+
+      const client = (cmd as any).client || "";
+      const chantier = (cmd as any).ref_chantier || "";
+      const lignes = Array.isArray((cmd as any).lignes) && (cmd as any).lignes.length > 0
+        ? (cmd as any).lignes
+        : [{ type: cmd.type, quantite: cmd.quantite }];
+
+      for (const ligne of lignes) {
+        const lType = ligne.type || cmd.type;
+        if (lType === "intervention_chantier") continue;
+        const lQte = parseInt(ligne.quantite) || cmd.quantite || 1;
+        const lHs = lType === "hors_standard" ? {
+          t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage,
+        } : (cmd as any).hsTemps;
+
+        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null);
+        for (const grp of POST_GROUPS) {
+          if ((cmd as any)[PHASE_FIELD[grp.phase]] !== viewWeek) continue;
+          for (const e of routage.filter(r => r.phase === grp.phase)) {
+            if (!work[e.postId]) work[e.postId] = { totalMin: 0, cmds: [] };
             work[e.postId].totalMin += e.estimatedMin;
-            work[e.postId].cmds.push({ client, chantier, min: e.estimatedMin });
+            if (!work[e.postId].cmds.some(c => c.client === client && c.chantier === chantier)) {
+              work[e.postId].cmds.push({ client, chantier, min: 0 });
+            }
+            const existing = work[e.postId].cmds.find(c => c.client === client && c.chantier === chantier);
+            if (existing) existing.min += e.estimatedMin;
           }
         }
       }
