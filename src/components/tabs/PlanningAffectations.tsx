@@ -43,7 +43,7 @@ const POST_GROUPS = [
   { label: "Montage",       color: "#FFA726", phase: "montage", competence: "frappes", ids: ["M1","M2","M3","F1","F2","F3","MHS"] },
   { label: "Vitrage",       color: "#26C6DA", phase: "vitrage", competence: "vitrage", ids: ["V1","V2","V3"] },
   { label: "Logistique",    color: "#CE93D8", phase: "logistique", competence: "logistique", ids: ["L4","L6","L7"] },
-  { label: "ISULA",         color: "#4DB6AC", phase: "isula", competence: "isula", ids: ["IL","IB","I3","I4","I5","I6","I7","I8"] },
+  { label: "ISULA",         color: "#4DB6AC", phase: "isula", competence: "isula", ids: ["IL","IB","I3","I4"] },
   { label: "Autre",         color: "#78909C", phase: "autre", competence: "", ids: ["AUT"] },
 ];
 const POST_LABELS: Record<string, string> = {
@@ -52,7 +52,7 @@ const POST_LABELS: Record<string, string> = {
   MHS:"Montage HS",
   V1:"Vitr. Frappe",V2:"Vitr. Coul/Gal",V3:"Emballage",
   L4:"Prépa acc.",L6:"Palettes",L7:"Chargement",
-  IL:"Coupe Lisec",IB:"Coupe Bottero",I3:"Coupe interc.",I4:"Butyle",I5:"Assemblage",I6:"Gaz+scell.",I7:"CQ CEKAL",I8:"Sortie chaîne",
+  IL:"Coupe Lisec",IB:"Coupe Bottero",I3:"Coupe interc.",I4:"Assemblage VI",
   AUT:"Autre",
 };
 const PHASE_FIELD: Record<string, string> = {
@@ -375,10 +375,20 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           // Coupe Bottero : 40 min/plaque
           const ibMin = nbPlaquesBottero > 0 ? nbPlaquesBottero * 40 : 0; // 0 si pas de plaques saisies (pas toujours utilisé)
 
+          // I4 Assemblage VI : 20 pièces/jour à 3 pers = 24 min/pièce (base 3 pers)
+          // Adapte selon nb opérateurs sur I4
+          let maxOpsI4 = 0;
+          for (const [k, cell] of Object.entries(aff)) {
+            if (k.startsWith("I4|") && cell?.ops?.length) maxOpsI4 = Math.max(maxOpsI4, cell.ops.length);
+          }
+          const i4Pers = maxOpsI4 || 3;
+          const i4MinPerVitrage = Math.round(480 / (20 * i4Pers / 3)); // proportionnel
+          const i4Min = nbVitrages * i4MinPerVitrage;
+
           const ISULA_TIMES: Record<string, number> = {
             IL: ilMin, IB: ibMin,
-            I3: 8 * nbVitrages, I4: 5 * nbVitrages, I5: 12 * nbVitrages,
-            I6: 10 * nbVitrages, I7: 5 * nbVitrages, I8: 5 * nbVitrages,
+            I3: 8 * nbVitrages,
+            I4: i4Min,
           };
           for (const [pid, min] of Object.entries(ISULA_TIMES)) {
             if (min <= 0) continue;
@@ -1773,6 +1783,62 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   );
                 })}
               </div>
+
+              {/* I4 Assemblage vitrage isolant */}
+              {(() => {
+                const nbVI = cmdOverrides["_nb_vitrages_isolants"] || 0;
+                let maxOpsI4Popup = 0;
+                for (const [k, cell] of Object.entries(affWithAuto)) {
+                  if (k.startsWith("I4|") && cell?.ops?.length) maxOpsI4Popup = Math.max(maxOpsI4Popup, cell.ops.length);
+                }
+                const curPers = maxOpsI4Popup || 3;
+                const RATES_I4 = [
+                  { pers: 2, perDay: Math.round(20 * 2 / 3), minPer: Math.round(480 / (20 * 2 / 3)) },
+                  { pers: 3, perDay: 20, minPer: 24 },
+                  { pers: 4, perDay: Math.round(20 * 4 / 3), minPer: Math.round(480 / (20 * 4 / 3)) },
+                ];
+                const saveVI = (v: number) => {
+                  const minPer = Math.round(480 / (20 * curPers / 3));
+                  const mins = v > 0 ? v * minPer : 0;
+                  fetch(`/api/planning/affectations?semaine=cmd_temps_${detailCmd.cmdId}`)
+                    .then(r => r.ok ? r.json() : {})
+                    .then(existing => {
+                      const ov: Record<string, number> = (typeof existing === "object" && existing && !Array.isArray(existing)) ? { ...existing } : {};
+                      ov["_nb_vitrages_isolants"] = v;
+                      if (mins > 0) ov["I4"] = mins;
+                      return fetch("/api/planning/affectations", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ semaine: `cmd_temps_${detailCmd.cmdId}`, affectations: ov }) });
+                    }).catch(() => {});
+                  setAllCmdOverrides(prev => ({ ...prev, [detailCmd.cmdId]: { ...(prev[detailCmd.cmdId] || {}), _nb_vitrages_isolants: v, I4: v > 0 ? v * Math.round(480 / (20 * curPers / 3)) : 0 } }));
+                };
+                return (
+                  <div style={{ marginBottom: 8, padding: "8px 10px", background: C.bg, borderRadius: 4, border: `1px solid #4DB6AC44` }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#4DB6AC" }}>I4 — Assemblage vitrage isolant</div>
+                      </div>
+                      <input type="number" min={0} defaultValue={nbVI || ""} placeholder="Nb vitrages"
+                        onBlur={ev => { const v = parseInt(ev.target.value); if (!isNaN(v)) saveVI(v); }}
+                        onKeyDown={ev => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }}
+                        style={{ width: 70, padding: "4px 6px", fontSize: 13, fontWeight: 700, background: C.s1, border: `1px solid ${C.border}`, borderRadius: 4, color: "#4DB6AC", textAlign: "center", outline: "none" }} />
+                    </div>
+                    {nbVI > 0 && (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {RATES_I4.map(r => {
+                          const mins = nbVI * r.minPer;
+                          const isCur = r.pers === curPers;
+                          return (
+                            <div key={r.pers} style={{ flex: 1, padding: "3px 6px", borderRadius: 4, textAlign: "center", background: isCur ? "#4DB6AC22" : C.s1, border: `1px solid ${isCur ? "#4DB6AC" : C.border}` }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: isCur ? "#4DB6AC" : C.sec }}>{r.pers} pers.</div>
+                              <div style={{ fontSize: 8, color: C.muted }}>{r.perDay} VI/jour</div>
+                              <div className="mono" style={{ fontSize: 11, fontWeight: 800, color: isCur ? "#4DB6AC" : C.sec }}>{hm(mins)}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div style={{ fontSize: 11, color: C.orange, fontWeight: 700, marginBottom: 4 }}>
                 Total : {hm(totalMin)} · {allEtapes.length} étapes
