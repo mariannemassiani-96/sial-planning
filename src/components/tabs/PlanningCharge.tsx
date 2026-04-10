@@ -95,6 +95,111 @@ function getOperatorsForPhase(phase: string, famille?: string): string[] {
   return OP_CAPACITIES.filter(op => op.competences.includes(competence)).map(op => op.nom);
 }
 
+// ── Données batch import semaines livraison ──────────────────────────────────
+const BATCH_DATA = [
+{"client":"U QUERCIU","ref_chantier":"BAT F","type_commande":"chantier_pro","semaine_livraison":"S14 2026"},
+{"client":"BAMPA","ref_chantier":"DEMEURES CORSES","type_commande":"chantier_direct","semaine_livraison":"S16 2026"},
+{"client":"ALPI","ref_chantier":"OF à refaire","type_commande":"sav","semaine_livraison":"S16 2026"},
+{"client":"DI LEGNU","ref_chantier":"Filippi 4","type_commande":"chantier_pro","semaine_livraison":"S13 2026"},
+{"client":"Demeures Corses","ref_chantier":"OPA INVEST PORTE","type_commande":"chantier_pro","semaine_livraison":"S14 2026"},
+{"client":"VISAJE ECO HABITAT","ref_chantier":"BUREAU","type_commande":"chantier_pro","semaine_livraison":"S14 2026"},
+{"client":"MAURIZI","ref_chantier":"Alistro","type_commande":"chantier_direct","semaine_livraison":"S14 2026"},
+{"client":"RANCH","ref_chantier":"NI","type_commande":"chantier_pro","semaine_livraison":"S16 2026"},
+{"client":"MENCO","ref_chantier":"CAMPO LONGO LOT 112","type_commande":"chantier_pro","semaine_livraison":"S16 2026"},
+{"client":"MENCO","ref_chantier":"CAMPO LONGO LOT 113","type_commande":"chantier_pro","semaine_livraison":"S16 2026"},
+{"client":"Delta Alu","ref_chantier":"POLI JL 2","type_commande":"diffus","semaine_livraison":"S16 2026"},
+{"client":"EGMF","ref_chantier":"SUPERETTE","type_commande":"chantier_pro","semaine_livraison":"S15 2026"},
+{"client":"Marcia Diffusion","ref_chantier":"Marinella Porte","type_commande":"chantier_pro","semaine_livraison":"S16 2026"},
+{"client":"Demeures Corses","ref_chantier":"OPA INVEST OUVRANTS","type_commande":"chantier_pro","semaine_livraison":"S16 2026"},
+{"client":"RANCH","ref_chantier":"PATURLE","type_commande":"chantier_pro","semaine_livraison":"S16 2026"},
+{"client":"RANCH","ref_chantier":"BIONDUCCI","type_commande":"chantier_pro","semaine_livraison":"S16 2026"},
+{"client":"RANCH","ref_chantier":"FILISA","type_commande":"sav","semaine_livraison":"S16 2026"},
+{"client":"CECCALDI","ref_chantier":"Garde Corps Partie 2","type_commande":"chantier_direct","semaine_livraison":"S17 2026"},
+{"client":"DI LEGNU","ref_chantier":"Filippi 4 vitrage","type_commande":"sav","semaine_livraison":"S17 2026"},
+{"client":"U QUERCIU","ref_chantier":"BAT C","type_commande":"chantier_pro","semaine_livraison":"S17 2026"},
+{"client":"RANCH","ref_chantier":"TCHEUREKDJIAN","type_commande":"chantier_pro","semaine_livraison":"S17 2026"},
+{"client":"RANCH","ref_chantier":"E&J","type_commande":"chantier_pro","semaine_livraison":"S17 2026"},
+{"client":"CELIA","ref_chantier":"AZARA","type_commande":"chantier_pro","semaine_livraison":"S17 2026"},
+{"client":"JPC","ref_chantier":"ANTONIA 2","type_commande":"chantier_pro","semaine_livraison":"S18 2026"},
+{"client":"GEDIMAT CASTELLI","ref_chantier":"MRB MILANINI","type_commande":"chantier_pro","semaine_livraison":"S16 2026"},
+{"client":"MATIBAT","ref_chantier":"GASNAULT","type_commande":"chantier_pro","semaine_livraison":"S17 2026"},
+{"client":"Probat","ref_chantier":"Marifani","type_commande":"sav","semaine_livraison":"S17 2026"},
+{"client":"RANCH","ref_chantier":"CASITA BIANCA","type_commande":"chantier_pro","semaine_livraison":"S17 2026"},
+{"client":"EGMF","ref_chantier":"GUIBERT","type_commande":"chantier_pro","semaine_livraison":"S18 2026"},
+{"client":"SAMMARCELLI","ref_chantier":"SUP","type_commande":"chantier_pro","semaine_livraison":"S18 2026"},
+{"client":"Ranch","ref_chantier":"LUCCHINI","type_commande":"chantier_pro","semaine_livraison":"S18 2026"},
+{"client":"RANCH","ref_chantier":"KH MARINA","type_commande":"chantier_pro","semaine_livraison":"S18 2026"},
+{"client":"RINUVA","ref_chantier":"ALLASIO","type_commande":"chantier_pro","semaine_livraison":"S18 2026"},
+{"client":"U QUERCIU","ref_chantier":"Bat B","type_commande":"chantier_pro","semaine_livraison":"S19 2026"},
+{"client":"VAN HULLEBUSCH","ref_chantier":"VAN HULLEBUSCH","type_commande":"chantier_direct","semaine_livraison":"S19 2026"},
+{"client":"U QUERCIU","ref_chantier":"BAT D","type_commande":"chantier_pro","semaine_livraison":"S19 2026"},
+{"client":"MENCO","ref_chantier":"CAMPO LONGO 3","type_commande":"chantier_pro","semaine_livraison":"S20 2026"},
+{"client":"JPC","ref_chantier":"POMPES FUNEBRE","type_commande":"sav","semaine_livraison":"S19 2026"},
+{"client":"EGMF","ref_chantier":"MAMA SCI","type_commande":"chantier_pro","semaine_livraison":"S20 2026"},
+{"client":"VOLPE","ref_chantier":"BEAUCE PARC","type_commande":"chantier_direct","semaine_livraison":"S20 2026"},
+{"client":"RANCH","ref_chantier":"GAMBARELLI","type_commande":"chantier_pro","semaine_livraison":"S20 2026"},
+{"client":"BERNARDINI","ref_chantier":"VOLET","type_commande":"chantier_pro","semaine_livraison":"S20 2026"},
+{"client":"Balagne","ref_chantier":"SA CONSTRUCTION","type_commande":"chantier_pro","semaine_livraison":"S21 2026"},
+{"client":"MENCO","ref_chantier":"CAMPO LONGO 4","type_commande":"chantier_pro","semaine_livraison":"S21 2026"},
+{"client":"PASQUALINI Fille","ref_chantier":"Paumelle","type_commande":"sav","semaine_livraison":"S18 2026"},
+{"client":"ALPHA POSE","ref_chantier":"SASSI","type_commande":"chantier_pro","semaine_livraison":"S22 2026"},
+{"client":"GERONIMI","ref_chantier":"VOLETS","type_commande":"chantier_direct","semaine_livraison":"S22 2026"},
+{"client":"NEPITA","ref_chantier":"PORTE BAT A","type_commande":"chantier_direct","semaine_livraison":"S22 2026"},
+{"client":"BAMPA","ref_chantier":"GARDE CORPS INT","type_commande":"chantier_pro","semaine_livraison":"S22 2026"},
+{"client":"BAMPA","ref_chantier":"GARDE CORPS EXT","type_commande":"chantier_pro","semaine_livraison":"S22 2026"},
+{"client":"MATIBAT","ref_chantier":"GUERIN","type_commande":"chantier_pro","semaine_livraison":"S22 2026"},
+{"client":"MENCO","ref_chantier":"TAMBINI","type_commande":"chantier_pro","semaine_livraison":"S22 2026"},
+{"client":"REBANI","ref_chantier":"PERSO","type_commande":"chantier_pro","semaine_livraison":"S22 2026"},
+{"client":"REBANI","ref_chantier":"ACHILLI","type_commande":"chantier_pro","semaine_livraison":"S22 2026"},
+{"client":"REBANI","ref_chantier":"HOUARI","type_commande":"chantier_pro","semaine_livraison":"S22 2026"},
+{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO APPARTEMENT","type_commande":"chantier_pro","semaine_livraison":"S29 2026"},
+{"client":"PASQUALINI","ref_chantier":"FILLE","type_commande":"chantier_direct","semaine_livraison":"S07 2026"},
+{"client":"PROBAT","ref_chantier":"ROCCA D'ISTRIA","type_commande":"sav","semaine_livraison":"S13 2026"},
+{"client":"CECCALDI","ref_chantier":"GC PARTIE 3","type_commande":"chantier_direct","semaine_livraison":"S22 2026"},
+{"client":"SAMMARCELLI","ref_chantier":"Garde Corps Partie 2","type_commande":"chantier_direct","semaine_livraison":"S22 2026"},
+{"client":"MENCO","ref_chantier":"CAMPO LONGO 5","type_commande":"chantier_pro","semaine_livraison":"S22 2026"},
+{"client":"CAS'APERTURA","ref_chantier":"MERCIER PINEA","type_commande":"chantier_pro","semaine_livraison":"S23 2026"},
+{"client":"MENCO","ref_chantier":"CAMPO LONGO 6","type_commande":"chantier_pro","semaine_livraison":"S23 2026"},
+{"client":"U QUERCIU","ref_chantier":"BAT E","type_commande":"chantier_pro","semaine_livraison":"S26 2026"},
+{"client":"MENCO","ref_chantier":"CAMPO LONGO 7","type_commande":"chantier_pro","semaine_livraison":"S24 2026"},
+{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO 1","type_commande":"chantier_pro","semaine_livraison":"S27 2026"},
+{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO 2","type_commande":"chantier_pro","semaine_livraison":"S27 2026"},
+{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO 3","type_commande":"chantier_pro","semaine_livraison":"S34 2026"},
+{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO 4","type_commande":"chantier_pro","semaine_livraison":"S34 2026"},
+{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO 5","type_commande":"chantier_pro","semaine_livraison":"S21 2026"},
+{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO 6","type_commande":"chantier_pro","semaine_livraison":"S21 2026"},
+{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO 7","type_commande":"chantier_pro","semaine_livraison":"S22 2026"},
+{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO 8","type_commande":"chantier_pro","semaine_livraison":"S22 2026"},
+{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO 9","type_commande":"chantier_pro","semaine_livraison":"S23 2026"},
+{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO 10","type_commande":"chantier_pro","semaine_livraison":"S23 2026"},
+{"client":"MOZZICONACCI","ref_chantier":"Partie 2","type_commande":"chantier_direct","semaine_livraison":"S10 2026"},
+{"client":"SAMMARCELLI","ref_chantier":"Garde Corps Partie 1","type_commande":"chantier_direct","semaine_livraison":"S20 2026"},
+{"client":"FRANGINI","ref_chantier":"VITRAGE","type_commande":"diffus","semaine_livraison":"S10 2026"},
+{"client":"PETRONI","ref_chantier":"FIDUCIAIRE","type_commande":"sav","semaine_livraison":"S12 2026"},
+{"client":"SCI DELIA HALLER","ref_chantier":"FACE AVANT","type_commande":"sav","semaine_livraison":"S12 2026"},
+{"client":"NEPITA","ref_chantier":"GAUDICHEAU","type_commande":"sav","semaine_livraison":"S13 2026"},
+{"client":"NEPITA","ref_chantier":"MORLAIX","type_commande":"sav","semaine_livraison":"S13 2026"},
+{"client":"DEMEURES CORSES","ref_chantier":"PROFILES CLOQUES","type_commande":"sav","semaine_livraison":"S14 2026"},
+{"client":"MIROITERIE ORSONI","ref_chantier":"ROULETTE","type_commande":"diffus","semaine_livraison":"S15 2026"},
+{"client":"U VIAGHJU","ref_chantier":"CUVETTES","type_commande":"sav","semaine_livraison":"S15 2026"},
+{"client":"FLORI BALBINOT","ref_chantier":"REGLAGES","type_commande":"sav","semaine_livraison":"S15 2026"},
+{"client":"PIETRI","ref_chantier":"VITRAGE A CHG","type_commande":"sav","semaine_livraison":"S15 2026"},
+{"client":"GEDIMAT CASTELLI","ref_chantier":"MTC GIUDICELLI","type_commande":"diffus","semaine_livraison":"S15 2026"},
+{"client":"Alpha Pose","ref_chantier":"COPPOLANI","type_commande":"sav","semaine_livraison":"S16 2026"},
+{"client":"BRAGHIERI","ref_chantier":"RAIL","type_commande":"diffus","semaine_livraison":"S16 2026"},
+{"client":"PASQUALINI Fille","ref_chantier":"VOLETS","type_commande":"sav","semaine_livraison":"S16 2026"},
+{"client":"BONIFACI","ref_chantier":"PORTE EAU","type_commande":"sav","semaine_livraison":"S16 2026"},
+{"client":"RANCH","ref_chantier":"VERSUS STOCK","type_commande":"diffus","semaine_livraison":"S16 2026"},
+{"client":"CANIONI","ref_chantier":"SPIGA","type_commande":"sav","semaine_livraison":"S18 2026"},
+{"client":"LAURENT PAPAZIAN","ref_chantier":"VR MONOBLOC","type_commande":"chantier_pro","semaine_livraison":"S17 2026"},
+{"client":"ALUTEC","ref_chantier":"SERRURE","type_commande":"diffus","semaine_livraison":"S17 2026"},
+{"client":"RANCH","ref_chantier":"GAUTHEROT","type_commande":"diffus","semaine_livraison":"S17 2026"},
+{"client":"CGL RESIDENCE","ref_chantier":"ACCESSOIRE","type_commande":"diffus","semaine_livraison":"S17 2026"},
+{"client":"ALPHA POSE","ref_chantier":"FALLONE","type_commande":"chantier_pro","semaine_livraison":"S18 2026"},
+{"client":"GRIMALDI","ref_chantier":"BAIE VITREE","type_commande":"sav","semaine_livraison":"S20 2026"},
+{"client":"ORLIAC","ref_chantier":"INFILTRATION","type_commande":"sav","semaine_livraison":"S21 2026"},
+];
+
 // ── Composant principal ──────────────────────────────────────────────────────
 
 export default function PlanningCharge({ commandes, onPatch }: {
@@ -174,6 +279,28 @@ export default function PlanningCharge({ commandes, onPatch }: {
     [cmdList]
   );
 
+  // ── Import batch des semaines de livraison ──
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
+  const runBatchImport = async () => {
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const res = await fetch("/api/planning/batch-weeks?secret=batch2026sial", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: BATCH_DATA }),
+      });
+      const data = await res.json();
+      setImportResult(`${data.ok} mises à jour, ${data.fail} non trouvées sur ${data.total}`);
+      // Recharger la page pour voir les changements
+      window.location.reload();
+    } catch {
+      setImportResult("Erreur lors de l'import");
+    }
+    setImporting(false);
+  };
+
   const prevWeek = () => { const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() - 7); setViewWeek(localStr(d)); };
   const nextWeek = () => { const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() + 7); setViewWeek(localStr(d)); };
 
@@ -240,6 +367,17 @@ export default function PlanningCharge({ commandes, onPatch }: {
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 16, fontWeight: 800 }}>Planning {currentWeekId}</div>
         </div>
+        {/* Bouton import batch (une seule fois) */}
+        {unplannedCmds.length > 10 && (
+          <button
+            onClick={runBatchImport}
+            disabled={importing}
+            style={{ padding: "6px 14px", background: C.orange, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 11, cursor: importing ? "wait" : "pointer" }}
+          >
+            {importing ? "Import en cours..." : "Importer les semaines de livraison"}
+          </button>
+        )}
+        {importResult && <span style={{ fontSize: 11, color: C.green }}>{importResult}</span>}
       </div>
 
       {/* ── Charge vs Capacité par phase ── */}
