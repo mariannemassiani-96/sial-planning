@@ -199,7 +199,7 @@ export default function HomePage() {
           <>
             {ong === "dashboard_matin" && <DashboardMatin />}
 
-            {ong === "planning_fab" && <PlanningCharge commandes={commandes} />}
+            {ong === "planning_fab" && <PlanningCharge commandes={commandes} onPatch={patchCommande} />}
 
             {/* Tableau de bord + Crise fusionnés */}
             {ong === "dashboard" && (
