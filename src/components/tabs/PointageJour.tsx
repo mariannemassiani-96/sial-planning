@@ -20,15 +20,40 @@ function getMondayOf(dateStr: string): string {
 const JOURS_LABELS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
 
 interface CellData { ops: string[]; cmds: string[]; extras?: string[] }
+// Raisons normalisées de non-réalisation
+const RAISONS_BLOCAGE = [
+  { id: "manque_temps", label: "Manque de temps", icon: "⏰" },
+  { id: "manque_accessoire", label: "Manque accessoire", icon: "🔩" },
+  { id: "manque_profil", label: "Manque profilé", icon: "📦" },
+  { id: "manque_vitrage", label: "Manque vitrage", icon: "🪟" },
+  { id: "manque_dossier", label: "Manque dossier fabrication", icon: "📋" },
+  { id: "manque_info", label: "Manque information", icon: "❓" },
+  { id: "panne_machine", label: "Panne machine", icon: "⚙" },
+  { id: "probleme_qualite", label: "Problème qualité / reprise", icon: "⚠" },
+  { id: "absence", label: "Absence opérateur", icon: "👤" },
+  { id: "priorite_changee", label: "Priorité changée", icon: "🔄" },
+  { id: "autre", label: "Autre", icon: "📝" },
+];
+
 interface PointageEntry {
-  pct: number;           // 0-100
-  realMin: number;       // temps réel DURÉE de la tâche en minutes (pas par personne)
-  realOps: string[];     // qui a réellement travaillé dessus
+  pct: number;
+  realMin: number;
+  realOps: string[];
   status: "fait" | "partiel" | "pasfait" | "";
-  reportTo: string;      // date YYYY-MM-DD si reporté
+  raison: string;        // id de RAISONS_BLOCAGE
+  reportTo: string;
+  reportOps: string[];   // qui reprend la tâche
   note: string;
 }
-type PointageData = Record<string, PointageEntry>; // "postId|chantier" → entry
+
+interface ImpreveEntry {
+  label: string;
+  postId: string;
+  realMin: number;
+  ops: string[];
+  raison: string;  // "avance" = fait en avance du lendemain, "imprevu" = pas planifié
+}
+type PointageData = { entries: Record<string, PointageEntry>; imprevu: ImpreveEntry[] };
 
 const POST_COLORS: Record<string, string> = {
   C2:"#42A5F5",C3:"#42A5F5",C4:"#42A5F5",C5:"#42A5F5",C6:"#42A5F5",
@@ -44,7 +69,8 @@ export default function PointageJour({ commandes, onPatch }: {
 }) {
   const [date, setDate] = useState(() => localStr(new Date()));
   const [affData, setAffData] = useState<Record<string, CellData>>({});
-  const [pointage, setPointage] = useState<PointageData>({});
+  const [pointage, setPointage] = useState<PointageData>({ entries: {}, imprevu: [] });
+  const [newImprevu, setNewImprevu] = useState({ label: "", postId: "AUT", min: "" });
   const [saving, setSaving] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -73,8 +99,14 @@ export default function PointageJour({ commandes, onPatch }: {
   useEffect(() => {
     fetch(`/api/pointage-jour?date=${date}`)
       .then(r => r.ok ? r.json() : {})
-      .then(data => { if (data && typeof data === "object" && !Array.isArray(data)) setPointage(data as PointageData); else setPointage({}); })
-      .catch(() => setPointage({}));
+      .then(data => {
+        if (data && typeof data === "object" && !Array.isArray(data)) {
+          const d = data as any;
+          if (d.entries) setPointage({ entries: d.entries || {}, imprevu: d.imprevu || [] });
+          else setPointage({ entries: d as Record<string, PointageEntry>, imprevu: [] });
+        } else { setPointage({ entries: {}, imprevu: [] }); }
+      })
+      .catch(() => setPointage({ entries: {}, imprevu: [] }));
   }, [date]);
 
   // Sauvegarde auto
@@ -123,8 +155,19 @@ export default function PointageJour({ commandes, onPatch }: {
   }, [affData, jourIdx]);
 
   const updateEntry = (key: string, updates: Partial<PointageEntry>) => {
-    const entry = pointage[key] || { pct: 0, realMin: 0, status: "", reportTo: "", note: "" };
-    save({ ...pointage, [key]: { ...entry, ...updates } });
+    const entry = pointage.entries[key] || { pct: 0, realMin: 0, realOps: [], status: "", raison: "", reportTo: "", reportOps: [], note: "" };
+    save({ ...pointage, entries: { ...pointage.entries, [key]: { ...entry, ...updates } } });
+  };
+
+  const addImprevu = () => {
+    if (!newImprevu.label.trim()) return;
+    const imp: ImpreveEntry = { label: newImprevu.label.trim(), postId: newImprevu.postId, realMin: parseInt(newImprevu.min) || 0, ops: [], raison: "imprevu" };
+    save({ ...pointage, imprevu: [...pointage.imprevu, imp] });
+    setNewImprevu({ label: "", postId: "AUT", min: "" });
+  };
+
+  const removeImprevu = (idx: number) => {
+    save({ ...pointage, imprevu: pointage.imprevu.filter((_, i) => i !== idx) });
   };
 
   const quickDone = (key: string) => updateEntry(key, { pct: 100, status: "fait" });
@@ -136,7 +179,7 @@ export default function PointageJour({ commandes, onPatch }: {
   const next = () => { const d = new Date(date + "T00:00:00"); d.setDate(d.getDate() + 1); if (d.getDay() === 0) d.setDate(d.getDate() + 1); if (d.getDay() === 6) d.setDate(d.getDate() + 2); setDate(localStr(d)); };
   const goToday = () => setDate(localStr(new Date()));
 
-  const doneCount = dayTasks.filter(t => pointage[t.key]?.status === "fait").length;
+  const doneCount = dayTasks.filter(t => pointage.entries[t.key]?.status === "fait").length;
   const totalCount = dayTasks.length;
   const pctGlobal = totalCount > 0 ? Math.round(doneCount / totalCount * 100) : 0;
 
@@ -164,8 +207,8 @@ export default function PointageJour({ commandes, onPatch }: {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {dayTasks.map(task => {
-            const entry = pointage[task.key] || { pct: 0, realMin: 0, realOps: [...task.ops], status: "", reportTo: "", note: "" };
-            if (!entry.realOps) entry.realOps = [...task.ops]; // migration
+            const entry = pointage.entries[task.key] || { pct: 0, realMin: 0, realOps: [...task.ops], status: "", raison: "", reportTo: "", reportOps: [], note: "" };
+            if (!entry.realOps) entry.realOps = [...task.ops];
             const isDone = entry.status === "fait";
             const isPartial = entry.status === "partiel";
             const color = POST_COLORS[task.postId] || C.sec;
@@ -223,13 +266,18 @@ export default function PointageJour({ commandes, onPatch }: {
                     <span style={{ fontSize: 10, color: C.muted }}>min</span>
                   </div>
 
-                  {/* Report si partiel ou pas fait */}
+                  {/* Raison + Report si partiel ou pas fait */}
                   {(isPartial || entry.status === "pasfait") && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      <span style={{ fontSize: 10, color: C.orange }}>Reporter à :</span>
-                      <input type="date" value={entry.reportTo}
-                        onChange={e => updateEntry(task.key, { reportTo: e.target.value })}
-                        style={{ padding: "2px 6px", background: C.bg, border: `1px solid ${C.orange}44`, borderRadius: 3, color: C.text, fontSize: 10 }} />
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 4, padding: "6px 0", borderTop: `1px solid ${C.border}` }}>
+                      <select value={entry.raison || ""} onChange={e => updateEntry(task.key, { raison: e.target.value })}
+                        style={{ padding: "3px 6px", background: C.bg, border: `1px solid ${C.orange}44`, borderRadius: 3, color: C.text, fontSize: 10 }}>
+                        <option value="">Raison...</option>
+                        {RAISONS_BLOCAGE.map(r => <option key={r.id} value={r.id}>{r.icon} {r.label}</option>)}
+                      </select>
+                      <input type="date" value={entry.reportTo} onChange={e => updateEntry(task.key, { reportTo: e.target.value })} placeholder="Reporter à"
+                        style={{ padding: "3px 6px", background: C.bg, border: `1px solid ${C.orange}44`, borderRadius: 3, color: C.text, fontSize: 10 }} />
+                      <input value={entry.note || ""} onChange={e => updateEntry(task.key, { note: e.target.value })} placeholder="Note..."
+                        style={{ flex: 1, minWidth: 120, padding: "3px 6px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.text, fontSize: 10 }} />
                     </div>
                   )}
                 </div>
@@ -238,6 +286,29 @@ export default function PointageJour({ commandes, onPatch }: {
           })}
         </div>
       )}
+
+      {/* Tâches imprévues / faites en avance */}
+      <div style={{ marginTop: 16, background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Tâches imprévues ou faites en avance</div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <input value={newImprevu.label} onChange={e => setNewImprevu(p => ({ ...p, label: e.target.value }))} placeholder="Ex: Changement outil, Tâche du lendemain..."
+            style={{ flex: 1, minWidth: 200, padding: "5px 10px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, fontSize: 11 }} />
+          <input type="number" value={newImprevu.min} onChange={e => setNewImprevu(p => ({ ...p, min: e.target.value }))} placeholder="min"
+            style={{ width: 55, padding: "5px 6px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, fontSize: 11, textAlign: "center" }} />
+          <button onClick={addImprevu} style={{ padding: "5px 14px", background: C.orange, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>+ Ajouter</button>
+        </div>
+        {pointage.imprevu.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {pointage.imprevu.map((imp, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: C.bg, borderRadius: 4, border: `1px solid ${C.border}` }}>
+                <span style={{ fontSize: 11, fontWeight: 600, flex: 1 }}>{imp.label}</span>
+                {imp.realMin > 0 && <span className="mono" style={{ fontSize: 11, color: C.muted }}>{hm(imp.realMin)}</span>}
+                <button onClick={() => removeImprevu(i)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 10 }}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
