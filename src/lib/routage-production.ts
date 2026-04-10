@@ -93,16 +93,16 @@ export function getRoutage(
   }
 
   // ── Routage standard ──────────────────────────────────────────────────────
-  const isFrappe = famille === "frappe" || famille === "porte";
+  const isFrappe = famille === "frappe";
+  const isPorte = famille === "porte";
   const isCoul = famille === "coulissant";
   const isGland = famille === "glandage";
   const etapes: EtapeRoutage[] = [];
   let ord = 0;
 
   // ── PHASE COUPE ───────────────────────────────────────────────────────────
-  // C1 : Déchargement (logistique amont, mais fait par l'équipe coupe)
-  // C2 : Préparation barres
-  etapes.push({ postId: "C2", label: "Préparation barres", estimatedMin: Math.round(lmt * T.coupe_profil * q * 0.3), phase: "coupe", order: ord++ });
+  // C2 : Préparation barres (minimum 3 min)
+  etapes.push({ postId: "C2", label: "Préparation barres", estimatedMin: Math.max(3, Math.round(lmt * T.coupe_profil * q * 0.3)), phase: "coupe", order: ord++ });
 
   // C3 : Coupe LMT
   etapes.push({ postId: "C3", label: "Coupe LMT", estimatedMin: Math.round(lmt * T.coupe_profil * q), phase: "coupe", order: ord++ });
@@ -127,12 +127,18 @@ export function getRoutage(
 
   // ── PHASE MONTAGE ─────────────────────────────────────────────────────────
   if (isFrappe) {
-    // Poinçonnage/assemblage ALU
+    // Frappes ALU : poinçonnage en F1
     if (!isPVC) {
       etapes.push({ postId: "F1", label: "Dormants frappe ALU", estimatedMin: Math.round(T.poincon_alu * nbCadres * q), phase: "montage", order: ord++ });
     }
     etapes.push({ postId: "F2", label: "Ouvrants frappe + ferrage", estimatedMin: Math.round((T.prep_dormant + T.ferrage_ouvrant * ouvrants) * q), phase: "montage", order: ord++ });
     etapes.push({ postId: "F3", label: "Mise en bois + contrôle", estimatedMin: Math.round((T.mise_en_bois + T.controle) * q), phase: "montage", order: ord++ });
+  }
+
+  if (isPorte) {
+    // Portes ALU : poste dédié M3 (poinçonnage + rails + ferrage + mise en bois)
+    const tPorte = Math.round((T.poincon_alu * nbCadres + T.pose_rails_accessoires + T.ferrage_ouvrant * ouvrants + T.prep_dormant + T.mise_en_bois + T.controle) * q);
+    etapes.push({ postId: "M3", label: "Montage porte ALU", estimatedMin: tPorte, phase: "montage", order: ord++ });
   }
 
   if (isCoul) {
@@ -143,12 +149,8 @@ export function getRoutage(
     etapes.push({ postId: "M2", label: "Dormants galandage", estimatedMin: Math.round((T.pose_rails_accessoires + T.montage_dormant_gland) * q), phase: "montage", order: ord++ });
   }
 
-  if (famille === "porte") {
-    etapes.push({ postId: "M3", label: "Portes ALU", estimatedMin: Math.round((T.pose_rails_accessoires + T.poincon_alu * nbCadres) * q), phase: "montage", order: ord++ });
-  }
-
   // ── PHASE VITRAGE ─────────────────────────────────────────────────────────
-  if (isFrappe) {
+  if (isFrappe || isPorte) {
     etapes.push({ postId: "V1", label: "Vitrage frappe", estimatedMin: Math.round(T.vitrage_frappe * Math.max(ouvrants, 1) * q), phase: "vitrage", order: ord++ });
   }
 
