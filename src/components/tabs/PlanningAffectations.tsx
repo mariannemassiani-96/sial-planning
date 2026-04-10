@@ -1478,7 +1478,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       {detailCmd && (() => {
         const cmd = detailCmd.cmd;
         const lignes = Array.isArray(cmd.lignes) && cmd.lignes.length > 0 ? cmd.lignes : [{ type: cmd.type, quantite: cmd.quantite }];
-        const allEtapes: Array<{ postId: string; label: string; min: number; phase: string; isOverridden: boolean }> = [];
+        // Agréger par poste (une seule ligne par poste)
+        const postTotals: Record<string, { label: string; min: number; phase: string }> = {};
         for (const ligne of lignes) {
           const lType = ligne.type || cmd.type;
           if (lType === "intervention_chantier") continue;
@@ -1486,11 +1487,16 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           const lHs = lType === "hors_standard" ? { t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage } : cmd.hsTemps;
           const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null);
           for (const e of routage) {
-            // Appliquer les overrides par commande si existants
-            const overrideMin = cmdOverrides[e.postId];
-            allEtapes.push({ postId: e.postId, label: e.label, min: overrideMin !== undefined ? overrideMin : e.estimatedMin, phase: e.phase, isOverridden: overrideMin !== undefined });
+            if (!postTotals[e.postId]) postTotals[e.postId] = { label: e.label, min: 0, phase: e.phase };
+            postTotals[e.postId].min += e.estimatedMin;
           }
         }
+        // Appliquer les overrides par commande
+        const allEtapes = Object.entries(postTotals).map(([postId, data]) => {
+          const ov = cmdOverrides[postId];
+          return { postId, label: data.label, min: ov !== undefined ? ov : data.min, phase: data.phase, isOverridden: ov !== undefined };
+        });
+        const nbLignes = lignes.length;
         const PHASE_C: Record<string, string> = { coupe: "#42A5F5", montage: "#FFA726", vitrage: "#26C6DA", logistique: "#CE93D8" };
         const totalMin = allEtapes.reduce((s, e) => s + e.min, 0);
 
@@ -1500,7 +1506,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 800 }}>{detailCmd.chantier}</div>
-                  <div style={{ fontSize: 12, color: C.sec }}>{cmd.client} · {cmd.quantite}× {(TYPES_MENUISERIE as Record<string, any>)[cmd.type]?.label || cmd.type}</div>
+                  <div style={{ fontSize: 12, color: C.sec }}>{cmd.client}{nbLignes > 1 ? ` · ${nbLignes} lignes` : ` · ${cmd.quantite}× ${(TYPES_MENUISERIE as Record<string, any>)[cmd.type]?.label || cmd.type}`}</div>
                 </div>
                 <button onClick={() => setDetailCmd(null)} style={{ background: "none", border: "none", color: C.sec, cursor: "pointer", fontSize: 18 }}>✕</button>
               </div>
