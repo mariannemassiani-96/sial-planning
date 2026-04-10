@@ -2,6 +2,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { C, EQUIPE, hm, CommandeCC } from "@/lib/sial-data";
 import { getRoutage } from "@/lib/routage-production";
+import { openPrintWindow } from "@/lib/print-utils";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -190,6 +191,132 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
   // ── Tout effacer ──
   const clearAll = useCallback(() => { saveAff({}); }, [saveAff]);
 
+  // ── Impression fiches par opérateur ──
+  const printFiches = useCallback(() => {
+    const wk = weekId(viewWeek);
+    // Construire le planning par opérateur
+    const opPlannings: Record<string, Array<{ jour: string; demi: string; postId: string; postLabel: string; cmds: string[] }>> = {};
+
+    for (const [key, ops] of Object.entries(aff)) {
+      if (!ops || ops.length === 0) continue;
+      const [pid, jourStr, demi] = key.split("|");
+      const jourIdx = parseInt(jourStr);
+      const grp = POST_GROUPS.find(g => g.ids.includes(pid));
+      const pw = postWork[pid];
+      const cmdLabels = pw?.cmds.map(c => c.client) || [];
+
+      for (const opNom of ops) {
+        if (!opPlannings[opNom]) opPlannings[opNom] = [];
+        opPlannings[opNom].push({
+          jour: JOURS[jourIdx],
+          demi: demi === "am" ? "Matin" : "Après-midi",
+          postId: pid,
+          postLabel: `${POST_LABELS[pid] || pid} (${grp?.label || ""})`,
+          cmds: cmdLabels,
+        });
+      }
+    }
+
+    // Trier par jour/demi
+    const jourOrder: Record<string, number> = { Lun: 0, Mar: 1, Mer: 2, Jeu: 3, Ven: 4 };
+    for (const opNom of Object.keys(opPlannings)) {
+      opPlannings[opNom].sort((a, b) => {
+        const da = jourOrder[a.jour] * 2 + (a.demi === "Matin" ? 0 : 1);
+        const db = jourOrder[b.jour] * 2 + (b.demi === "Matin" ? 0 : 1);
+        return da - db;
+      });
+    }
+
+    // Générer le HTML
+    let html = "";
+    const allOps = OPS.filter(op => opPlannings[op.nom]);
+
+    for (const op of allOps) {
+      const planning = opPlannings[op.nom];
+      if (!planning || planning.length === 0) continue;
+
+      html += `
+        <div style="page-break-after: always; ${allOps.indexOf(op) === allOps.length - 1 ? "page-break-after: auto;" : ""}">
+          <div class="header">
+            <div class="header-left">
+              <h1>SIAL <span>+</span> ISULA</h1>
+              <div class="subtitle">Planning de la semaine ${wk}</div>
+            </div>
+            <div class="header-right">
+              Fiche opérateur<br>
+              Imprimé le ${new Date().toLocaleDateString("fr-FR")}
+            </div>
+          </div>
+
+          <h2 style="font-size: 18px; border: 2px solid #000; padding: 8px 12px; border-radius: 4px; display: inline-block;">
+            ${op.nom}
+          </h2>
+          <p style="margin: 8px 0 16px; color: #555; font-size: 11px;">
+            Compétences : ${op.competences.join(", ")}
+          </p>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 60px;">JOUR</th>
+                <th style="width: 80px;">CRÉNEAU</th>
+                <th style="width: 60px;">POSTE</th>
+                <th>DESCRIPTION</th>
+                <th>COMMANDES</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      // Grouper par jour
+      let lastJour = "";
+      for (const slot of planning) {
+        const showJour = slot.jour !== lastJour;
+        lastJour = slot.jour;
+        html += `
+          <tr>
+            <td style="font-weight: 700; ${showJour ? "" : "border-top: none; color: #fff;"}">${showJour ? slot.jour : ""}</td>
+            <td>${slot.demi}</td>
+            <td style="font-weight: 700;">${slot.postId}</td>
+            <td>${slot.postLabel}</td>
+            <td>${slot.cmds.join(", ") || "—"}</td>
+          </tr>
+        `;
+      }
+
+      // Ajouter les jours sans affectation
+      for (const j of JOURS) {
+        const hasSlots = planning.some(s => s.jour === j);
+        if (!hasSlots) {
+          const isOff = (j === "Ven" && op.vendrediOff);
+          html += `
+            <tr>
+              <td style="font-weight: 700;">${j}</td>
+              <td colspan="4" style="color: #999; text-align: center;">${isOff ? "REPOS" : "Non affecté"}</td>
+            </tr>
+          `;
+        }
+      }
+
+      html += `
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <span>SIAL + ISULA — Planning Industriel</span>
+            <span>${wk} · ${op.nom}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    if (allOps.length === 0) {
+      html = "<p style='text-align:center; padding: 40px; color: #999;'>Aucune affectation à imprimer. Utilisez 'Proposition auto' d'abord.</p>";
+    }
+
+    openPrintWindow(`Planning ${wk} — Fiches opérateurs`, html);
+  }, [aff, postWork, viewWeek]);
+
   const todayIdx = (() => {
     const today = localStr(new Date());
     for (let i = 0; i < 5; i++) {
@@ -229,6 +356,9 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
           </button>
           <button onClick={clearAll} style={{ padding: "6px 16px", background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, fontSize: 11, cursor: "pointer" }}>
             Tout effacer
+          </button>
+          <button onClick={printFiches} style={{ padding: "6px 16px", background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, fontSize: 11, cursor: "pointer" }}>
+            Imprimer les fiches
           </button>
           <span style={{ fontSize: 9, color: saving ? C.orange : C.green, textAlign: "center" }}>
             {saving ? "Sauvegarde..." : "Sauvegardé"}
