@@ -1,7 +1,6 @@
 /* eslint-disable react/no-unescaped-entities */
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { useSession } from "next-auth/react";
 import { C } from "@/lib/sial-data";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -131,11 +130,10 @@ function LevelPopup({ operatorName, targetLabel, currentLevel, onSelect, onClose
 
 interface FicheProps {
   operator: Operator;
-  isAdmin: boolean;
   onClose: () => void;
   onSaved: (op: Operator) => void;
 }
-function FicheOperateur({ operator, isAdmin, onClose, onSaved }: FicheProps) {
+function FicheOperateur({ operator, onClose, onSaved }: FicheProps) {
   const [notes, setNotes] = useState(operator.notes ?? "");
   const [saving, setSaving] = useState(false);
   const { toast, msg } = useToast();
@@ -253,7 +251,6 @@ function FicheOperateur({ operator, isAdmin, onClose, onSaved }: FicheProps) {
           >
             {saving ? "…" : "Enregistrer les notes"}
           </button>
-          {!isAdmin && <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Les niveaux de compétence sont modifiables par Marianne (Admin)</div>}
         </div>
       </div>
     </div>
@@ -263,9 +260,6 @@ function FicheOperateur({ operator, isAdmin, onClose, onSaved }: FicheProps) {
 // ── Composant principal ───────────────────────────────────────────────────────
 
 export default function GestionCompetences() {
-  const { data: session } = useSession();
-  const isAdmin = (session?.user as { role?: string })?.role === "ADMIN";
-
   const [operators, setOperators] = useState<Operator[]>([]);
   const [loading, setLoading]     = useState(true);
   const [activeTab, setActiveTab] = useState<"postes" | "produits">("postes");
@@ -296,7 +290,7 @@ export default function GestionCompetences() {
   };
 
   const handleCellClick = (op: Operator, targetId: string, targetLabel: string, isProduct: boolean) => {
-    if (!isAdmin) return; // lecture seule pour OPERATEUR
+    // Tous les utilisateurs authentifiés peuvent modifier les compétences
     setPopup({ operator: op, targetId, targetLabel, currentLevel: getLevel(op, targetId, isProduct), isProduct });
   };
 
@@ -378,8 +372,8 @@ export default function GestionCompetences() {
                 return (
                   <td
                     key={k.id}
-                    style={{ padding: "6px 4px", textAlign: "center", cursor: isAdmin ? "pointer" : "default" }}
-                    title={isAdmin ? `Clic pour modifier — ${op.name} / ${k.label}` : undefined}
+                    style={{ padding: "6px 4px", textAlign: "center", cursor: "pointer" }}
+                    title={`Clic pour modifier — ${op.name} / ${k.label}`}
                     onClick={() => handleCellClick(op, k.id, k.label, isProduct)}
                   >
                     {levelBadge(lvl)}
@@ -416,14 +410,7 @@ export default function GestionCompetences() {
           Compétences opérateurs
           <span style={{ fontSize: 12, color: C.muted, marginLeft: 8 }}>{operators.length} opérateurs</span>
         </div>
-        {!isAdmin && (
-          <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic" }}>
-            Lecture seule — modification réservée à Marianne
-          </div>
-        )}
-        {isAdmin && (
-          <div style={{ fontSize: 12, color: C.sec }}>Clic sur une case pour modifier le niveau</div>
-        )}
+        <div style={{ fontSize: 12, color: C.sec }}>Clic sur une case pour modifier le niveau</div>
       </div>
 
       {/* Légende */}
@@ -490,7 +477,6 @@ export default function GestionCompetences() {
       {ficheOp && (
         <FicheOperateur
           operator={ficheOp}
-          isAdmin={isAdmin}
           onClose={() => setFicheOp(null)}
           onSaved={(op) => {
             setFicheOp(op);

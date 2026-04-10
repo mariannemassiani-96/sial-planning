@@ -10,10 +10,6 @@ export async function PATCH(
 ) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
-  if ((session.user as { role?: string })?.role !== "ADMIN") {
-    return NextResponse.json({ error: "Admin requis" }, { status: 403 });
-  }
-
   const { level } = await req.json();
   const userName = (session.user as { name?: string })?.name ?? "unknown";
 
