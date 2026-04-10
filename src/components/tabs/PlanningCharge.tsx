@@ -71,21 +71,25 @@ function getPhaseCapacity(phaseCompetence: string): { totalMin: number; operator
   for (const op of OP_CAPACITIES) {
     if (!op.competences.includes(phaseCompetence)) continue;
 
-    // Combien de phases différentes cet opérateur couvre ?
-    // Il partage son temps entre elles
     const nbPhasesCouvertes = PHASE_CONFIG.filter(ph =>
       op.competences.includes(ph.competence)
     ).length;
 
-    // Sa dispo pour cette phase = ses heures / nombre de phases couvertes
     const minDispo = Math.round(op.hSemaine * 60 / Math.max(nbPhasesCouvertes, 1));
     operators.push({ nom: op.nom, minDispo });
   }
 
-  return {
-    totalMin: operators.reduce((s, o) => s + o.minDispo, 0),
-    operators,
+  let totalMin = operators.reduce((s, o) => s + o.minDispo, 0);
+
+  // Plafond par phase (capacité machine/zone)
+  const PHASE_MAX_MIN: Record<string, number> = {
+    coupe: 39 * 60, // 39h/semaine max pour la zone coupe
   };
+  if (PHASE_MAX_MIN[phaseCompetence] && totalMin > PHASE_MAX_MIN[phaseCompetence]) {
+    totalMin = PHASE_MAX_MIN[phaseCompetence];
+  }
+
+  return { totalMin, operators };
 }
 
 function getOperatorsForPhase(phase: string, famille?: string): string[] {
