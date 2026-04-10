@@ -879,6 +879,76 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     openPrintWindow(`Planning ${wk} — Fiches opérateurs`, html);
   }, [aff, postWork, viewWeek]);
 
+  // ── Livraisons auto → tâches chargement + livraison ──
+  const autoDeliveryTasks = useMemo(() => {
+    const tasks: Array<{ key: string; label: string; type: "chargement" | "livraison" }> = [];
+    // Grouper les livraisons par (jour, transporteur, zone)
+    const deliveries = new Map<string, { date: string; transporteur: string; zone: string; clients: string[] }>();
+
+    for (const cmd of commandes) {
+      const dlDate = (cmd as any).date_livraison_souhaitee;
+      if (!dlDate) continue;
+      const transporteur = (cmd as any).transporteur || "";
+      const zone = (cmd as any).zone || "";
+      const dKey = `${dlDate}|${transporteur}|${zone}`;
+
+      if (!deliveries.has(dKey)) {
+        deliveries.set(dKey, { date: dlDate, transporteur, zone, clients: [] });
+      }
+      deliveries.get(dKey)!.clients.push((cmd as any).client);
+    }
+
+    // Pour chaque livraison unique dans la semaine courante ou la semaine d'après
+    deliveries.forEach((del) => {
+      const dlDay = new Date(del.date + "T00:00:00");
+      const dlDayStr = localStr(dlDay);
+
+      // Vérifier si la livraison est dans la semaine affichée
+      const weekDays: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        const d = new Date(viewWeek + "T00:00:00");
+        d.setDate(d.getDate() + i);
+        weekDays.push(localStr(d));
+      }
+
+      // Chargement = demi-journée avant la livraison
+      const dayBefore = new Date(dlDay);
+      dayBefore.setDate(dayBefore.getDate() - 1);
+      // Si livraison lundi → chargement vendredi d'avant
+      const chargeDayStr = localStr(dayBefore);
+      const chargeJourIdx = weekDays.indexOf(chargeDayStr);
+
+      if (chargeJourIdx >= 0) {
+        const label = `🚛 Chargement ${del.zone || "livraison"} (${del.clients.length} client${del.clients.length > 1 ? "s" : ""})`;
+        tasks.push({ key: `AUT|${chargeJourIdx}|pm`, label, type: "chargement" });
+      }
+
+      // Livraison = jour de livraison, seulement si transporteur "nous"
+      if (del.transporteur === "nous") {
+        const livrJourIdx = weekDays.indexOf(dlDayStr);
+        if (livrJourIdx >= 0) {
+          const label = `🚚 Livraison ${del.zone || ""} (${del.clients.join(", ")})`;
+          tasks.push({ key: `AUT|${livrJourIdx}|am`, label, type: "livraison" });
+          tasks.push({ key: `AUT|${livrJourIdx}|pm`, label, type: "livraison" });
+        }
+      }
+    });
+    return tasks;
+  }, [commandes, viewWeek]);
+
+  // Injecter les tâches auto dans les affectations (sans écraser les manuelles)
+  const affWithAuto = useMemo(() => {
+    const merged = { ...aff };
+    for (const task of autoDeliveryTasks) {
+      const cell = merged[task.key] || { ops: [], cmds: [], extras: [] };
+      const extras = cell.extras || [];
+      if (!extras.includes(task.label)) {
+        merged[task.key] = { ...cell, extras: [...extras, task.label] };
+      }
+    }
+    return merged;
+  }, [aff, autoDeliveryTasks]);
+
   // ── Calcul de couverture globale ──
   const coverage = useMemo(() => {
     let totalNeeded = 0;
@@ -1369,7 +1439,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                     </td>
                     {JOURS.map((j, jIdx) => ["am", "pm"].map(demi => {
                       const key = ck(pid, jIdx, demi);
-                      const cell = aff[key] || { ops: [], cmds: [] };
+                      const cell = affWithAuto[key] || { ops: [], cmds: [] };
                       const hasContent = cell.ops.length > 0 || cell.cmds.length > 0;
                       const isTarget = dropTarget === key;
                       return (
