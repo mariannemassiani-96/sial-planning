@@ -2,11 +2,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { signOut } from "next-auth/react";
-import { C, TYPES_MENUISERIE, STOCKS_DEF, calcCheminCritique, CommandeCC } from "@/lib/sial-data";
+import { C, STOCKS_DEF, calcCheminCritique, CommandeCC } from "@/lib/sial-data";
 import { Bdg } from "@/components/ui";
 import Nomenclature from "@/components/tabs/Nomenclature";
 import Simulateur from "@/components/tabs/Simulateur";
-import ChargeSemaine from "@/components/tabs/ChargeSemaine";
 import StocksTampons from "@/components/tabs/StocksTampons";
 import SaisieCommande from "@/components/tabs/SaisieCommande";
 import PlanningCrise from "@/components/tabs/PlanningCrise";
@@ -20,13 +19,30 @@ import Qualite from "@/components/tabs/Qualite";
 import ImportCSV from "@/components/tabs/ImportCSV";
 import Pointage from "@/components/tabs/Pointage";
 import AffichageAtelier from "@/components/tabs/AffichageAtelier";
-import PlanningAtelier from "@/components/tabs/PlanningAtelier";
 import DashboardMatin from "@/components/tabs/DashboardMatin";
 import PlanningSemaine from "@/components/tabs/PlanningSemaine";
 import DetailCommande from "@/components/tabs/DetailCommande";
 import StatsAdmin from "@/components/tabs/StatsAdmin";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
 import TutoAJ from "@/components/TutoAJ";
+
+// ── Sub-tab selector ────────────────────────────────────────────────────────
+function SubTabs({ tabs, active, onChange }: { tabs: { id: string; l: string }[]; active: string; onChange: (id: string) => void }) {
+  return (
+    <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${C.border}`, marginBottom: 16 }}>
+      {tabs.map(t => (
+        <button key={t.id} onClick={() => onChange(t.id)} style={{
+          padding: "8px 16px", background: "none", border: "none",
+          borderBottom: `2px solid ${active === t.id ? C.orange : "transparent"}`,
+          color: active === t.id ? C.text : C.sec,
+          fontWeight: active === t.id ? 700 : 400, fontSize: 13, cursor: "pointer",
+        }}>
+          {t.l}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function HomePage() {
   const { data: session, status } = useSession();
@@ -36,6 +52,12 @@ export default function HomePage() {
   const [cmdEdit, setCmdEdit] = useState<CommandeCC | null>(null);
   const [stocks, setStocks] = useState<Record<string, { actuel: number }>>({});
   const [loading, setLoading] = useState(true);
+
+  // Sub-tab states for merged tabs
+  const [dashSub, setDashSub] = useState<"tableau" | "crise">("tableau");
+  const [rhSub, setRhSub] = useState<"planning" | "competences">("planning");
+  const [isulaSub, setIsulaSub] = useState<"planning" | "besoins">("planning");
+  const [refSub, setRefSub] = useState<"nomenclature" | "simulateur">("nomenclature");
 
   const fetchAll = useCallback(async () => {
     try {
@@ -61,30 +83,24 @@ export default function HomePage() {
 
   const isAdmin = (session?.user as any)?.role === "ADMIN";
 
+  // ── Navigation — 12 onglets (au lieu de 20) ──────────────────────────────
   const nav = [
-    { id: "dashboard_matin", l: "🌅 Matin SIAL+ISULA",    alert: critiques },
-    { id: "planning_fab",    l: "📅 Planning semaine" },
-    { id: "dashboard",       l: "🏠 Tableau de bord",     alert: critiques },
-    { id: "livraison",    l: "🚚 Livraisons" },
-    { id: "saisie",       l: "➕ Ajouter une commande" },
-    { id: "carnet",       l: `📂 Commandes (${commandes.length})` },
-    { id: "crise",        l: `🚨 Crise${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
-    { id: "rh",                l: "👥 Équipe SIAL" },
-    { id: "atelier",           l: "🏭 Planning Atelier" },
-    { id: "pointage",          l: "✅ Pointage" },
-    { id: "affichage_atelier", l: "📺 Affichage Atelier" },
-    { id: "isula",           l: "🔷 Planning ISULA VITRAGE" },
-    { id: "besoins_vitrages", l: "🔢 Besoins Vitrages" },
-    { id: "charge_isula",    l: "📊 Charge ISULA VITRAGE" },
-    { id: "equipe_isula",  l: "👥 Équipe ISULA VITRAGE" },
-    { id: "competences",   l: "👥 Compétences" },
+    { id: "dashboard_matin", l: "🌅 Matin" },
+    { id: "planning_fab",    l: "📅 Planning" },
+    { id: "dashboard",       l: `🏠 Suivi${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
+    { id: "livraison",       l: "🚚 Livraisons" },
+    { id: "saisie",          l: "➕ Commande" },
+    { id: "carnet",          l: `📂 Commandes (${commandes.length})` },
+    { id: "rh",              l: "👥 Équipe" },
+    { id: "pointage",        l: "✅ Pointage" },
+    { id: "affichage_atelier", l: "📺 Atelier" },
+    { id: "isula",           l: "🔷 ISULA" },
     ...(isAdmin ? [
       { id: "qualite",      l: "✅ Qualité" },
       { id: "stocks",       l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
-      { id: "nomenclature", l: "📐 Nomenclature" },
-      { id: "simulateur",   l: "🎯 Simulateur" },
-      { id: "import_csv",   l: "📥 Import CSV" },
-      { id: "stats_admin",  l: "📊 Statistiques" },
+      { id: "referentiel",  l: "📐 Référentiel" },
+      { id: "import_csv",   l: "📥 Import" },
+      { id: "stats_admin",  l: "📊 Stats" },
     ] : []),
   ];
 
@@ -151,13 +167,13 @@ export default function HomePage() {
             <span style={{ color: C.teal }}>ISULA</span>
             <span style={{ color: C.sec, margin: "0 6px", fontWeight: 300 }}>|</span>
             <span>Planning Industriel</span>
-            <span style={{ fontSize: 11, color: C.muted, marginLeft: 6 }}>v8.3</span>
+            <span style={{ fontSize: 11, color: C.muted, marginLeft: 6 }}>v9.0</span>
           </div>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-          <Bdg t={`${Object.keys(TYPES_MENUISERIE).length} types menuiserie`} c={C.teal} />
           <Bdg t={`${commandes.length} cmd`} c={C.blue} />
           {ruptures > 0 && <Bdg t={`⚠ ${ruptures} rupture(s)`} c={C.red} />}
+          {retards > 0 && <Bdg t={`⚠ ${retards} retard(s)`} c={C.red} />}
           {session?.user && (
             <span style={{ fontSize: 11, color: C.sec, marginLeft: 8 }}>
               {session.user.name}
@@ -184,36 +200,80 @@ export default function HomePage() {
         ) : (
           <>
             {ong === "dashboard_matin" && <DashboardMatin />}
+
             {ong === "planning_fab" && (
               planningOrderId
                 ? <DetailCommande orderId={planningOrderId} onBack={() => setPlanningOrderId(null)} />
                 : <PlanningSemaine onSelectOrder={(id) => setPlanningOrderId(id)} />
             )}
-            {ong === "dashboard" && <Dashboard commandes={commandes} stocks={stocks} onNav={setOng} onRefresh={fetchAll} />}
+
+            {/* Tableau de bord + Crise fusionnés */}
+            {ong === "dashboard" && (
+              <>
+                <SubTabs
+                  tabs={[{ id: "tableau", l: "Tableau de bord" }, { id: "crise", l: `Crise${retards > 0 ? ` (${retards})` : ""}` }]}
+                  active={dashSub}
+                  onChange={(id) => setDashSub(id as "tableau" | "crise")}
+                />
+                {dashSub === "tableau" && <Dashboard commandes={commandes} stocks={stocks} onNav={setOng} onRefresh={fetchAll} />}
+                {dashSub === "crise" && <PlanningCrise commandes={commandes} />}
+              </>
+            )}
+
             {ong === "saisie" && <SaisieCommande key={String(cmdEdit?.id || "new")} onAjouter={addCommande} commande={cmdEdit} onModifier={modifCommande} />}
             {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} onEdit={editCommande} onPatch={patchCommande} />}
-            {ong === "crise" && <PlanningCrise commandes={commandes} />}
             {ong === "livraison" && <PlanningLivraison commandes={commandes} onPatch={patchCommande} onEdit={editCommande} />}
-            {ong === "charge" && <ChargeSemaine commandes={commandes} />}
-            {ong === "rh" && <PlanningRH commandes={commandes} />}
-            {ong === "atelier" && <PlanningAtelier commandes={commandes} />}
+
+            {/* Équipe SIAL + Compétences fusionnés */}
+            {ong === "rh" && (
+              <>
+                <SubTabs
+                  tabs={[{ id: "planning", l: "Planning RH" }, { id: "competences", l: "Compétences" }]}
+                  active={rhSub}
+                  onChange={(id) => setRhSub(id as "planning" | "competences")}
+                />
+                {rhSub === "planning" && <PlanningRH commandes={commandes} />}
+                {rhSub === "competences" && <GestionCompetences />}
+              </>
+            )}
+
             {ong === "pointage" && <Pointage commandes={commandes} onPatch={patchCommande} />}
             {ong === "affichage_atelier" && <AffichageAtelier commandes={commandes} stocks={stocks} />}
-            {ong === "isula" && <PlanningIsula commandes={commandes} />}
-            {ong === "besoins_vitrages" && <BesoinVitrages commandes={commandes} />}
-            {ong === "charge_isula" && <div style={{ padding: 40, color: C.sec, textAlign: "center" }}>📊 Charge ISULA VITRAGE — à venir</div>}
-            {ong === "equipe_isula" && <div style={{ padding: 40, color: C.sec, textAlign: "center" }}>👥 Équipe ISULA VITRAGE — à venir</div>}
+
+            {/* Planning ISULA + Besoins Vitrages fusionnés */}
+            {ong === "isula" && (
+              <>
+                <SubTabs
+                  tabs={[{ id: "planning", l: "Planning ISULA" }, { id: "besoins", l: "Besoins Vitrages" }]}
+                  active={isulaSub}
+                  onChange={(id) => setIsulaSub(id as "planning" | "besoins")}
+                />
+                {isulaSub === "planning" && <PlanningIsula commandes={commandes} />}
+                {isulaSub === "besoins" && <BesoinVitrages commandes={commandes} />}
+              </>
+            )}
+
             {ong === "qualite" && <Qualite />}
             {ong === "stocks" && <StocksTampons stocksTampons={stocks} onUpdate={updateStock} />}
-            {ong === "nomenclature" && <Nomenclature />}
-            {ong === "simulateur" && <Simulateur />}
+
+            {/* Nomenclature + Simulateur fusionnés */}
+            {ong === "referentiel" && (
+              <>
+                <SubTabs
+                  tabs={[{ id: "nomenclature", l: "Nomenclature" }, { id: "simulateur", l: "Simulateur" }]}
+                  active={refSub}
+                  onChange={(id) => setRefSub(id as "nomenclature" | "simulateur")}
+                />
+                {refSub === "nomenclature" && <Nomenclature />}
+                {refSub === "simulateur" && <Simulateur />}
+              </>
+            )}
+
             {ong === "import_csv" && <ImportCSV onRefresh={fetchAll} />}
             {ong === "stats_admin" && <StatsAdmin />}
-            {ong === "competences" && <GestionCompetences />}
           </>
         )}
       </div>
-      {/* Tutoriel interactif — bouton "?" fixe + ouverture auto premier login AJ */}
       <TutoAJ onGoToDashboard={() => setOng("dashboard_matin")} />
     </div>
   );
