@@ -19,6 +19,7 @@ interface OpResolved {
   key: string;    // clé EQUIPE (guillaume, julien...)
   nom: string;
   competentPosts: string[]; // ["C2","C3","F1","F2"...] — depuis les skills cochées en base
+  skillLevels: Record<string, number>; // { "C3": 2, "F1": 1 } — niveau par poste
   vendrediOff: boolean;
 }
 
@@ -59,7 +60,7 @@ const PHASE_FIELD: Record<string, string> = {
 };
 // Fallback statique (utilisé seulement si l'API ne répond pas)
 const OPS_FALLBACK = EQUIPE.map(op => ({
-  id: op.id, key: op.id, nom: op.nom, competentPosts: [] as string[], vendrediOff: op.vendrediOff,
+  id: op.id, key: op.id, nom: op.nom, competentPosts: [] as string[], skillLevels: {} as Record<string, number>, vendrediOff: op.vendrediOff,
 }));
 const OP_COLORS: Record<string, string> = {
   guillaume:"#CE93D8", momo:"#4DB6AC", bruno:"#FFA726", ali:"#26C6DA",
@@ -130,11 +131,16 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           const competentPosts = op.skills
             .filter(s => s.workPostId && s.level > 0)
             .map(s => s.workPostId as string);
+          const skillLevels: Record<string, number> = {};
+          for (const s of op.skills) {
+            if (s.workPostId && s.level > 0) skillLevels[s.workPostId] = s.level;
+          }
           return {
             id: op.id,
             key: equipeEntry?.id || op.name.toLowerCase(),
             nom: op.name,
             competentPosts,
+            skillLevels,
             vendrediOff: equipeEntry?.vendrediOff || !op.workingDays.includes(4),
           };
         });
@@ -660,6 +666,39 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       if (hasWork && !hasOps) {
         const p = key.split("|");
         issues.push(`🟠 ${p[0]} ${JOURS_N[parseInt(p[1])]} ${p[2] === "am" ? "AM" : "PM"} : tâches sans opérateur`);
+      }
+    }
+
+    // 3. Opérateurs sur des postes sans compétence
+    for (const [key, cell] of Object.entries(aff)) {
+      if (!cell?.ops?.length) continue;
+      const pid = key.split("|")[0];
+      for (const opNom of cell.ops) {
+        const op = ops.find(o => o.nom === opNom);
+        if (!op) continue;
+        const level = op.skillLevels[pid] || 0;
+        const hasCompetence = op.competentPosts.includes(pid);
+        if (!hasCompetence && level === 0) {
+          const p = key.split("|");
+          issues.push(`🔴 ${opNom} sur ${pid} ${JOURS_N[parseInt(p[1])]} ${p[2] === "am" ? "AM" : "PM"} : aucune compétence cochée sur ce poste`);
+        }
+      }
+    }
+
+    // 4. Débutants seuls sans expert (niveau ① seul sans ② ou ③)
+    for (const [key, cell] of Object.entries(aff)) {
+      if (!cell?.ops?.length) continue;
+      const pid = key.split("|")[0];
+      const opLevels = cell.ops.map(opNom => {
+        const op = ops.find(o => o.nom === opNom);
+        return { nom: opNom, level: op?.skillLevels[pid] || 0 };
+      });
+      const hasExpert = opLevels.some(o => o.level >= 3);
+      const hasAutonome = opLevels.some(o => o.level >= 2);
+      const debutants = opLevels.filter(o => o.level === 1);
+      if (debutants.length > 0 && !hasExpert && !hasAutonome) {
+        const p = key.split("|");
+        issues.push(`🟠 ${pid} ${JOURS_N[parseInt(p[1])]} ${p[2] === "am" ? "AM" : "PM"} : ${debutants.map(d => d.nom).join(", ")} débutant${debutants.length > 1 ? "s" : ""} seul${debutants.length > 1 ? "s" : ""} — besoin supervision ② ou ③`);
       }
     }
 
