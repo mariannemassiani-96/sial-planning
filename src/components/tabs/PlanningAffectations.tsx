@@ -1111,6 +1111,53 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               }),
             ])}
           </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={2} style={{ padding: "6px 8px", background: C.s2, border: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.sec }}>COUVERTURE / JOUR</td>
+              {JOURS.map((j, jIdx) => {
+                // Calculer par demi-journée : travail positionné vs opérateurs
+                return ["am", "pm"].map(demi => {
+                  let workMin = 0; // heures de travail dans ce créneau
+                  let opsMin = 0;  // heures d'opérateurs dans ce créneau
+                  for (const grp of activePosts) {
+                    for (const pid of grp.visiblePosts) {
+                      const cell = aff[ck(pid, jIdx, demi)];
+                      if (!cell) continue;
+                      if ((cell.cmds?.length || 0) > 0) {
+                        // Compter les heures de travail des chantiers dans cette cellule
+                        const pw = postWork[pid];
+                        if (pw) {
+                          for (const cmdLabel of cell.cmds) {
+                            const cmd = pw.cmds.find(c => (c.chantier || c.client) === cmdLabel);
+                            if (cmd) workMin += cmd.min; // approximation : tout le travail du chantier
+                          }
+                        }
+                      }
+                      if ((cell.extras?.length || 0) > 0) workMin += DEMI_MIN; // extras = 4h
+                      opsMin += (cell.ops?.length || 0) * DEMI_MIN;
+                    }
+                  }
+                  // Simplifier : si du travail mais pas assez d'opérateurs
+                  const hasWork = workMin > 0;
+                  const hasOps = opsMin > 0;
+                  const ok = !hasWork || opsMin >= DEMI_MIN;
+                  const col = !hasWork ? C.muted : ok ? C.green : C.red;
+                  return (
+                    <td key={`${j}_${demi}`} style={{ padding: "4px 3px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center" }}>
+                      {hasWork ? (
+                        <div>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: col }}>{hasOps ? `${Math.round(opsMin / 60)}h op.` : "⚠ 0 op."}</div>
+                          {!ok && <div style={{ fontSize: 8, color: C.red }}>manque</div>}
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: 9, color: C.muted }}>—</span>
+                      )}
+                    </td>
+                  );
+                });
+              })}
+            </tr>
+          </tfoot>
         </table>
       </div>
 
