@@ -1074,46 +1074,52 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         </table>
       </div>
 
-      {/* ── Panneau tâches supplémentaires ── */}
+      {/* ── Tâches prédéfinies + personnalisées ── */}
       <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px", marginTop: 12 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Tâches supplémentaires (interventions, supervision...)</div>
-        <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
-          <input
-            value={newExtra.label}
-            onChange={e => setNewExtra(p => ({ ...p, label: e.target.value }))}
-            placeholder="Ex: SAV Dupont, Supervision coupe..."
-            style={{ flex: 1, minWidth: 200, padding: "5px 10px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, fontSize: 12 }}
-          />
-          <input
-            type="number"
-            value={newExtra.min}
-            onChange={e => setNewExtra(p => ({ ...p, min: e.target.value }))}
-            placeholder="min"
-            style={{ width: 60, padding: "5px 8px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, fontSize: 12, textAlign: "center" }}
-          />
-          <button onClick={addExtra} style={{ padding: "5px 14px", background: C.orange, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>+ Ajouter</button>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>TÂCHES — glisse autant de fois que nécessaire</div>
+
+        {/* Tâches prédéfinies (toujours disponibles) */}
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
+          {[
+            { label: "Chargement camion", min: 120, icon: "🚛", color: C.purple },
+            { label: "Déchargement fournisseur", min: 120, icon: "📦", color: C.purple },
+            { label: "Rangement stock", min: 60, icon: "🏗", color: C.purple },
+            { label: "Nettoyage machines", min: 30, icon: "🧹", color: C.muted },
+            { label: "Supervision", min: 240, icon: "👁", color: C.yellow },
+            { label: "Intervention SAV", min: 120, icon: "🔧", color: C.red },
+            { label: "Formation", min: 240, icon: "📚", color: C.blue },
+            { label: "Maintenance", min: 60, icon: "⚙", color: C.muted },
+          ].map(t => (
+            <div key={t.label} draggable
+              onDragStart={e => { setDragOp(null); e.dataTransfer.setData("text/plain", `extra:${t.label} (${hm(t.min)})`); e.dataTransfer.effectAllowed = "copy"; }}
+              style={{ padding: "4px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: "grab", userSelect: "none",
+                background: t.color + "22", border: `1px solid ${t.color}44`, color: t.color,
+                display: "flex", alignItems: "center", gap: 4,
+              }}>
+              {t.icon} {t.label} ({hm(t.min)})
+            </div>
+          ))}
         </div>
-        {extraTasks.length > 0 && (
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {extraTasks.map(t => (
-              <div key={t.id} style={{
-                padding: "4px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: "grab", userSelect: "none",
-                background: t.type === "intervention" ? C.red + "22" : t.type === "supervision" ? C.yellow + "22" : C.purple + "22",
-                color: t.type === "intervention" ? C.red : t.type === "supervision" ? C.yellow : C.purple,
-                border: `1px solid ${t.type === "intervention" ? C.red + "44" : t.type === "supervision" ? C.yellow + "44" : C.purple + "44"}`,
-                display: "flex", alignItems: "center", gap: 6,
-              }}
-                draggable
-                onDragStart={e => { setDragOp(null); e.dataTransfer.setData("text/plain", `extra:${t.label}`); e.dataTransfer.effectAllowed = "copy"; }}
-              >
-                {t.type === "intervention" ? "🔧" : t.type === "supervision" ? "👁" : "📋"} {t.label} ({hm(t.min)})
-                <span onClick={() => removeExtra(t.id)} style={{ cursor: "pointer", opacity: 0.6 }}>✕</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <div style={{ fontSize: 9, color: C.muted, marginTop: 6 }}>
-          Tape &quot;intervention&quot; ou &quot;supervision&quot; dans le nom pour le colorer automatiquement. Glisse vers une cellule pour affecter.
+
+        {/* Tâches personnalisées de la semaine */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 10, color: C.sec }}>Personnalisée :</span>
+          <input value={newExtra.label} onChange={e => setNewExtra(p => ({ ...p, label: e.target.value }))} placeholder="Nom de la tâche"
+            style={{ width: 180, padding: "4px 8px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, fontSize: 11 }} />
+          <input type="number" value={newExtra.min} onChange={e => setNewExtra(p => ({ ...p, min: e.target.value }))} placeholder="min"
+            style={{ width: 50, padding: "4px 6px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, fontSize: 11, textAlign: "center" }} />
+          <button onClick={addExtra} style={{ padding: "4px 12px", background: C.orange, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>+</button>
+          {extraTasks.map(t => (
+            <div key={t.id} draggable
+              onDragStart={e => { setDragOp(null); e.dataTransfer.setData("text/plain", `extra:${t.label} (${hm(t.min)})`); e.dataTransfer.effectAllowed = "copy"; }}
+              style={{ padding: "3px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "grab", userSelect: "none",
+                background: C.orange + "22", border: `1px solid ${C.orange}44`, color: C.orange,
+                display: "flex", alignItems: "center", gap: 4,
+              }}>
+              📋 {t.label} ({hm(t.min)})
+              <span onClick={() => removeExtra(t.id)} style={{ cursor: "pointer", opacity: 0.6, fontSize: 8 }}>✕</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
