@@ -211,10 +211,10 @@ function MockupPlanningSemaine() {
 const CONFIG_KEY = "config_done";
 
 const CFG_POST_GROUPS = [
-  { label: "Coupe",   ids: ["C1","C2","C3","C4","C5","C6"] },
-  { label: "Montage", ids: ["M1","M2","M3","F1","F2","F3"] },
-  { label: "Vitrage", ids: ["V1","V2"] },
-  { label: "ISULA",   ids: ["I1","I2","I3","I4","I5","I6","I7","I8"] },
+  { label: "Coupe & Prépa",         ids: ["C1","C2","C3","C4","C5","C6"] },
+  { label: "Montage",               ids: ["M1","M2","M3","F1","F2","F3"] },
+  { label: "Vitrage & Expédition",  ids: ["V1","V2"] },
+  { label: "ISULA",                 ids: ["I1","I2","I3","I4","I5","I6","I7","I8"] },
 ];
 
 const CFG_PRODUCT_TYPES = [
@@ -495,7 +495,7 @@ function ConfigInitiale({ onDone, onClose }: { onDone: () => void; onClose: () =
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                           {CFG_POST_GROUPS.map((grp) => (
                             <div key={grp.label} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                              <span style={{ fontSize: 10, color: T.muted, width: 50, flexShrink: 0 }}>{grp.label}</span>
+                              <span style={{ fontSize: 10, color: T.muted, width: 80, flexShrink: 0 }}>{grp.label}</span>
                               {grp.ids.map((pid) => (
                                 <div key={pid} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                                   <span style={{ fontSize: 8, color: T.muted }}>{pid}</span>

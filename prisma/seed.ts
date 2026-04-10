@@ -60,19 +60,24 @@ async function main() {
     });
   }
 
-  // ── Opérateurs ──────────────────────────────────────────────────────────
+  // ── Opérateurs (13 personnes) ─────────────────────────────────────────────
+  await prisma.operatorSkill.deleteMany();
   await prisma.operator.deleteMany();
   await prisma.operator.createMany({
     data: [
-      { name: "Laurent",      weekHours: 39, posts: ["C1","C2","C3","C5","V2"] },
-      { name: "Julien",       weekHours: 39, posts: ["C1","C2","C3","C4","C6"] },
-      { name: "Alain",        weekHours: 30, posts: ["M1","M2","M3","F1","F2","F3"] },
-      { name: "Jean-Pierre",  weekHours: 36, posts: ["M1","M2","M3","F1","F2","F3"] },
-      { name: "Michel",       weekHours: 36, posts: ["M1","M2","M3","F1","F2","F3"] },
-      { name: "Jean-François",weekHours: 39, posts: ["V1","V2"] },
-      { name: "Guillaume",    weekHours: 39, posts: ["I1","I2","I5","I6","I7","I8","V1"] },
-      { name: "Momo",         weekHours: 39, posts: ["I1","I2","I3","I4","I5","I6","I8","V1"] },
-      { name: "Apprenti",     weekHours: 35, posts: ["C1","C2","C3"] },
+      { name: "Laurent",       weekHours: 39, posts: ["C1","C2","C3","C5","V2"],                           workingDays: [0,1,2,3,4], notes: "Prépa + coupe LMT + soudure PVC (seul) + soutien expédition" },
+      { name: "Julien",        weekHours: 39, posts: ["C1","C2","C3","C4","C6"],                           workingDays: [0,1,2,3,4], notes: "Prépa + coupe LMT + coupe double tête (seul)" },
+      { name: "Alain",         weekHours: 30, posts: ["M1","M2","M3","F1","F2","F3"],                      workingDays: [0,1,2,3],   notes: "Montage dormants coulissant+galandage · Absent vendredi" },
+      { name: "Jean-Pierre",   weekHours: 36, posts: ["M1","M2","M3","F1","F2","F3","V1","C1","C2","C3"], workingDays: [0,1,2,3,4], notes: "Sur-mesure / Luxe / Hors-normes · Polyvalent tous postes" },
+      { name: "Michel",        weekHours: 36, posts: ["M1","M2","M3","F1","F2","F3","C1","C2","C3"],      workingDays: [0,1,2,3,4], notes: "Montage frappes · Polyvalent coulissant+soudure PVC" },
+      { name: "Jean-François", weekHours: 39, posts: ["F1","F2","F3","M1","M2","M3","V1","V2","C1","C2","C3"], workingDays: [0,1,2,3,4], notes: "Montage frappes · Polyvalent coulissant+vitrage OV+coupe" },
+      { name: "Guillaume",     weekHours: 39, posts: ["I1","I2","I5","I6","I7","I8","V1"],                workingDays: [0,1,2,3,4], notes: "Réceptions · Rangement · Prépa accessoires · Chargements" },
+      { name: "Momo",          weekHours: 39, posts: ["I1","I2","I3","I4","I5","I6","I8","V1"],           workingDays: [0,1,2,3,4], notes: "Opérateur ISULA A→Z · Remplace vitrage OV" },
+      { name: "Bruno",         weekHours: 39, posts: ["I1","I2","I3","I4","I5","I6","I7","I8","F1","F2","F3","M1","M2","M3"], workingDays: [0,1,2,3,4], notes: "Responsable QC+procédures ISULA+SIAL · Supervision" },
+      { name: "Francescu",     weekHours: 39, posts: ["F1","F2","F3","C1","C2","C3"],                     workingDays: [0,1,2,3,4], notes: "Montage frappes · Soutien coupe" },
+      { name: "Ali",           weekHours: 39, posts: ["I1","I2","I3","I4","I5","I6","I7","I8"],           workingDays: [0,1,2,3,4], notes: "Opérateur ISULA A→Z · Présent tous les jours" },
+      { name: "Matéo",         weekHours: 39, posts: ["C1","C2","C3","C4","C5","C6"],                     workingDays: [0,1,2,3,4], notes: "Coupe · Apprenti avancé" },
+      { name: "Kentin",        weekHours: 39, posts: ["C1","C2","C3","F1","F2","F3"],                     workingDays: [0,1,2,3,4], notes: "Coupe + soutien montage frappes" },
     ],
   });
 
@@ -94,7 +99,7 @@ async function main() {
     }
   }
 
-  console.log("✓ Seed OK — 2 users · 22 postes de travail · 9 opérateurs · 6 stocks tampons");
+  console.log("✓ Seed OK — 2 users · 22 postes de travail · 13 opérateurs · 6 stocks tampons");
 }
 
 main().catch(console.error).finally(() => prisma.$disconnect());

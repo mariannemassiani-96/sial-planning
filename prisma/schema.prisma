@@ -215,9 +215,26 @@ model Operator {
   name            String
   weekHours       Float
   posts           String[]
+  workingDays     Int[]             @default([0, 1, 2, 3, 4])
+  notes           String?
   active          Boolean           @default(true)
   absences        OperatorAbsence[]
   taskAssignments TaskAssignment[]
+  skills          OperatorSkill[]
+}
+
+model OperatorSkill {
+  id              String    @id @default(cuid())
+  operatorId      String
+  workPostId      String?
+  menuiserieType  String?
+  level           Int       @default(0)
+  updatedAt       DateTime  @updatedAt
+  updatedBy       String?
+  operator        Operator  @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  workPost        WorkPost? @relation(fields: [workPostId], references: [id])
+
+  @@unique([operatorId, workPostId, menuiserieType])
 }
 
 model OperatorAbsence {
@@ -235,6 +252,7 @@ model WorkPost {
   capacityMinDay   Int
   defaultOperators String[]
   tasks            ProductionTask[]
+  skills           OperatorSkill[]
 }
 
 enum Atelier {
