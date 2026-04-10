@@ -3,6 +3,10 @@
     {
       "path": "/api/backup",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cerveau/learn",
+      "schedule": "0 3 * * *"
     }
   ]
 }

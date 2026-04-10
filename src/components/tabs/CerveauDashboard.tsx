@@ -31,12 +31,23 @@ export default function CerveauDashboard() {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <div style={{ fontSize: 20, fontWeight: 800 }}>Cerveau</div>
-        <div style={{ fontSize: 11, color: C.sec }}>
-          {stats.nbPointages} jours · {stats.nbEntries} tâches analysées
-          {stats.periodeFrom && ` · ${stats.periodeFrom} → ${stats.periodeTo}`}
+        <div style={{ fontSize: 20, fontWeight: 800 }}>🧠 Cerveau</div>
+        <div style={{ fontSize: 11, color: C.sec, flex: 1 }}>
+          {stats.nbPointages} jours · {stats.nbEntries} tâches · {stats.totalHeuresPointees ? hm(stats.totalHeuresPointees) + " pointées" : ""}
+          {stats.lastUpdate && ` · MàJ ${new Date(stats.lastUpdate).toLocaleDateString("fr-FR")} ${new Date(stats.lastUpdate).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`}
         </div>
+        <button onClick={() => {
+          fetch("/api/cerveau/learn").then(() => window.location.reload());
+        }} style={{ padding: "6px 14px", background: C.orange, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+          Lancer l&apos;apprentissage
+        </button>
       </div>
+
+      {(data as any)?.message && (
+        <div style={{ padding: "10px 14px", background: C.blue + "12", border: `1px solid ${C.blue}44`, borderRadius: 6, marginBottom: 16, fontSize: 12, color: C.blue }}>
+          {(data as any).message}
+        </div>
+      )}
 
       {/* Alertes proactives */}
       {alertes.length > 0 && (

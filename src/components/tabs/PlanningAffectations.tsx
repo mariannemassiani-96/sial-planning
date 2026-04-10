@@ -116,6 +116,14 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   // Tâches supplémentaires (interventions, etc.)
   const [extraTasks, setExtraTasks] = useState<ExtraTask[]>([]);
   const [newExtra, setNewExtra] = useState({ label: "", min: "" });
+  // Scores du cerveau (chargés une fois)
+  const [brainScores, setBrainScores] = useState<Record<string, Record<string, number>>>({});
+  useEffect(() => {
+    fetch("/api/cerveau").then(r => r.ok ? r.json() : null).then(d => {
+      if (d?.opPostScores) setBrainScores(d.opPostScores);
+    }).catch(() => {});
+  }, []);
+
   // Popup détail chantier
   const [detailCmd, setDetailCmd] = useState<{ chantier: string; cmdId: string; cmd: any } | null>(null);
   const [cmdOverrides, setCmdOverrides] = useState<Record<string, number>>({});
@@ -593,12 +601,15 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 if (parseInt(parts[1]) === j && (newAff[k]?.ops || []).includes(op.nom)) load++;
               }
               const habit = postHabits[op.nom] || 0;
-              return { op, load, habit };
+              const brainScore = brainScores[op.nom]?.[pid] || 0;
+              return { op, load, habit, brainScore };
             })
-            // Trier : d'abord les libres, puis par habitude (le plus souvent = en premier)
+            // Trier : libres d'abord, puis score cerveau + habitude
             .sort((a, b) => {
               if (a.load !== b.load) return a.load - b.load;
-              return b.habit - a.habit; // plus d'habitude = prioritaire
+              const scoreA = a.brainScore * 0.5 + a.habit * 0.5;
+              const scoreB = b.brainScore * 0.5 + b.habit * 0.5;
+              return scoreB - scoreA;
             });
 
           // Prendre les N meilleurs (N = minPers)
