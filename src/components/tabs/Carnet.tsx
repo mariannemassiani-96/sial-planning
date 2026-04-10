@@ -1,6 +1,7 @@
 "use client";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { TYPES_MENUISERIE, ZONES, C, CFAM, calcTempsType, calcCheminCritique, dateDemarrage, hm, fmtDate, CommandeCC } from "@/lib/sial-data";
+import { getRoutage } from "@/lib/routage-production";
 import { H, Bdg, Card } from "@/components/ui";
 
 // ── Commentaires ──────────────────────────────────────────────────────────────
@@ -386,6 +387,21 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
                     ? <Bdg t={cc.critique ? `CRITIQUE +${cc.retardJours}j` : `retard +${cc.retardJours}j`} c={retardColor} />
                     : cc ? <Bdg t={`OK ${Math.abs(cc.retardJours)}j marge`} c={C.green} /> : null}
                 </div>
+                {/* Postes du routage */}
+                {(() => {
+                  const routage = getRoutage(c.type, c.quantite, c.hsTemps as Record<string, unknown> | null | undefined);
+                  if (routage.length === 0) return null;
+                  const PC: Record<string, string> = { coupe: "#42A5F5", montage: "#FFA726", vitrage: "#26C6DA", logistique: "#CE93D8" };
+                  return (
+                    <div style={{ display: "flex", gap: 2, flexWrap: "wrap", marginTop: 3 }}>
+                      {routage.map((e, i) => (
+                        <span key={i} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: PC[e.phase] + "22", color: PC[e.phase], fontWeight: 700 }}>
+                          {e.postId}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
                 <div style={{ fontSize: 10, color: C.sec, display: "flex", gap: 10, flexWrap: "wrap" }} className="mono">
                   <span>{c.quantite} pcs</span>
                   {t && <span>{hm(t.tTotal)} fab.</span>}

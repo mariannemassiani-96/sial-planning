@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { TYPES_MENUISERIE, ZONES, C, hm, fmtDate, calcTempsType, calcCheminCritique, dateDemarrage } from "@/lib/sial-data";
+import { getRoutage, EtapeRoutage } from "@/lib/routage-production";
 import { H, Card } from "@/components/ui";
 
 const inp = { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, padding: "7px 11px", color: C.text, fontSize: 13, width: "100%", outline: "none" };
@@ -578,23 +579,61 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
         {dd && <div style={{ marginTop: 8, fontSize: 11, color: C.sec }}>Démarrage fab estimé : <span style={{ color: C.teal, fontWeight: 600 }} className="mono">{fmtDate(dd)}</span></div>}
       </div>
 
-      {t && f.type_commande !== "sav" && f.type_commande !== "diffus" && (
-        <div style={{ marginTop: 10, padding: 10, background: C.bg, borderRadius: 5, border: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: 10, color: C.sec, marginBottom: 8 }}>TEMPS DE FABRICATION{isHS ? " (totaux saisis)" : ` (calculés · ${qteTotale} pièce${qteTotale > 1 ? "s" : ""})`}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 }}>
-            {(Object.entries(t.par_poste) as [string, number][]).filter(([, v]) => v > 0).map(([p, v]) => (
-              <div key={p} style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 9, color: C.sec }}>{p.toUpperCase()}</div>
-                <div className="mono" style={{ fontSize: 14, fontWeight: 600, color: C.cyan }}>{hm(v)}</div>
-              </div>
-            ))}
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 9, color: C.sec }}>TOTAL</div>
-              <div className="mono" style={{ fontSize: 14, fontWeight: 700, color: C.orange }}>{hm(t.tTotal)}</div>
+      {t && f.type_commande !== "sav" && f.type_commande !== "diffus" && (() => {
+        const routage: EtapeRoutage[] = f.lignes.length > 0
+          ? getRoutage(premiereLigne.type, qteTotale, hsTemps)
+          : [];
+        const totalRoutage = routage.reduce((s, e) => s + e.estimatedMin, 0);
+        const PHASE_COLORS: Record<string, string> = { coupe: "#42A5F5", montage: "#FFA726", vitrage: "#26C6DA", logistique: "#CE93D8" };
+        const PHASE_LABELS: Record<string, string> = { coupe: "COUPE", montage: "MONTAGE", vitrage: "VITRAGE", logistique: "LOGISTIQUE" };
+        const phases = ["coupe", "montage", "vitrage", "logistique"];
+
+        return (
+          <div style={{ marginTop: 10, padding: 10, background: C.bg, borderRadius: 5, border: `1px solid ${C.border}` }}>
+            <div style={{ fontSize: 10, color: C.sec, marginBottom: 8 }}>
+              PARCOURS DE FABRICATION{isHS ? " (temps saisis)" : ` — ${qteTotale} pièce${qteTotale > 1 ? "s" : ""}`}
+              <span style={{ float: "right", color: C.orange, fontWeight: 700 }}>Total : {hm(totalRoutage)}</span>
             </div>
+
+            {/* Barre visuelle des phases */}
+            {totalRoutage > 0 && (
+              <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 12 }}>
+                {phases.map(ph => {
+                  const phMin = routage.filter(e => e.phase === ph).reduce((s, e) => s + e.estimatedMin, 0);
+                  if (phMin === 0) return null;
+                  return <div key={ph} style={{ flex: phMin, background: PHASE_COLORS[ph], transition: "flex 0.3s" }} title={`${PHASE_LABELS[ph]} : ${hm(phMin)}`} />;
+                })}
+              </div>
+            )}
+
+            {/* Détail par phase */}
+            {phases.map(ph => {
+              const etapes = routage.filter(e => e.phase === ph);
+              if (etapes.length === 0) return null;
+              const phTotal = etapes.reduce((s, e) => s + e.estimatedMin, 0);
+              return (
+                <div key={ph} style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: 2, background: PHASE_COLORS[ph] }} />
+                    <span style={{ fontSize: 10, fontWeight: 700, color: PHASE_COLORS[ph] }}>{PHASE_LABELS[ph]}</span>
+                    <span className="mono" style={{ fontSize: 10, color: C.sec, marginLeft: "auto" }}>{hm(phTotal)}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", paddingLeft: 14 }}>
+                    {etapes.map((e, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, background: C.s1, border: `1px solid ${C.border}`, borderRadius: 4, padding: "3px 8px" }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: PHASE_COLORS[ph] }}>{e.postId}</span>
+                        <span style={{ fontSize: 10, color: C.sec }}>{e.label}</span>
+                        {e.estimatedMin > 0 && <span className="mono" style={{ fontSize: 10, color: C.muted }}>{hm(e.estimatedMin)}</span>}
+                        {i < etapes.length - 1 && <span style={{ color: C.muted, fontSize: 8, marginLeft: 2 }}>→</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Acompte & Reliquats ── */}
       <div style={{ marginTop: 10, padding: 10, background: C.bg, borderRadius: 6, border: `1px solid ${C.border}` }}>
