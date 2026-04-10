@@ -545,6 +545,93 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   // ── Tout effacer ──
   const clearAll = useCallback(() => { saveAff({}); }, [saveAff]);
 
+  // ── Audit des affectations ──
+  const [auditResult, setAuditResult] = useState<string[] | null>(null);
+  const runAudit = useCallback(() => {
+    const issues: string[] = [];
+    const JOURS_N = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
+
+    // 1. Vérifier heures par opérateur par jour
+    for (const op of ops) {
+      const eq = EQUIPE.find(e => e.nom === op.nom);
+      const opRH = rhPlan[eq?.id || ""] || {};
+
+      for (let j = 0; j < 5; j++) {
+        const d = new Date(viewWeek + "T00:00:00");
+        d.setDate(d.getDate() + j);
+        const dayStr = localStr(d);
+        const dayDispo = opRH[dayStr];
+        const isAbsent = dayDispo !== undefined && dayDispo === 0;
+        const isVenOff = j === 4 && eq?.vendrediOff;
+
+        // Max heures ce jour pour cet opérateur
+        let maxDayMin: number;
+        if (isAbsent || isVenOff) {
+          maxDayMin = 0;
+        } else if (j === 4) {
+          maxDayMin = eq?.h === 39 ? 420 : eq?.h === 36 ? 240 : eq?.h === 35 ? 420 : 450;
+        } else {
+          maxDayMin = eq?.h === 39 ? 480 : eq?.h === 36 ? 480 : eq?.h === 35 ? 420 : 450;
+        }
+
+        // Compter les créneaux affectés ce jour
+        let slots = 0;
+        for (const demi of ["am", "pm"]) {
+          for (const [key, cell] of Object.entries(aff)) {
+            if (!cell?.ops?.includes(op.nom)) continue;
+            const p = key.split("|");
+            if (parseInt(p[1]) === j && p[2] === demi) slots++;
+          }
+        }
+        const affDayMin = slots * DEMI_MIN;
+
+        if (isAbsent && slots > 0) {
+          issues.push(`🔴 ${op.nom} ${JOURS_N[j]} : affecté mais ABSENT (RH)`);
+        } else if (isVenOff && slots > 0) {
+          issues.push(`🔴 ${op.nom} ${JOURS_N[j]} : affecté mais ne travaille pas le vendredi`);
+        } else if (affDayMin > maxDayMin && maxDayMin > 0) {
+          issues.push(`🟠 ${op.nom} ${JOURS_N[j]} : ${hm(affDayMin)} affecté mais max ${hm(maxDayMin)}/jour`);
+        } else if (maxDayMin > 0 && slots === 0) {
+          // Jour travaillé mais pas affecté — on vérifie que l'opérateur a au moins 1 créneau dans la semaine
+          let totalWeekSlots = 0;
+          for (const [, cell] of Object.entries(aff)) { if (cell?.ops?.includes(op.nom)) totalWeekSlots++; }
+          if (totalWeekSlots > 0) {
+            issues.push(`⚪ ${op.nom} ${JOURS_N[j]} : journée vide (dispo ${hm(maxDayMin)})`);
+          }
+        }
+      }
+
+      // Total semaine
+      let totalAffMin = 0;
+      for (const [, cell] of Object.entries(aff)) { if (cell?.ops?.includes(op.nom)) totalAffMin += DEMI_MIN; }
+      const baseMin = (eq?.h || 39) * 60;
+      let absTotal = 0;
+      for (let j = 0; j < 5; j++) {
+        const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() + j);
+        const dv = opRH[localStr(d)];
+        if (dv !== undefined && dv === 0) absTotal += j === 4 ? (eq?.h === 39 ? 420 : 420) : 480;
+      }
+      const dispoMin = Math.max(0, baseMin - absTotal);
+      if (totalAffMin > dispoMin && dispoMin > 0) {
+        issues.push(`🔴 ${op.nom} SEMAINE : ${hm(totalAffMin)} affecté mais dispo ${hm(dispoMin)}`);
+      }
+    }
+
+    // 2. Postes avec chantiers mais sans opérateurs
+    for (const [key, cell] of Object.entries(aff)) {
+      if (!cell) continue;
+      const hasWork = (cell.cmds?.length || 0) > 0 || (cell.extras?.length || 0) > 0;
+      const hasOps = (cell.ops?.length || 0) > 0;
+      if (hasWork && !hasOps) {
+        const p = key.split("|");
+        issues.push(`🟠 ${p[0]} ${JOURS_N[parseInt(p[1])]} ${p[2] === "am" ? "AM" : "PM"} : tâches sans opérateur`);
+      }
+    }
+
+    if (issues.length === 0) issues.push("✅ Aucun problème détecté !");
+    setAuditResult(issues);
+  }, [ops, aff, viewWeek, rhPlan]);
+
   // ── Impression fiches par opérateur ──
   const printFiches = useCallback(() => {
     const wk = weekId(viewWeek);
@@ -880,6 +967,9 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           <button onClick={clearAll} style={{ padding: "6px 16px", background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, fontSize: 11, cursor: "pointer" }}>
             Tout effacer
           </button>
+          <button onClick={runAudit} style={{ padding: "6px 16px", background: C.blue + "22", border: `1px solid ${C.blue}`, borderRadius: 4, color: C.blue, fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
+            Audit
+          </button>
           <button onClick={printFiches} style={{ padding: "6px 16px", background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, fontSize: 11, cursor: "pointer" }}>
             Imprimer les fiches
           </button>
@@ -924,6 +1014,23 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           </button>
         )}
       </div>
+
+      {/* ── Résultat audit ── */}
+      {auditResult && (
+        <div style={{ background: C.s1, border: `1px solid ${C.blue}`, borderRadius: 6, padding: "10px 14px", marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.blue }}>Audit {weekId(viewWeek)}</span>
+            <button onClick={() => setAuditResult(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12 }}>✕</button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            {auditResult.map((issue, i) => (
+              <div key={i} style={{ fontSize: 11, color: issue.startsWith("✅") ? C.green : issue.startsWith("🔴") ? C.red : issue.startsWith("🟠") ? C.orange : C.sec }}>
+                {issue}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Occupation opérateurs ── */}
       {(() => {
