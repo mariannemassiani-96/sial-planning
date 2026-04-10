@@ -162,8 +162,73 @@ export default function PlanningCharge({ commandes, onPatch }: {
     onPatch(cmdId, { [field]: value || null });
   }, [onPatch]);
 
+  const [showUnplanned, setShowUnplanned] = useState(false);
+
+  // Séparer : planifiées cette semaine vs non planifiées
+  const thisWeekCmds = useMemo(() =>
+    cmdList.filter(c => PHASE_CONFIG.some(ph => (c.cmd as any)[ph.field] === viewWeek)),
+    [cmdList, viewWeek]
+  );
+  const unplannedCmds = useMemo(() =>
+    cmdList.filter(c => !PHASE_CONFIG.some(ph => (c.cmd as any)[ph.field])),
+    [cmdList]
+  );
+
   const prevWeek = () => { const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() - 7); setViewWeek(localStr(d)); };
   const nextWeek = () => { const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() + 7); setViewWeek(localStr(d)); };
+
+  // Fonction de rendu d'une ligne de commande
+  const renderCmdRow = (item: typeof cmdList[0]) => {
+    const { cmd, parPhase, cc, tm, famille } = item;
+    const borderColor = cc?.critique ? C.red : cc?.enRetard ? C.orange : C.green;
+    const cmdAny = cmd as any;
+    return (
+      <tr key={String(cmd.id)} style={{ borderBottom: `1px solid ${C.border}` }}>
+        <td style={{ padding: "6px 8px", borderLeft: `3px solid ${borderColor}`, background: C.s1, border: `1px solid ${C.border}` }}>
+          <div style={{ fontWeight: 700, fontSize: 12 }}>{cmdAny.client}</div>
+          <div style={{ fontSize: 10, color: C.sec }}>{cmdAny.ref_chantier} · {cmd.quantite}× {tm?.label || cmd.type}</div>
+          {cc?.critique && <span style={{ fontSize: 9, color: C.red, fontWeight: 700 }}>CRITIQUE </span>}
+          {cc?.enRetard && !cc?.critique && <span style={{ fontSize: 9, color: C.orange, fontWeight: 700 }}>RETARD </span>}
+        </td>
+        <td style={{ textAlign: "center", border: `1px solid ${C.border}`, fontSize: 9, color: borderColor }}>
+          {cmdAny.date_livraison_souhaitee ? fmtDate(cmdAny.date_livraison_souhaitee) : "—"}
+        </td>
+        {PHASE_CONFIG.map(ph => {
+          const phData = parPhase[ph.id];
+          if (!phData || phData.min === 0) {
+            return <td key={ph.id} style={{ textAlign: "center", border: `1px solid ${C.border}`, color: C.muted }}>—</td>;
+          }
+          const currentVal = cmdAny[ph.field] || "";
+          const isThisWeek = currentVal === viewWeek;
+          const operators = getOperatorsForPhase(ph.id, famille);
+          return (
+            <td key={ph.id} style={{ padding: "4px 6px", border: `1px solid ${C.border}`, background: isThisWeek ? ph.color + "10" : undefined, verticalAlign: "top" }}>
+              <select
+                value={currentVal}
+                onChange={e => handleWeekChange(String(cmd.id), ph.field, e.target.value)}
+                style={{
+                  width: "100%", padding: "3px 4px", fontSize: 10,
+                  background: currentVal ? (isThisWeek ? ph.color + "22" : C.s2) : C.bg,
+                  border: `1px solid ${currentVal ? (isThisWeek ? ph.color : C.border) : C.muted}`,
+                  borderRadius: 3, color: currentVal ? C.text : C.muted, cursor: "pointer",
+                }}
+              >
+                <option value="">— choisir —</option>
+                {weekOptions.map(w => (
+                  <option key={w.value} value={w.value}>{w.label}</option>
+                ))}
+              </select>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
+                <span className="mono" style={{ fontSize: 10, color: ph.color, fontWeight: 700 }}>{hm(phData.min)}</span>
+                <span style={{ fontSize: 8, color: C.muted }}>{phData.postIds.join(" ")}</span>
+              </div>
+              <div style={{ fontSize: 9, color: C.sec, marginTop: 1 }}>{operators.join(", ")}</div>
+            </td>
+          );
+        })}
+      </tr>
+    );
+  };
 
   return (
     <div>
@@ -212,78 +277,66 @@ export default function PlanningCharge({ commandes, onPatch }: {
         })}
       </div>
 
-      {/* ── Tableau commandes avec sélecteurs semaine ── */}
+      {/* ── Commandes planifiées cette semaine ── */}
       <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-          <thead>
-            <tr>
-              <th style={{ padding: "8px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec, minWidth: 180 }}>COMMANDE</th>
-              <th style={{ padding: "8px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 55 }}>LIVR.</th>
-              {PHASE_CONFIG.map(ph => (
-                <th key={ph.id} style={{ padding: "8px 4px", background: ph.color + "15", borderBottom: `2px solid ${ph.color}`, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, fontWeight: 700, color: ph.color, minWidth: 150 }}>
-                  {ph.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {cmdList.map(({ cmd, parPhase, cc, tm, famille }) => {
-              const borderColor = cc?.critique ? C.red : cc?.enRetard ? C.orange : C.green;
-              const cmdAny = cmd as any;
-              return (
-                <tr key={String(cmd.id)} style={{ borderBottom: `1px solid ${C.border}` }}>
-                  <td style={{ padding: "6px 8px", borderLeft: `3px solid ${borderColor}`, background: C.s1, border: `1px solid ${C.border}` }}>
-                    <div style={{ fontWeight: 700, fontSize: 12 }}>{cmdAny.client}</div>
-                    <div style={{ fontSize: 10, color: C.sec }}>{cmdAny.ref_chantier} · {cmd.quantite}× {tm?.label || cmd.type}</div>
-                    {cc?.critique && <span style={{ fontSize: 9, color: C.red, fontWeight: 700 }}>CRITIQUE </span>}
-                    {cc?.enRetard && !cc?.critique && <span style={{ fontSize: 9, color: C.orange, fontWeight: 700 }}>RETARD </span>}
-                  </td>
-                  <td style={{ textAlign: "center", border: `1px solid ${C.border}`, fontSize: 9, color: borderColor }}>
-                    {cmdAny.date_livraison_souhaitee ? fmtDate(cmdAny.date_livraison_souhaitee) : "—"}
-                  </td>
-
-                  {PHASE_CONFIG.map(ph => {
-                    const phData = parPhase[ph.id];
-                    if (!phData || phData.min === 0) {
-                      return <td key={ph.id} style={{ textAlign: "center", border: `1px solid ${C.border}`, color: C.muted }}>—</td>;
-                    }
-                    const currentVal = cmdAny[ph.field] || "";
-                    const isThisWeek = currentVal === viewWeek;
-                    const operators = getOperatorsForPhase(ph.id, famille);
-
-                    return (
-                      <td key={ph.id} style={{ padding: "4px 6px", border: `1px solid ${C.border}`, background: isThisWeek ? ph.color + "10" : undefined, verticalAlign: "top" }}>
-                        <select
-                          value={currentVal}
-                          onChange={e => handleWeekChange(String(cmd.id), ph.field, e.target.value)}
-                          style={{
-                            width: "100%", padding: "3px 4px", fontSize: 10,
-                            background: currentVal ? (isThisWeek ? ph.color + "22" : C.s2) : C.bg,
-                            border: `1px solid ${currentVal ? (isThisWeek ? ph.color : C.border) : C.muted}`,
-                            borderRadius: 3, color: currentVal ? C.text : C.muted, cursor: "pointer",
-                          }}
-                        >
-                          <option value="">— choisir —</option>
-                          {weekOptions.map(w => (
-                            <option key={w.value} value={w.value}>{w.label}</option>
-                          ))}
-                        </select>
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
-                          <span className="mono" style={{ fontSize: 10, color: ph.color, fontWeight: 700 }}>{hm(phData.min)}</span>
-                          <span style={{ fontSize: 8, color: C.muted }}>{phData.postIds.join(" ")}</span>
-                        </div>
-                        <div style={{ fontSize: 9, color: C.sec, marginTop: 1 }}>
-                          {operators.join(", ")}
-                        </div>
-                      </td>
-                    );
-                  })}
+        {thisWeekCmds.length > 0 ? (
+          <>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
+              Commandes planifiées {currentWeekId}
+              <span style={{ fontWeight: 400, color: C.sec, marginLeft: 6 }}>({thisWeekCmds.length})</span>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, marginBottom: 16 }}>
+              <thead>
+                <tr>
+                  <th style={{ padding: "8px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec, minWidth: 180 }}>COMMANDE</th>
+                  <th style={{ padding: "8px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 55 }}>LIVR.</th>
+                  {PHASE_CONFIG.map(ph => (
+                    <th key={ph.id} style={{ padding: "8px 4px", background: ph.color + "15", borderBottom: `2px solid ${ph.color}`, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, fontWeight: 700, color: ph.color, minWidth: 150 }}>
+                      {ph.label}
+                    </th>
+                  ))}
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>{thisWeekCmds.map(renderCmdRow)}</tbody>
+            </table>
+          </>
+        ) : (
+          <div style={{ textAlign: "center", padding: 30, color: C.sec, background: C.s1, borderRadius: 6, border: `1px solid ${C.border}`, marginBottom: 16 }}>
+            Aucune commande planifiée en {currentWeekId}.
+            <span style={{ fontSize: 11, color: C.muted, display: "block", marginTop: 4 }}>Affecte des semaines aux commandes ci-dessous.</span>
+          </div>
+        )}
       </div>
+
+      {/* ── Commandes non planifiées (toggle) ── */}
+      {unplannedCmds.length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowUnplanned(!showUnplanned)}
+            style={{ padding: "8px 16px", background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, color: C.sec, cursor: "pointer", fontSize: 12, fontWeight: 600, marginBottom: 8 }}
+          >
+            {showUnplanned ? "▲ Masquer" : "▼ Afficher"} les commandes non planifiées ({unplannedCmds.length})
+          </button>
+          {showUnplanned && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                <thead>
+                  <tr>
+                    <th style={{ padding: "8px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec, minWidth: 180 }}>COMMANDE</th>
+                    <th style={{ padding: "8px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 55 }}>LIVR.</th>
+                    {PHASE_CONFIG.map(ph => (
+                      <th key={ph.id} style={{ padding: "8px 4px", background: ph.color + "15", borderBottom: `2px solid ${ph.color}`, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, fontWeight: 700, color: ph.color, minWidth: 150 }}>
+                        {ph.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>{unplannedCmds.map(renderCmdRow)}</tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {cmdList.length === 0 && (
         <div style={{ textAlign: "center", padding: 40, color: C.sec }}>Aucune commande active.</div>
