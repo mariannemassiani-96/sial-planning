@@ -19,7 +19,7 @@ import Qualite from "@/components/tabs/Qualite";
 import ImportCSV from "@/components/tabs/ImportCSV";
 import Pointage from "@/components/tabs/Pointage";
 import AffichageAtelier from "@/components/tabs/AffichageAtelier";
-import PlanningCharge from "@/components/tabs/PlanningCharge";
+import PlanningCommandes from "@/components/tabs/PlanningCommandes";
 import PlanningAffectations from "@/components/tabs/PlanningAffectations";
 import StatsAdmin from "@/components/tabs/StatsAdmin";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
@@ -52,7 +52,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
 
   // Sub-tab states for merged tabs
-  const [planningSub, setPlanningSub] = useState<"charge" | "affectations">("charge");
+  const [planningSub, setPlanningSub] = useState<"commandes" | "affectations">("commandes");
   const [planningWeek, setPlanningWeek] = useState<string>(() => {
     const d = new Date(); const day = d.getDay();
     const diff = day === 0 ? -6 : 1 - day;
@@ -216,11 +216,11 @@ export default function HomePage() {
             {ong === "planning_fab" && (
               <>
                 <SubTabs
-                  tabs={[{ id: "charge", l: "Charge & Semaines" }, { id: "affectations", l: "Affectations" }]}
+                  tabs={[{ id: "commandes", l: "Commandes" }, { id: "affectations", l: "Affectations" }]}
                   active={planningSub}
-                  onChange={(id) => setPlanningSub(id as "charge" | "affectations")}
+                  onChange={(id) => setPlanningSub(id as "commandes" | "affectations")}
                 />
-                {planningSub === "charge" && <PlanningCharge commandes={commandes} onPatch={patchCommande} viewWeek={planningWeek} onWeekChange={setPlanningWeek} />}
+                {planningSub === "commandes" && <PlanningCommandes commandes={commandes} onPatch={patchCommande} />}
                 {planningSub === "affectations" && <PlanningAffectations commandes={commandes} viewWeek={planningWeek} onPatch={patchCommande} onWeekChange={setPlanningWeek} />}
               </>
             )}
