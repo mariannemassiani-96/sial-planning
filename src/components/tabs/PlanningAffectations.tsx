@@ -791,6 +791,20 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       }
     }
 
+    // 5. Règle ISULA S-1 : vitrage doit être fini 1 semaine avant montage
+    for (const cmd of commandes) {
+      const a = cmd as any;
+      const semMontage = a.semaine_montage || a.semaine_coupe;
+      const semIsula = a.semaine_isula;
+      if (semMontage && semIsula) {
+        const monM = new Date(semMontage + "T00:00:00").getTime();
+        const monI = new Date(semIsula + "T00:00:00").getTime();
+        if (monI > monM - 7 * 86400000) {
+          issues.push(`🟠 ${a.ref_chantier || a.client} : ISULA ${weekId(semIsula)} doit être avant montage ${weekId(semMontage)} (min S-1)`);
+        }
+      }
+    }
+
     if (issues.length === 0) issues.push("✅ Aucun problème détecté !");
     setAuditResult(issues);
   }, [ops, aff, viewWeek, rhPlan]);
@@ -1931,8 +1945,45 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 </tbody>
               </table>
 
-              <div style={{ marginTop: 8, fontSize: 10, color: C.sec }}>
-                Modifie un temps et quitte le champ → sauvegardé automatiquement
+              {/* Règle ISULA S-1 */}
+              {(() => {
+                const semMontage = (cmd as any).semaine_montage || (cmd as any).semaine_coupe || "";
+                const semIsula = (cmd as any).semaine_isula || "";
+                if (semMontage && semIsula) {
+                  const monMontage = new Date(semMontage + "T00:00:00");
+                  const monIsula = new Date(semIsula + "T00:00:00");
+                  const isulaOk = monIsula.getTime() <= monMontage.getTime() - 7 * 86400000;
+                  if (!isulaOk) {
+                    return (
+                      <div style={{ marginTop: 6, padding: "6px 10px", background: C.red + "15", border: `1px solid ${C.red}`, borderRadius: 4, fontSize: 10, color: C.red }}>
+                        ⚠ Le vitrage ISULA ({weekId(semIsula)}) doit être terminé au moins 1 semaine avant le montage SIAL ({weekId(semMontage)}). Décaler ISULA en {weekId(localStr(new Date(monMontage.getTime() - 7 * 86400000)))} ou avant.
+                      </div>
+                    );
+                  }
+                }
+                return null;
+              })()}
+
+              {/* Bouton Enregistrer */}
+              <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
+                <button onClick={() => {
+                  // Forcer la sauvegarde de tous les overrides
+                  const ov = allCmdOverrides[detailCmd.cmdId] || {};
+                  fetch("/api/planning/affectations", {
+                    method: "PUT", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ semaine: `cmd_temps_${detailCmd.cmdId}`, affectations: ov }),
+                  }).then(() => {
+                    const btn = document.getElementById("save-btn-" + detailCmd.cmdId);
+                    if (btn) { btn.textContent = "✓ Enregistré !"; btn.style.background = C.green; setTimeout(() => { btn.textContent = "Enregistrer"; btn.style.background = C.orange; }, 2000); }
+                  }).catch(() => {});
+                }} id={`save-btn-${detailCmd.cmdId}`}
+                  style={{ padding: "8px 24px", background: C.orange, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                  Enregistrer
+                </button>
+                <button onClick={() => setDetailCmd(null)}
+                  style={{ padding: "8px 16px", background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, fontSize: 12, cursor: "pointer" }}>
+                  Fermer
+                </button>
               </div>
             </div>
           </div>
