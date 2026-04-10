@@ -1500,7 +1500,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   <tr>
                     <th style={{ padding: "4px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec }}>POSTE</th>
                     <th style={{ padding: "4px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec }}>ÉTAPE</th>
-                    <th style={{ padding: "4px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 80 }}>TEMPS</th>
+                    <th style={{ padding: "4px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 80 }}>TEMPS (min)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1510,16 +1510,37 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                         <span style={{ fontWeight: 700, color: PHASE_C[e.phase] || C.sec }}>{e.postId}</span>
                       </td>
                       <td style={{ padding: "4px 8px", border: `1px solid ${C.border}`, color: C.sec }}>{e.label}</td>
-                      <td style={{ padding: "4px 8px", border: `1px solid ${C.border}`, textAlign: "center" }}>
-                        <span className="mono" style={{ fontWeight: 700, color: PHASE_C[e.phase] || C.sec }}>{hm(e.min)}</span>
+                      <td style={{ padding: "2px 4px", border: `1px solid ${C.border}`, textAlign: "center" }}>
+                        <input
+                          type="number"
+                          min={0}
+                          defaultValue={e.min}
+                          onBlur={(ev) => {
+                            const v = parseInt(ev.target.value);
+                            if (isNaN(v) || v === e.min) return;
+                            fetch("/api/referentiel", {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ typeId: cmd.type, postId: e.postId, min: Math.round(v / (cmd.quantite || 1)) }),
+                            }).catch(() => {});
+                            // Mettre à jour visuellement
+                            ev.target.style.color = C.orange;
+                          }}
+                          onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }}
+                          style={{
+                            width: 50, padding: "3px 4px", fontSize: 12, fontWeight: 700,
+                            background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3,
+                            color: PHASE_C[e.phase] || C.sec, textAlign: "center", outline: "none",
+                          }}
+                        />
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
 
-              <div style={{ marginTop: 12, fontSize: 10, color: C.muted }}>
-                Pour modifier les temps → onglet Référentiel &gt; Temps par type (clic sur une cellule)
+              <div style={{ marginTop: 8, fontSize: 10, color: C.sec }}>
+                Modifie un temps et quitte le champ → sauvegardé automatiquement
               </div>
             </div>
           </div>
