@@ -100,6 +100,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   onWeekChange?: (w: string) => void;
 }) {
   const [aff, setAff] = useState<AffMap>({});
+  const [locked, setLocked] = useState(false);
   const [ops, setOps] = useState<OpResolved[]>(OPS_FALLBACK);
   // Habitudes : { "C3": { "Julien": 45, "Laurent": 38 }, ... }
   const [habits, setHabits] = useState<Record<string, Record<string, number>>>({});
@@ -183,6 +184,11 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         setLoaded(viewWeek);
       })
       .catch(() => { setAff({}); setLoaded(viewWeek); });
+    // Charger le statut verrouillé
+    fetch(`/api/planning/affectations?semaine=lock_${viewWeek}`)
+      .then(r => r.ok ? r.json() : {})
+      .then(data => setLocked(!!(data as any)?.locked))
+      .catch(() => setLocked(false));
     // Charger les tâches extras de la semaine
     fetch(`/api/planning/affectations?semaine=extras_${viewWeek}`)
       .then(r => r.ok ? r.json() : [])
@@ -315,6 +321,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
 
   // ── Drop opérateur ou tâche extra sur cellule ──
   const onDrop = useCallback((key: string, e?: React.DragEvent) => {
+    if (locked) return;
     // Vérifier si c'est un extra
     const data = e?.dataTransfer?.getData("text/plain") || "";
     if (data.startsWith("extra:")) {
@@ -359,6 +366,16 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     else newAff[key] = { ...cell, cmds: newCmds };
     saveAff(newAff);
   }, [aff, saveAff]);
+
+  // ── Verrouiller/déverrouiller la semaine ──
+  const toggleLock = useCallback(async () => {
+    const newLocked = !locked;
+    setLocked(newLocked);
+    await fetch("/api/planning/affectations", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ semaine: `lock_${viewWeek}`, affectations: { locked: newLocked } }),
+    }).catch(() => {});
+  }, [locked, viewWeek]);
 
   // ── Gestion tâches extras ──
   const addExtra = useCallback(() => {
@@ -470,7 +487,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 .map(o => o.op.nom);
               if (names.length > 0) {
                 // Aussi affecter les chantiers de ce poste
-                const cmdLabels = pw.cmds.map(c => c.chantier ? `${c.client} · ${c.chantier}` : c.client);
+                const cmdLabels = pw.cmds.map(c => c.chantier || c.client);
                 newAff[key] = { ops: names, cmds: cmdLabels };
               }
             }
@@ -715,8 +732,11 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           <button onClick={printFiches} style={{ padding: "6px 16px", background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, fontSize: 11, cursor: "pointer" }}>
             Imprimer les fiches
           </button>
-          <span style={{ fontSize: 9, color: saving ? C.orange : C.green, textAlign: "center" }}>
-            {saving ? "Sauvegarde..." : "Sauvegardé"}
+          <button onClick={toggleLock} style={{ padding: "6px 16px", background: locked ? C.red + "22" : C.s2, border: `1px solid ${locked ? C.red : C.border}`, borderRadius: 4, color: locked ? C.red : C.sec, fontSize: 11, cursor: "pointer", fontWeight: locked ? 700 : 400 }}>
+            {locked ? "🔒 Figé" : "🔓 Figer"}
+          </button>
+          <span style={{ fontSize: 9, color: saving ? C.orange : locked ? C.red : C.green, textAlign: "center" }}>
+            {saving ? "Sauvegarde..." : locked ? "Semaine figée" : "Sauvegardé"}
           </span>
         </div>
       </div>
@@ -860,14 +880,9 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 return (
                   <tr key={pid} style={{ borderBottom: `1px solid ${C.border}` }}>
                     <td style={{ padding: "5px 8px", background: C.s1, border: `1px solid ${C.border}`, verticalAlign: "top" }}>
-                      <div style={{ fontWeight: 700, color: grp.color }}>{pid} <span style={{ fontWeight: 400, color: C.muted, fontSize: 9 }}>{POST_LABELS[pid]}</span></div>
-                      {pw.cmds.map((c, i) => (
-                        <div key={i} style={{ fontSize: 9, color: C.sec, marginTop: 1 }}>
-                          <span style={{ fontWeight: 600 }}>{c.client}</span>
-                          {c.chantier && <span style={{ color: C.muted }}> · {c.chantier}</span>}
-                          <span className="mono" style={{ color: C.muted, marginLeft: 3 }}>{hm(c.min)}</span>
-                        </div>
-                      ))}
+                      <div style={{ fontWeight: 700, color: grp.color }}>{pid}</div>
+                      <div style={{ fontSize: 8, color: C.muted }}>{POST_LABELS[pid]}</div>
+                      <div style={{ fontSize: 9, color: C.sec, marginTop: 2 }}>{pw.cmds.length} cmd</div>
                     </td>
                     <td style={{ padding: "4px", border: `1px solid ${overCapacity ? C.red : C.border}`, textAlign: "center", verticalAlign: "top" }}>
                       <div className="mono" style={{ fontWeight: 700, color: overCapacity ? C.red : grp.color }}>{hm(pw.totalMin)}</div>
@@ -883,7 +898,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                       const cell = aff[key] || { ops: [], cmds: [] };
                       const hasContent = cell.ops.length > 0 || cell.cmds.length > 0;
                       const isTarget = dropTarget === key;
-                      const allCmdLabels = pw.cmds.map(c => c.chantier ? `${c.client} · ${c.chantier}` : c.client);
+                      const allCmdLabels = pw.cmds.map(c => c.chantier || c.client);
                       return (
                         <td key={`${j}_${demi}`}
                           onDragOver={(e) => { e.preventDefault(); setDropTarget(key); }}
