@@ -255,8 +255,17 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
         // Combien de demi-journées faut-il avec minPers opérateurs ?
         const slotsNeeded = Math.ceil(pw.totalMin / (DEMI_MIN * minPers));
 
-        // Opérateurs compétents pour CE poste (basé sur les skills cochées en base)
-        const competentOps = ops.filter(op => op.competentPosts.includes(pid));
+        // Opérateurs compétents pour CE poste
+        // 1) D'abord ceux qui ont le poste coché en base
+        let competentOps = ops.filter(op => op.competentPosts.includes(pid));
+        // 2) Fallback : opérateurs avec la compétence de la phase (depuis EQUIPE)
+        if (competentOps.length === 0) {
+          const equipeComp = grp.competence;
+          competentOps = ops.filter(op => {
+            const eq = EQUIPE.find(e => e.nom === op.nom);
+            return eq?.competences.includes(equipeComp);
+          });
+        }
         if (competentOps.length === 0) continue;
 
         // Affecter par journée complète (AM+PM ensemble) pour ne pas faire sauter les gens d'un poste à l'autre
