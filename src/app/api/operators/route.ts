@@ -18,6 +18,7 @@ const REQUIRED_POSTS: Array<{ id: string; label: string; atelier: "SIAL" | "ISUL
   { id: "F2", label: "Ouvrants frappe + ferrage",    atelier: "SIAL", capacityMinDay: 1080 },
   { id: "F3", label: "Mise en bois + contrôle",      atelier: "SIAL", capacityMinDay: 1080 },
   { id: "MHS", label: "Montage Hors Standard",       atelier: "SIAL", capacityMinDay: 480 },
+  { id: "AUT", label: "Autre",                       atelier: "SIAL", capacityMinDay: 480 },
   { id: "V1", label: "Vitrage Frappe",               atelier: "SIAL", capacityMinDay: 480 },
   { id: "V2", label: "Vitrage Coulissant/Galandage", atelier: "SIAL", capacityMinDay: 480 },
   { id: "V3", label: "Emballage",                    atelier: "SIAL", capacityMinDay: 480 },

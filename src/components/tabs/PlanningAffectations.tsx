@@ -43,6 +43,7 @@ const POST_GROUPS = [
   { label: "Vitrage",       color: "#26C6DA", phase: "vitrage", competence: "vitrage", ids: ["V1","V2","V3"] },
   { label: "Logistique",    color: "#CE93D8", phase: "logistique", competence: "logistique", ids: ["L4","L6","L7"] },
   { label: "ISULA",         color: "#4DB6AC", phase: "isula", competence: "isula", ids: ["I1","I2","I3","I4","I5","I6","I7","I8"] },
+  { label: "Autre",         color: "#78909C", phase: "autre", competence: "", ids: ["AUT"] },
 ];
 const POST_LABELS: Record<string, string> = {
   C2:"Prépa barres",C3:"Coupe LMT",C4:"Coupe 2 têtes",C5:"Renfort acier",C6:"Soudure PVC",
@@ -51,6 +52,7 @@ const POST_LABELS: Record<string, string> = {
   V1:"Vitr. Frappe",V2:"Vitr. Coul/Gal",V3:"Emballage",
   L4:"Prépa acc.",L6:"Palettes",L7:"Chargement",
   I1:"Réception verre",I2:"Coupe verre",I3:"Coupe interc.",I4:"Butyle",I5:"Assemblage",I6:"Gaz+scell.",I7:"CQ CEKAL",I8:"Sortie chaîne",
+  AUT:"Autre",
 };
 const PHASE_FIELD: Record<string, string> = {
   coupe: "semaine_coupe", montage: "semaine_montage", vitrage: "semaine_vitrage", logistique: "semaine_logistique", isula: "semaine_vitrage",
@@ -313,7 +315,10 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   }, [commandes, viewWeek]);
 
   const activePosts = useMemo(() =>
-    POST_GROUPS.map(grp => ({ ...grp, posts: grp.ids.filter(pid => postWork[pid]?.totalMin > 0) })).filter(g => g.posts.length > 0),
+    POST_GROUPS.map(grp => ({
+      ...grp,
+      posts: grp.phase === "autre" ? grp.ids : grp.ids.filter(pid => postWork[pid]?.totalMin > 0),
+    })).filter(g => g.posts.length > 0),
     [postWork]
   );
 
@@ -736,27 +741,39 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               ))}
             </div>
           </div>
-          {/* Palette chantiers */}
+          {/* Palette chantiers par poste */}
           <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px" }}>
             <div style={{ fontSize: 10, color: C.sec, marginBottom: 4, fontWeight: 700 }}>CHANTIERS — glisse vers une demi-journée</div>
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {(() => {
-                // Collecter tous les chantiers uniques de la semaine
-                const allChantiers = new Set<string>();
-                for (const grp of activePosts) {
-                  for (const pid of grp.posts) {
-                    const pw = postWork[pid];
-                    if (pw) pw.cmds.forEach(c => allChantiers.add(c.chantier || c.client));
-                  }
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {activePosts.map(grp => {
+                // Collecter les chantiers par poste dans ce groupe
+                const postChantiers: Record<string, string[]> = {};
+                for (const pid of grp.posts) {
+                  const pw = postWork[pid];
+                  if (!pw) continue;
+                  postChantiers[pid] = pw.cmds.map(c => c.chantier || c.client);
                 }
-                return Array.from(allChantiers).map(ch => (
-                  <div key={ch} draggable
-                    onDragStart={(e) => { setDragOp(null); e.dataTransfer.setData("text/plain", `cmd:${ch}`); e.dataTransfer.effectAllowed = "copy"; }}
-                    style={{ padding: "3px 8px", borderRadius: 4, cursor: "grab", userSelect: "none", background: C.teal + "22", border: `1px solid ${C.teal}44`, color: C.teal, fontSize: 10, fontWeight: 600 }}>
-                    {ch}
+                const hasCmds = Object.values(postChantiers).some(v => v.length > 0);
+                if (!hasCmds) return null;
+                return (
+                  <div key={grp.label}>
+                    <div style={{ display: "flex", gap: 6, alignItems: "flex-start", flexWrap: "wrap" }}>
+                      {Object.entries(postChantiers).filter(([,cmds]) => cmds.length > 0).map(([pid, cmds]) => (
+                        <div key={pid} style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                          <span style={{ fontSize: 9, fontWeight: 700, color: grp.color, minWidth: 22 }}>{pid}</span>
+                          {cmds.map(ch => (
+                            <div key={`${pid}_${ch}`} draggable
+                              onDragStart={(e) => { setDragOp(null); e.dataTransfer.setData("text/plain", `cmd:${ch}`); e.dataTransfer.effectAllowed = "copy"; }}
+                              style={{ padding: "2px 6px", borderRadius: 3, cursor: "grab", userSelect: "none", background: grp.color + "22", border: `1px solid ${grp.color}44`, color: grp.color, fontSize: 9, fontWeight: 600 }}>
+                              {ch}
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ));
-              })()}
+                );
+              })}
             </div>
           </div>
         </div>
