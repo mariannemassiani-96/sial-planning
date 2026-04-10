@@ -336,6 +336,18 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       setDropTarget(null);
       return;
     }
+    // Chantier glissé depuis la palette
+    if (data.startsWith("cmd:")) {
+      const cmdLabel = data.slice(4);
+      const newAff = { ...aff };
+      const cell = newAff[key] || { ops: [], cmds: [] };
+      if (!cell.cmds.includes(cmdLabel)) {
+        newAff[key] = { ...cell, cmds: [...cell.cmds, cmdLabel] };
+        saveAff(newAff);
+      }
+      setDropTarget(null);
+      return;
+    }
     // Sinon c'est un opérateur
     if (!dragOp) return;
     const newAff = { ...aff };
@@ -709,17 +721,43 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         </div>
       )}
 
-      {/* ── Palette opérateurs + boutons ── */}
+      {/* ── Palettes opérateurs + chantiers + boutons ── */}
       <div style={{ display: "flex", gap: 12, marginBottom: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <div style={{ flex: 1, background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px" }}>
-          <div style={{ fontSize: 10, color: C.sec, marginBottom: 6, fontWeight: 700 }}>OPÉRATEURS — glisse vers un poste</div>
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {ops.map(op => (
-              <div key={op.id} draggable onDragStart={(e) => { setDragOp(op.nom); e.dataTransfer.effectAllowed = "copy"; }}
-                style={{ padding: "4px 10px", borderRadius: 4, cursor: "grab", userSelect: "none", background: OP_COLORS[op.key] || C.s2, color: "#000", fontSize: 11, fontWeight: 700 }}>
-                {op.nom}
-              </div>
-            ))}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+          {/* Palette opérateurs */}
+          <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px" }}>
+            <div style={{ fontSize: 10, color: C.sec, marginBottom: 4, fontWeight: 700 }}>OPÉRATEURS — glisse vers un poste</div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {ops.map(op => (
+                <div key={op.id} draggable onDragStart={(e) => { setDragOp(op.nom); e.dataTransfer.effectAllowed = "copy"; }}
+                  style={{ padding: "3px 8px", borderRadius: 4, cursor: "grab", userSelect: "none", background: OP_COLORS[op.key] || C.s2, color: "#000", fontSize: 10, fontWeight: 700 }}>
+                  {op.nom}
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Palette chantiers */}
+          <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px" }}>
+            <div style={{ fontSize: 10, color: C.sec, marginBottom: 4, fontWeight: 700 }}>CHANTIERS — glisse vers une demi-journée</div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {(() => {
+                // Collecter tous les chantiers uniques de la semaine
+                const allChantiers = new Set<string>();
+                for (const grp of activePosts) {
+                  for (const pid of grp.posts) {
+                    const pw = postWork[pid];
+                    if (pw) pw.cmds.forEach(c => allChantiers.add(c.chantier || c.client));
+                  }
+                }
+                return Array.from(allChantiers).map(ch => (
+                  <div key={ch} draggable
+                    onDragStart={(e) => { setDragOp(null); e.dataTransfer.setData("text/plain", `cmd:${ch}`); e.dataTransfer.effectAllowed = "copy"; }}
+                    style={{ padding: "3px 8px", borderRadius: 4, cursor: "grab", userSelect: "none", background: C.teal + "22", border: `1px solid ${C.teal}44`, color: C.teal, fontSize: 10, fontWeight: 600 }}>
+                    {ch}
+                  </div>
+                ));
+              })()}
+            </div>
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -898,7 +936,6 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                       const cell = aff[key] || { ops: [], cmds: [] };
                       const hasContent = cell.ops.length > 0 || cell.cmds.length > 0;
                       const isTarget = dropTarget === key;
-                      const allCmdLabels = pw.cmds.map(c => c.chantier || c.client);
                       return (
                         <td key={`${j}_${demi}`}
                           onDragOver={(e) => { e.preventDefault(); setDropTarget(key); }}
@@ -961,19 +998,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                               })}
                             </div>
                           )}
-                          {/* Boutons pour ajouter des chantiers (si pas tous affectés) */}
-                          {allCmdLabels.filter(c => !cell.cmds.includes(c)).length > 0 && (
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 1, marginTop: cell.ops.length > 0 ? 2 : 0 }}>
-                              {allCmdLabels.filter(c => !cell.cmds.includes(c)).map(cmdLabel => (
-                                <button key={cmdLabel} onClick={() => toggleCmd(key, cmdLabel)}
-                                  style={{ fontSize: 7, padding: "1px 3px", borderRadius: 2, cursor: "pointer", border: `1px solid ${C.border}`, background: C.s2, color: C.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 65 }}
-                                  title={cmdLabel}
-                                >
-                                  +{cmdLabel.split(" · ")[0]}
-                                </button>
-                              ))}
-                            </div>
-                          )}
+                          {/* Les chantiers se glissent depuis la palette en haut */}
                           {!hasContent && (
                             <div style={{ color: C.muted, textAlign: "center", padding: "4px 0", fontSize: 9 }}>
                               {isTarget ? "▼" : "+"}
