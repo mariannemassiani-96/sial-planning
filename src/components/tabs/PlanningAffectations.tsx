@@ -42,6 +42,13 @@ const OP_COLORS: Record<string, string> = {
 };
 const DEMI_MIN = 240;
 
+// Capacité max par poste en minutes par semaine (contrainte machine)
+// Si pas listé → pas de plafond (limité seulement par les opérateurs)
+const POST_MAX_WEEK: Record<string, number> = {
+  C3: 39 * 60, // Coupe LMT : 39h/semaine max
+  C6: 39 * 60, // Soudure PVC : 39h/semaine max
+};
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type AffMap = Record<string, string[]>; // "postId|jourIdx|demi" → opérateurs
@@ -415,6 +422,8 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
                 const pw = postWork[pid];
                 const minPers = grp.phase === "coupe" ? 2 : 1;
                 const persNeeded = Math.max(minPers, Math.ceil(pw.totalMin / DEMI_MIN / 10));
+                const maxWeek = POST_MAX_WEEK[pid];
+                const overCapacity = maxWeek ? pw.totalMin > maxWeek : false;
                 let affMin = 0;
                 for (let j = 0; j < 5; j++) for (const d of ["am", "pm"]) affMin += (aff[ck(pid, j, d)]?.length || 0) * DEMI_MIN;
                 const pct = pw.totalMin > 0 ? Math.min(100, Math.round(affMin / pw.totalMin * 100)) : 0;
@@ -428,8 +437,10 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
                         <div key={i} style={{ fontSize: 9, color: C.sec, marginTop: 1 }}>{c.client} <span className="mono" style={{ color: C.muted }}>{hm(c.min)}</span></div>
                       ))}
                     </td>
-                    <td style={{ padding: "4px", border: `1px solid ${C.border}`, textAlign: "center", verticalAlign: "top" }}>
-                      <div className="mono" style={{ fontWeight: 700, color: grp.color }}>{hm(pw.totalMin)}</div>
+                    <td style={{ padding: "4px", border: `1px solid ${overCapacity ? C.red : C.border}`, textAlign: "center", verticalAlign: "top" }}>
+                      <div className="mono" style={{ fontWeight: 700, color: overCapacity ? C.red : grp.color }}>{hm(pw.totalMin)}</div>
+                      {maxWeek && <div style={{ fontSize: 8, color: overCapacity ? C.red : C.muted }}>max {hm(maxWeek)}</div>}
+                      {overCapacity && <div style={{ fontSize: 8, color: C.red, fontWeight: 700 }}>SURCHARGE</div>}
                       <div style={{ fontSize: 9, color: grp.color, fontWeight: 700 }}>{persNeeded}p.</div>
                       <div style={{ height: 4, background: C.s2, borderRadius: 2, overflow: "hidden", marginTop: 2 }}>
                         <div style={{ width: `${pct}%`, height: "100%", background: barCol, borderRadius: 2 }} />

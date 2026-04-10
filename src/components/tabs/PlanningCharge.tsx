@@ -79,15 +79,7 @@ function getPhaseCapacity(phaseCompetence: string): { totalMin: number; operator
     operators.push({ nom: op.nom, minDispo });
   }
 
-  let totalMin = operators.reduce((s, o) => s + o.minDispo, 0);
-
-  // Plafond par phase (capacité machine/zone)
-  const PHASE_MAX_MIN: Record<string, number> = {
-    coupe: 39 * 60, // 39h/semaine max pour la zone coupe
-  };
-  if (PHASE_MAX_MIN[phaseCompetence] && totalMin > PHASE_MAX_MIN[phaseCompetence]) {
-    totalMin = PHASE_MAX_MIN[phaseCompetence];
-  }
+  const totalMin = operators.reduce((s, o) => s + o.minDispo, 0);
 
   return { totalMin, operators };
 }
