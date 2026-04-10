@@ -638,6 +638,50 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch }: {
         )}
       </div>
 
+      {/* ── Occupation opérateurs ── */}
+      {(() => {
+        // Calculer heures affectées par opérateur
+        const opStats: Array<{ nom: string; key: string; affMin: number; dispoMin: number; pct: number }> = [];
+        for (const op of ops) {
+          const eq = EQUIPE.find(e => e.nom === op.nom);
+          const dispoMin = (eq?.h || 39) * 60;
+          let affMin = 0;
+          for (const [k, cell] of Object.entries(aff)) {
+            if (cell?.ops?.includes(op.nom)) affMin += DEMI_MIN;
+          }
+          opStats.push({ nom: op.nom, key: op.key, affMin, dispoMin, pct: dispoMin > 0 ? Math.round(affMin / dispoMin * 100) : 0 });
+        }
+        const avgPct = opStats.length > 0 ? Math.round(opStats.reduce((s, o) => s + o.pct, 0) / opStats.length) : 0;
+        const overloaded = opStats.filter(o => o.pct > 100);
+        const idle = opStats.filter(o => o.pct === 0);
+
+        return (
+          <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 700 }}>Occupation opérateurs</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: avgPct > 90 ? C.red : avgPct > 60 ? C.orange : C.green }}>{avgPct}% moyen</span>
+              {overloaded.length > 0 && <span style={{ fontSize: 10, color: C.red }}>⚠ {overloaded.map(o => o.nom).join(", ")} surchargé{overloaded.length > 1 ? "s" : ""}</span>}
+              {idle.length > 0 && <span style={{ fontSize: 10, color: C.muted }}>{idle.length} non affecté{idle.length > 1 ? "s" : ""}</span>}
+            </div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {opStats.map(o => {
+                const barCol = o.pct > 100 ? C.red : o.pct > 80 ? C.orange : o.pct > 0 ? C.green : C.muted;
+                return (
+                  <div key={o.nom} style={{ width: 75, background: C.bg, border: `1px solid ${o.pct > 100 ? C.red : C.border}`, borderRadius: 4, padding: "4px 6px", textAlign: "center" }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: OP_COLORS[o.key] || C.sec, marginBottom: 2 }}>{o.nom}</div>
+                    <div style={{ height: 4, background: C.s2, borderRadius: 2, overflow: "hidden", marginBottom: 2 }}>
+                      <div style={{ width: `${Math.min(o.pct, 100)}%`, height: "100%", background: barCol, borderRadius: 2 }} />
+                    </div>
+                    <div style={{ fontSize: 9, color: barCol, fontWeight: 700 }}>{o.pct}%</div>
+                    <div style={{ fontSize: 8, color: C.muted }}>{hm(o.affMin)}/{hm(o.dispoMin)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Grille ── */}
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
