@@ -601,7 +601,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               cellWorkMin = DEMI_MIN;
             }
             // Part de cet opérateur = total / nb opérateurs sur ce créneau
-            affDayMin += Math.round(cellWorkMin / nbOps);
+            affDayMin += Math.round(Math.min(cellWorkMin, DEMI_MIN) / nbOps);
           }
         }
 
@@ -637,7 +637,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         }
         if (cell.extras?.length) cellWorkMin += cell.extras.length * DEMI_MIN;
         if (cellWorkMin === 0 && (cell.cmds?.length || 0) === 0 && (cell.extras?.length || 0) === 0) cellWorkMin = DEMI_MIN;
-        totalAffMin += Math.round(cellWorkMin / nbOps);
+        totalAffMin += Math.round(Math.min(cellWorkMin, DEMI_MIN) / nbOps);
       }
       const baseMin = (eq?.h || 39) * 60;
       let absTotal = 0;
@@ -925,7 +925,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   }
                   if (cell.extras?.length) cellWork += cell.extras.length * DEMI_MIN;
                   if (cellWork === 0) cellWork = DEMI_MIN;
-                  affMin += Math.round(cellWork / nbOps);
+                  affMin += Math.round(Math.min(cellWork, DEMI_MIN) / nbOps);
                 }
                 const restant = Math.max(0, dispoMin - affMin);
                 const full = restant <= 0;
@@ -1116,7 +1116,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             if (pwOcc && cell.cmds?.length) { for (const cl of cell.cmds) { const cm = pwOcc.cmds.find(c2 => (c2.chantier || c2.client) === cl); if (cm) cellW += cm.min; } }
             if (cell.extras?.length) cellW += cell.extras.length * DEMI_MIN;
             if (cellW === 0) cellW = DEMI_MIN;
-            affMin += Math.round(cellW / nbOpsOcc);
+            affMin += Math.round(Math.min(cellW, DEMI_MIN) / nbOpsOcc);
           }
           opStats.push({ nom: op.nom, key: op.key, affMin, dispoMin, pct: dispoMin > 0 ? Math.round(affMin / dispoMin * 100) : 0, absentDays });
         }
