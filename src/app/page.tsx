@@ -17,7 +17,7 @@ import PlanningIsula from "@/components/tabs/PlanningIsula";
 import BesoinVitrages from "@/components/tabs/BesoinVitrages";
 import Qualite from "@/components/tabs/Qualite";
 import ImportCSV from "@/components/tabs/ImportCSV";
-import Pointage from "@/components/tabs/Pointage";
+import PointageJour from "@/components/tabs/PointageJour";
 import AffichageAtelier from "@/components/tabs/AffichageAtelier";
 import PlanningCommandes from "@/components/tabs/PlanningCommandes";
 import PlanningAffectations from "@/components/tabs/PlanningAffectations";
@@ -255,7 +255,7 @@ export default function HomePage() {
               </>
             )}
 
-            {ong === "pointage" && <Pointage commandes={commandes} onPatch={patchCommande} />}
+            {ong === "pointage" && <PointageJour commandes={commandes} onPatch={patchCommande} />}
             {ong === "affichage_atelier" && <AffichageAtelier commandes={commandes} stocks={stocks} />}
 
             {/* Planning ISULA + Besoins Vitrages fusionnés */}
