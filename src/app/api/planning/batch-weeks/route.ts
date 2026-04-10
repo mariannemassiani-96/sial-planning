@@ -90,18 +90,11 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // Calculer les semaines de fabrication — pas de rigidité :
-    // - Coupe : livraison -2 sem (buffer pour montage)
-    // - Montage : livraison -1 sem
-    // - Vitrage + Logistique : semaine de livraison
-    // SAV/Diffus : tout sur livraison -1 (petit job)
-    const isSAV = (item.type_commande || "").toLowerCase().includes("sav");
-    const isDiffus = (item.type_commande || "").toLowerCase().includes("diffus");
-    const isSmall = isSAV || isDiffus;
-
-    const semCoupe      = isSmall ? addWeeks(mondayLivraison, -1) : addWeeks(mondayLivraison, -2);
-    const semMontage    = isSmall ? addWeeks(mondayLivraison, -1) : addWeeks(mondayLivraison, -1);
-    const semVitrage    = isSmall ? addWeeks(mondayLivraison, -1) : mondayLivraison;
+    // Toutes les phases sur la semaine de livraison par défaut.
+    // C'est l'utilisateur qui ajuste ensuite selon les arrivées matière et les dispos.
+    const semCoupe      = mondayLivraison;
+    const semMontage    = mondayLivraison;
+    const semVitrage    = mondayLivraison;
     const semLogistique = mondayLivraison;
 
     await prisma.commande.update({
