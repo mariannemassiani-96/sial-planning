@@ -677,11 +677,28 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     const uncoveredPosts: Array<{ postId: string; label: string; needed: number; affected: number; deficit: number }> = [];
 
     for (const grp of activePosts) {
-      for (const pid of grp.posts) {
+      for (const pid of grp.visiblePosts) {
         const pw = postWork[pid];
         if (!pw || pw.totalMin === 0) continue;
+
+        // Un poste est couvert si les chantiers sont positionnés OU des opérateurs affectés
         let affMin = 0;
-        for (let j = 0; j < 5; j++) for (const d of ["am", "pm"]) affMin += (aff[ck(pid, j, d)]?.ops?.length || 0) * DEMI_MIN;
+        for (let j = 0; j < 5; j++) {
+          for (const d of ["am", "pm"]) {
+            const cell = aff[ck(pid, j, d)];
+            if (!cell) continue;
+            // Compter 4h si le créneau a des chantiers OU des opérateurs
+            if ((cell.cmds?.length || 0) > 0 || (cell.ops?.length || 0) > 0) {
+              affMin += DEMI_MIN;
+            }
+          }
+        }
+        // Aussi compter les chantiers masqués (✓ fait) comme couverts
+        for (const c of pw.cmds) {
+          const ch = c.chantier || c.client;
+          if (hiddenTasks.has(`${pid}|${ch}`)) affMin += c.min;
+        }
+
         totalNeeded += pw.totalMin;
         totalAffected += Math.min(affMin, pw.totalMin);
         if (affMin < pw.totalMin) {
@@ -691,7 +708,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     }
     const pct = totalNeeded > 0 ? Math.round(totalAffected / totalNeeded * 100) : 0;
     return { pct, totalNeeded, totalAffected, uncoveredPosts, complete: pct >= 100 };
-  }, [activePosts, postWork, aff]);
+  }, [activePosts, postWork, aff, hiddenTasks]);
 
   // ── Reporter les tâches non couvertes à la semaine suivante ──
   const reportNextWeek = useCallback(() => {
