@@ -741,39 +741,50 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               ))}
             </div>
           </div>
-          {/* Palette chantiers par poste */}
+          {/* Palette chantiers par poste — disparaît quand placé */}
           <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px" }}>
-            <div style={{ fontSize: 10, color: C.sec, marginBottom: 4, fontWeight: 700 }}>CHANTIERS — glisse vers une demi-journée</div>
+            <div style={{ fontSize: 10, color: C.sec, marginBottom: 4, fontWeight: 700 }}>CHANTIERS À PLACER — glisse vers une demi-journée</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {activePosts.map(grp => {
-                // Collecter les chantiers par poste dans ce groupe
-                const postChantiers: Record<string, string[]> = {};
-                for (const pid of grp.posts) {
-                  const pw = postWork[pid];
-                  if (!pw) continue;
-                  postChantiers[pid] = pw.cmds.map(c => c.chantier || c.client);
+              {(() => {
+                // Vérifier quels chantiers sont déjà placés pour chaque poste
+                const placedByPost: Record<string, Set<string>> = {};
+                for (const [key, cell] of Object.entries(aff)) {
+                  if (!cell?.cmds?.length) continue;
+                  const pid = key.split("|")[0];
+                  if (!placedByPost[pid]) placedByPost[pid] = new Set();
+                  cell.cmds.forEach(c => placedByPost[pid].add(c));
                 }
-                const hasCmds = Object.values(postChantiers).some(v => v.length > 0);
-                if (!hasCmds) return null;
-                return (
-                  <div key={grp.label}>
-                    <div style={{ display: "flex", gap: 6, alignItems: "flex-start", flexWrap: "wrap" }}>
-                      {Object.entries(postChantiers).filter(([,cmds]) => cmds.length > 0).map(([pid, cmds]) => (
-                        <div key={pid} style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                          <span style={{ fontSize: 9, fontWeight: 700, color: grp.color, minWidth: 22 }}>{pid}</span>
-                          {cmds.map(ch => (
-                            <div key={`${pid}_${ch}`} draggable
-                              onDragStart={(e) => { setDragOp(null); e.dataTransfer.setData("text/plain", `cmd:${ch}`); e.dataTransfer.effectAllowed = "copy"; }}
-                              style={{ padding: "2px 6px", borderRadius: 3, cursor: "grab", userSelect: "none", background: grp.color + "22", border: `1px solid ${grp.color}44`, color: grp.color, fontSize: 9, fontWeight: 600 }}>
-                              {ch}
-                            </div>
-                          ))}
-                        </div>
-                      ))}
+                return activePosts.map(grp => {
+                  const postChantiers: Record<string, string[]> = {};
+                  for (const pid of grp.posts) {
+                    const pw = postWork[pid];
+                    if (!pw) continue;
+                    const placed = placedByPost[pid] || new Set();
+                    const remaining = pw.cmds.map(c => c.chantier || c.client).filter(ch => !placed.has(ch));
+                    if (remaining.length > 0) postChantiers[pid] = remaining;
+                  }
+                  const hasCmds = Object.values(postChantiers).some(v => v.length > 0);
+                  if (!hasCmds) return null;
+                  return (
+                    <div key={grp.label}>
+                      <div style={{ display: "flex", gap: 6, alignItems: "flex-start", flexWrap: "wrap" }}>
+                        {Object.entries(postChantiers).map(([pid, cmds]) => (
+                          <div key={pid} style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                            <span style={{ fontSize: 9, fontWeight: 700, color: grp.color, minWidth: 22 }}>{pid}</span>
+                            {cmds.map(ch => (
+                              <div key={`${pid}_${ch}`} draggable
+                                onDragStart={(e) => { setDragOp(null); e.dataTransfer.setData("text/plain", `cmd:${ch}`); e.dataTransfer.effectAllowed = "copy"; }}
+                                style={{ padding: "2px 6px", borderRadius: 3, cursor: "grab", userSelect: "none", background: grp.color + "22", border: `1px solid ${grp.color}44`, color: grp.color, fontSize: 9, fontWeight: 600 }}>
+                                {ch}
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>
