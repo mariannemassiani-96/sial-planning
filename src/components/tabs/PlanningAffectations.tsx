@@ -322,7 +322,24 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
 
       // Appliquer les overrides par commande
       const cmdOv = allCmdOverrides[String(cmd.id)] || {};
+
+      // C3 dynamique : recalculer si nb_barres est défini, en fonction des opérateurs affectés
+      const nbBarres = cmdOv["_nb_barres_lmt"];
+      if (nbBarres && nbBarres > 0) {
+        let maxOpsC3 = 0;
+        for (const [k, cell] of Object.entries(aff)) {
+          if (k.startsWith("C3|") && cell?.ops?.length) maxOpsC3 = Math.max(maxOpsC3, cell.ops.length);
+        }
+        const pers = maxOpsC3 || 2;
+        const minPerBar = pers >= 3 ? 480 / 120 : pers >= 2 ? 480 / 80 : 480 / 50;
+        const c3Dynamic = Math.round(nbBarres * minPerBar);
+        if (cmdPostTotals["C3"]) cmdPostTotals["C3"].min = c3Dynamic;
+        else cmdPostTotals["C3"] = { min: c3Dynamic, phase: "coupe" };
+      }
+
       for (const [pid, ov] of Object.entries(cmdOv)) {
+        if (pid.startsWith("_")) continue; // ignorer les méta-champs (_nb_barres_lmt)
+        if (pid === "C3" && nbBarres && nbBarres > 0) continue; // C3 déjà calculé dynamiquement
         if (cmdPostTotals[pid]) cmdPostTotals[pid].min = ov;
         else cmdPostTotals[pid] = { min: ov, phase: "coupe" };
       }
@@ -363,7 +380,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       }
     }
     return work;
-  }, [commandes, viewWeek, allCmdOverrides]);
+  }, [commandes, viewWeek, allCmdOverrides, aff]);
 
   const activePosts = useMemo(() =>
     POST_GROUPS.map(grp => {
