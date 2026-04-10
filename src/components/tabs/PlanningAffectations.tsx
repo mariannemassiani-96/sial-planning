@@ -772,15 +772,14 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {(() => {
                 // Calculer heures affectées par chantier par poste
-                // Un chantier disparaît quand : heures affectées (nb créneaux × nb opérateurs × DEMI_MIN) >= heures nécessaires
+                // Un chantier sur un créneau = 1 demi-journée (4h) de couverture
                 const affectedMinByPostCmd: Record<string, number> = {}; // "pid|chantier" → minutes
                 for (const [key, cell] of Object.entries(aff)) {
-                  if (!cell?.cmds?.length || !cell?.ops?.length) continue;
+                  if (!cell?.cmds?.length) continue;
                   const pid = key.split("|")[0];
-                  const minPerSlot = cell.ops.length * DEMI_MIN;
                   for (const ch of cell.cmds) {
                     const k = `${pid}|${ch}`;
-                    affectedMinByPostCmd[k] = (affectedMinByPostCmd[k] || 0) + minPerSlot;
+                    affectedMinByPostCmd[k] = (affectedMinByPostCmd[k] || 0) + DEMI_MIN;
                   }
                 }
                 return activePosts.map(grp => {
