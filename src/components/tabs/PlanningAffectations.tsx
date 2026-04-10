@@ -88,6 +88,8 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
 }) {
   const [aff, setAff] = useState<AffMap>({});
   const [ops, setOps] = useState<OpResolved[]>(OPS_FALLBACK);
+  // Habitudes : { "C3": { "Julien": 45, "Laurent": 38 }, ... }
+  const [habits, setHabits] = useState<Record<string, Record<string, number>>>({});
   const [dragOp, setDragOp] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -118,6 +120,14 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
       .catch(() => {});
   }, []);
 
+  // ── Charger les habitudes d'affectation ──
+  useEffect(() => {
+    fetch("/api/planning/affectations?semaine=__habits__")
+      .then(r => r.ok ? r.json() : {})
+      .then(data => { if (data && typeof data === "object") setHabits(data as Record<string, Record<string, number>>); })
+      .catch(() => {});
+  }, []);
+
   // ── Charger les affectations depuis la base ──
   useEffect(() => {
     setLoaded(null);
@@ -144,20 +154,40 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
       .catch(() => { setAff({}); setLoaded(viewWeek); });
   }, [viewWeek]);
 
-  // ── Sauvegarde auto (debounce 1s) ──
+  // ── Sauvegarde auto (debounce 1s) + apprentissage ──
   const saveAff = useCallback((newAff: AffMap) => {
     setAff(newAff);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       setSaving(true);
+      // Sauvegarder les affectations
       await fetch("/api/planning/affectations", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ semaine: viewWeek, affectations: newAff }),
       }).catch(() => {});
+
+      // Apprendre des affectations : compter opérateur × poste
+      const newHabits = { ...habits };
+      for (const [key, cell] of Object.entries(newAff)) {
+        if (!cell?.ops?.length) continue;
+        const postId = key.split("|")[0];
+        if (!newHabits[postId]) newHabits[postId] = {};
+        for (const opNom of cell.ops) {
+          newHabits[postId][opNom] = (newHabits[postId][opNom] || 0) + 1;
+        }
+      }
+      setHabits(newHabits);
+      // Persister les habitudes
+      await fetch("/api/planning/affectations", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ semaine: "__habits__", affectations: newHabits }),
+      }).catch(() => {});
+
       setSaving(false);
     }, 1000);
-  }, [viewWeek]);
+  }, [viewWeek, habits]);
 
   // ── Travail par poste ──
   const postWork = useMemo(() => {
@@ -275,8 +305,9 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
             ? ["am", "pm"].filter(d => !(d === "pm" && competentOps.every(op => op.vendrediOff || op.id === "jp")))
             : ["am", "pm"];
 
-          // Trouver les opérateurs les moins chargés ce jour-là
-          const opLoads = competentOps
+          // Trouver les meilleurs opérateurs : habitude élevée + charge faible
+          const postHabits = habits[pid] || {};
+          const opScores = competentOps
             .filter(op => !(j === 4 && op.vendrediOff))
             .map(op => {
               let load = 0;
@@ -284,16 +315,20 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
                 const parts = k.split("|");
                 if (parseInt(parts[1]) === j && (newAff[k]?.ops || []).includes(op.nom)) load++;
               }
-              return { op, load };
+              const habit = postHabits[op.nom] || 0;
+              return { op, load, habit };
             })
-            .sort((a, b) => a.load - b.load);
+            // Trier : d'abord les libres, puis par habitude (le plus souvent = en premier)
+            .sort((a, b) => {
+              if (a.load !== b.load) return a.load - b.load;
+              return b.habit - a.habit; // plus d'habitude = prioritaire
+            });
 
-          // Prendre les N opérateurs les moins chargés (N = minPers)
-          const toAssign = opLoads.filter(o => o.load === 0).slice(0, minPers);
+          // Prendre les N meilleurs (N = minPers)
+          const toAssign = opScores.filter(o => o.load === 0).slice(0, minPers);
           if (toAssign.length < minPers) {
-            // Pas assez d'opérateurs libres ce jour, prendre ceux qui ont le moins de charge
             const needed = minPers - toAssign.length;
-            const more = opLoads.filter(o => o.load > 0).slice(0, needed);
+            const more = opScores.filter(o => o.load > 0).slice(0, needed);
             toAssign.push(...more);
           }
 
