@@ -39,13 +39,14 @@ function weekId(mondayStr: string): string {
 const JOURS = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
 const POST_GROUPS = [
   { label: "Coupe & Prépa", color: "#42A5F5", phase: "coupe", competence: "coupe", ids: ["C2","C3","C4","C5","C6"] },
-  { label: "Montage",       color: "#FFA726", phase: "montage", competence: "frappes", ids: ["M1","M2","M3","F1","F2","F3"] },
+  { label: "Montage",       color: "#FFA726", phase: "montage", competence: "frappes", ids: ["M1","M2","M3","F1","F2","F3","MHS"] },
   { label: "Vitrage",       color: "#26C6DA", phase: "vitrage", competence: "vitrage", ids: ["V1","V2","V3"] },
   { label: "Logistique",    color: "#CE93D8", phase: "logistique", competence: "logistique", ids: ["L4","L6","L7"] },
 ];
 const POST_LABELS: Record<string, string> = {
   C2:"Prépa barres",C3:"Coupe LMT",C4:"Coupe 2 têtes",C5:"Renfort acier",C6:"Soudure PVC",
   M1:"Dorm. couliss.",M2:"Dorm. galand.",M3:"Portes ALU",F1:"Dorm. frappe ALU",F2:"Ouv.+ferrage",F3:"Mise bois+CQ",
+  MHS:"Montage HS",
   V1:"Vitr. Frappe",V2:"Vitr. Coul/Gal",V3:"Emballage",
   L4:"Prépa acc.",L6:"Palettes",L7:"Chargement",
 };

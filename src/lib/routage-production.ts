@@ -81,7 +81,7 @@ export function getRoutage(
       etapes.push({ postId: "C3", label: "Coupe hors standard", estimatedMin: tCoupe, phase: "coupe", order: ord++ });
     }
     if (tMontage > 0) {
-      etapes.push({ postId: "F1", label: "Montage hors standard", estimatedMin: tMontage, phase: "montage", order: ord++ });
+      etapes.push({ postId: "MHS", label: "Montage hors standard", estimatedMin: tMontage, phase: "montage", order: ord++ });
     }
     if (tVitrage > 0) {
       etapes.push({ postId: "V1", label: "Vitrage hors standard", estimatedMin: tVitrage, phase: "vitrage", order: ord++ });

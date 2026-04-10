@@ -21,8 +21,8 @@ export const ISULA_ACTIVE_DAYS = [1, 2, 4]; // lundi, mardi, jeudi
 
 // ── Postes actifs selon le mode du jour ─────────────────────────────────
 export const POSTS_BY_MODE = {
-  COULISSANTS: ["C1","C2","C3","C4","C5","C6","M1","M2","M3","V1","V2","V3","L1","L2","L3","L4","L5","L6","L7"],
-  FRAPPES:     ["C1","C2","C3","C4","C5","C6","F1","F2","F3","V1","V2","V3","L1","L2","L3","L4","L5","L6","L7"],
+  COULISSANTS: ["C1","C2","C3","C4","C5","C6","M1","M2","M3","MHS","V1","V2","V3","L1","L2","L3","L4","L5","L6","L7"],
+  FRAPPES:     ["C1","C2","C3","C4","C5","C6","F1","F2","F3","MHS","V1","V2","V3","L1","L2","L3","L4","L5","L6","L7"],
 };
 
 // ── Seuil alerte ATTENTE_VITRAGE (jours) ─────────────────────────────────
