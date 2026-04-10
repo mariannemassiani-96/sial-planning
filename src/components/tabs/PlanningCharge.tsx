@@ -25,7 +25,6 @@ function weekId(mondayStr: string): string {
   return `S${String(wn).padStart(2, "0")}`;
 }
 
-// Générer les options de semaine (S actuelle → +12 semaines)
 function getWeekOptions(): Array<{ value: string; label: string }> {
   const opts: Array<{ value: string; label: string }> = [];
   const mon = getMonday(new Date());
@@ -41,31 +40,59 @@ function getWeekOptions(): Array<{ value: string; label: string }> {
   return opts;
 }
 
-// Postes par phase
+// ── Configuration des phases ─────────────────────────────────────────────────
 const PHASE_CONFIG = [
-  { id: "coupe",      label: "Coupe",      color: "#42A5F5", field: "semaine_coupe",      postes: ["C2","C3","C4","C5","C6"] },
-  { id: "montage",    label: "Montage",    color: "#FFA726", field: "semaine_montage",    postes: ["M1","M2","M3","F1","F2","F3"] },
-  { id: "vitrage",    label: "Vitrage",    color: "#26C6DA", field: "semaine_vitrage",    postes: ["V1","V2","V3"] },
-  { id: "logistique", label: "Logistique", color: "#CE93D8", field: "semaine_logistique", postes: ["L4","L6","L7"] },
+  { id: "coupe",      label: "Coupe",      color: "#42A5F5", field: "semaine_coupe",      competence: "coupe" },
+  { id: "montage",    label: "Montage",    color: "#FFA726", field: "semaine_montage",    competence: "frappes" },
+  { id: "vitrage",    label: "Vitrage",    color: "#26C6DA", field: "semaine_vitrage",    competence: "vitrage" },
+  { id: "logistique", label: "Logistique", color: "#CE93D8", field: "semaine_logistique", competence: "logistique" },
 ];
 
-// Opérateurs par compétence
-const OPERATORS_BY_COMPETENCE: Record<string, string[]> = {};
-for (const op of EQUIPE) {
-  for (const comp of op.competences) {
-    if (!OPERATORS_BY_COMPETENCE[comp]) OPERATORS_BY_COMPETENCE[comp] = [];
-    OPERATORS_BY_COMPETENCE[comp].push(op.nom);
+// ── Capacité réelle par phase (basée sur les opérateurs) ─────────────────────
+// Pour chaque phase, on calcule les heures/semaine réelles des opérateurs compétents
+
+interface OpCapacity {
+  nom: string;
+  hSemaine: number; // heures par semaine
+  competences: string[];
+}
+
+const OP_CAPACITIES: OpCapacity[] = EQUIPE.map(op => ({
+  nom: op.nom,
+  hSemaine: op.h,
+  competences: op.competences,
+}));
+
+// Calcule la capacité réelle en minutes pour une phase sur une semaine
+// Un opérateur partage son temps entre les phases où il est compétent
+function getPhaseCapacity(phaseCompetence: string): { totalMin: number; operators: Array<{ nom: string; minDispo: number }> } {
+  const operators: Array<{ nom: string; minDispo: number }> = [];
+
+  for (const op of OP_CAPACITIES) {
+    if (!op.competences.includes(phaseCompetence)) continue;
+
+    // Combien de phases différentes cet opérateur couvre ?
+    // Il partage son temps entre elles
+    const nbPhasesCouvertes = PHASE_CONFIG.filter(ph =>
+      op.competences.includes(ph.competence)
+    ).length;
+
+    // Sa dispo pour cette phase = ses heures / nombre de phases couvertes
+    const minDispo = Math.round(op.hSemaine * 60 / Math.max(nbPhasesCouvertes, 1));
+    operators.push({ nom: op.nom, minDispo });
   }
+
+  return {
+    totalMin: operators.reduce((s, o) => s + o.minDispo, 0),
+    operators,
+  };
 }
 
 function getOperatorsForPhase(phase: string, famille?: string): string[] {
-  if (phase === "montage") {
-    if (famille === "coulissant" || famille === "glandage") return OPERATORS_BY_COMPETENCE["coulissant"] || [];
-    return OPERATORS_BY_COMPETENCE["frappes"] || [];
-  }
-  if (phase === "vitrage") return OPERATORS_BY_COMPETENCE["vitrage"] || [];
-  if (phase === "logistique") return OPERATORS_BY_COMPETENCE["logistique"] || [];
-  return OPERATORS_BY_COMPETENCE["coupe"] || [];
+  const competence = phase === "montage"
+    ? (famille === "coulissant" || famille === "glandage" ? "coulissant" : "frappes")
+    : PHASE_CONFIG.find(p => p.id === phase)?.competence || phase;
+  return OP_CAPACITIES.filter(op => op.competences.includes(competence)).map(op => op.nom);
 }
 
 // ── Composant principal ──────────────────────────────────────────────────────
@@ -77,6 +104,15 @@ export default function PlanningCharge({ commandes, onPatch }: {
   const [viewWeek, setViewWeek] = useState<string>(() => localStr(getMonday(new Date())));
   const weekOptions = useMemo(() => getWeekOptions(), []);
   const currentWeekId = weekId(viewWeek);
+
+  // Capacité par phase (calculée une fois)
+  const phaseCapacities = useMemo(() => {
+    const caps: Record<string, { totalMin: number; operators: Array<{ nom: string; minDispo: number }> }> = {};
+    for (const ph of PHASE_CONFIG) {
+      caps[ph.id] = getPhaseCapacity(ph.competence);
+    }
+    return caps;
+  }, []);
 
   // Commandes actives avec routage
   const cmdList = useMemo(() => {
@@ -90,7 +126,6 @@ export default function PlanningCharge({ commandes, onPatch }: {
         const totalMin = routage.reduce((s, e) => s + e.estimatedMin, 0);
         const cc = calcCheminCritique(cmd);
         const tm = (TYPES_MENUISERIE as Record<string, any>)[cmd.type];
-        // Temps par phase
         const parPhase: Record<string, { min: number; postIds: string[] }> = {};
         for (const e of routage) {
           if (!parPhase[e.phase]) parPhase[e.phase] = { min: 0, postIds: [] };
@@ -106,16 +141,17 @@ export default function PlanningCharge({ commandes, onPatch }: {
       });
   }, [commandes]);
 
-  // Commandes planifiées cette semaine (par phase)
+  // Charge planifiée cette semaine par phase
   const weekLoad = useMemo(() => {
-    const load: Record<string, { totalMin: number; count: number }> = {};
-    for (const ph of PHASE_CONFIG) load[ph.id] = { totalMin: 0, count: 0 };
+    const load: Record<string, { totalMin: number; count: number; cmds: string[] }> = {};
+    for (const ph of PHASE_CONFIG) load[ph.id] = { totalMin: 0, count: 0, cmds: [] };
     for (const c of cmdList) {
       for (const ph of PHASE_CONFIG) {
         const sw = (c.cmd as any)[ph.field];
         if (sw === viewWeek && c.parPhase[ph.id]) {
           load[ph.id].totalMin += c.parPhase[ph.id].min;
           load[ph.id].count++;
+          load[ph.id].cmds.push((c.cmd as any).client);
         }
       }
     }
@@ -126,21 +162,12 @@ export default function PlanningCharge({ commandes, onPatch }: {
     onPatch(cmdId, { [field]: value || null });
   }, [onPatch]);
 
-  // Navigation semaine
-  const prevWeek = () => {
-    const d = new Date(viewWeek + "T00:00:00");
-    d.setDate(d.getDate() - 7);
-    setViewWeek(localStr(d));
-  };
-  const nextWeek = () => {
-    const d = new Date(viewWeek + "T00:00:00");
-    d.setDate(d.getDate() + 7);
-    setViewWeek(localStr(d));
-  };
+  const prevWeek = () => { const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() - 7); setViewWeek(localStr(d)); };
+  const nextWeek = () => { const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() + 7); setViewWeek(localStr(d)); };
 
   return (
     <div>
-      {/* ── Header avec navigation ── */}
+      {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
         <button onClick={prevWeek} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, padding: "6px 12px", cursor: "pointer", fontSize: 14 }}>←</button>
         <button onClick={() => setViewWeek(localStr(getMonday(new Date())))} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, padding: "6px 10px", cursor: "pointer", fontSize: 11 }}>Auj.</button>
@@ -150,41 +177,50 @@ export default function PlanningCharge({ commandes, onPatch }: {
         </div>
       </div>
 
-      {/* ── Charge de la semaine vue ── */}
+      {/* ── Charge vs Capacité par phase ── */}
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${PHASE_CONFIG.length}, 1fr)`, gap: 8, marginBottom: 16 }}>
         {PHASE_CONFIG.map(ph => {
           const load = weekLoad[ph.id];
-          const capaH = 39 * 3; // approximation heures dispo
-          const pctRaw = capaH > 0 ? load.totalMin / (capaH * 60) * 100 : 0;
-          const pct = Math.round(pctRaw);
-          const barColor = pct > 90 ? C.red : pct > 60 ? C.orange : C.green;
+          const capa = phaseCapacities[ph.id];
+          const pct = capa.totalMin > 0 ? Math.round(load.totalMin / capa.totalMin * 100) : 0;
+          const barColor = pct > 100 ? C.red : pct > 80 ? C.orange : C.green;
+          const overloaded = pct > 100;
           return (
-            <div key={ph.id} style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px" }}>
+            <div key={ph.id} style={{ background: C.s1, border: `1px solid ${overloaded ? C.red : C.border}`, borderRadius: 6, padding: "8px 12px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                 <div style={{ width: 8, height: 8, borderRadius: 2, background: ph.color }} />
                 <span style={{ fontSize: 12, fontWeight: 700, color: ph.color }}>{ph.label}</span>
-                <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: barColor }}>{load.count} cmd</span>
+                <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: barColor }}>{pct}%</span>
               </div>
-              <div style={{ height: 5, background: C.s2, borderRadius: 3, overflow: "hidden", marginBottom: 3 }}>
+              <div style={{ height: 6, background: C.s2, borderRadius: 3, overflow: "hidden", marginBottom: 4 }}>
                 <div style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: barColor, borderRadius: 3 }} />
               </div>
-              <div style={{ fontSize: 10, color: C.sec }}>{hm(load.totalMin)} planifié {currentWeekId}</div>
+              <div style={{ fontSize: 10, color: C.sec }}>
+                <strong style={{ color: barColor }}>{hm(load.totalMin)}</strong> planifié / {hm(capa.totalMin)} dispo
+              </div>
+              {overloaded && (
+                <div style={{ fontSize: 10, color: C.red, fontWeight: 700, marginTop: 2 }}>
+                  ⚠ Surcharge de {hm(load.totalMin - capa.totalMin)}
+                </div>
+              )}
+              {/* Opérateurs dispo pour cette phase */}
+              <div style={{ fontSize: 9, color: C.muted, marginTop: 4 }}>
+                {capa.operators.map(o => `${o.nom} ${hm(o.minDispo)}`).join(" · ")}
+              </div>
             </div>
           );
         })}
       </div>
 
-      {/* ── Tableau des commandes avec sélecteurs de semaine ── */}
+      {/* ── Tableau commandes avec sélecteurs semaine ── */}
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
           <thead>
             <tr>
               <th style={{ padding: "8px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec, minWidth: 180 }}>COMMANDE</th>
-              <th style={{ padding: "8px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 60 }}>TYPE</th>
-              <th style={{ padding: "8px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 45 }}>QTÉ</th>
               <th style={{ padding: "8px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 55 }}>LIVR.</th>
               {PHASE_CONFIG.map(ph => (
-                <th key={ph.id} style={{ padding: "8px 4px", background: ph.color + "15", borderBottom: `2px solid ${ph.color}`, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, fontWeight: 700, color: ph.color, minWidth: 130 }}>
+                <th key={ph.id} style={{ padding: "8px 4px", background: ph.color + "15", borderBottom: `2px solid ${ph.color}`, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, fontWeight: 700, color: ph.color, minWidth: 150 }}>
                   {ph.label}
                 </th>
               ))}
@@ -196,18 +232,16 @@ export default function PlanningCharge({ commandes, onPatch }: {
               const cmdAny = cmd as any;
               return (
                 <tr key={String(cmd.id)} style={{ borderBottom: `1px solid ${C.border}` }}>
-                  {/* Commande */}
                   <td style={{ padding: "6px 8px", borderLeft: `3px solid ${borderColor}`, background: C.s1, border: `1px solid ${C.border}` }}>
                     <div style={{ fontWeight: 700, fontSize: 12 }}>{cmdAny.client}</div>
-                    <div style={{ fontSize: 10, color: C.sec }}>{cmdAny.ref_chantier}</div>
-                    {cc?.critique && <span style={{ fontSize: 9, color: C.red, fontWeight: 700 }}>CRITIQUE</span>}
-                    {cc?.enRetard && !cc?.critique && <span style={{ fontSize: 9, color: C.orange, fontWeight: 700 }}>RETARD</span>}
+                    <div style={{ fontSize: 10, color: C.sec }}>{cmdAny.ref_chantier} · {cmd.quantite}× {tm?.label || cmd.type}</div>
+                    {cc?.critique && <span style={{ fontSize: 9, color: C.red, fontWeight: 700 }}>CRITIQUE </span>}
+                    {cc?.enRetard && !cc?.critique && <span style={{ fontSize: 9, color: C.orange, fontWeight: 700 }}>RETARD </span>}
                   </td>
-                  <td style={{ textAlign: "center", border: `1px solid ${C.border}`, fontSize: 10 }}>{tm?.label || cmd.type}</td>
-                  <td style={{ textAlign: "center", border: `1px solid ${C.border}`, fontWeight: 700 }}>{cmd.quantite}</td>
-                  <td style={{ textAlign: "center", border: `1px solid ${C.border}`, fontSize: 9, color: borderColor }}>{cmdAny.date_livraison_souhaitee ? fmtDate(cmdAny.date_livraison_souhaitee) : "—"}</td>
+                  <td style={{ textAlign: "center", border: `1px solid ${C.border}`, fontSize: 9, color: borderColor }}>
+                    {cmdAny.date_livraison_souhaitee ? fmtDate(cmdAny.date_livraison_souhaitee) : "—"}
+                  </td>
 
-                  {/* Sélecteurs de semaine par phase */}
                   {PHASE_CONFIG.map(ph => {
                     const phData = parPhase[ph.id];
                     if (!phData || phData.min === 0) {
@@ -219,14 +253,13 @@ export default function PlanningCharge({ commandes, onPatch }: {
 
                     return (
                       <td key={ph.id} style={{ padding: "4px 6px", border: `1px solid ${C.border}`, background: isThisWeek ? ph.color + "10" : undefined, verticalAlign: "top" }}>
-                        {/* Sélecteur semaine */}
                         <select
                           value={currentVal}
                           onChange={e => handleWeekChange(String(cmd.id), ph.field, e.target.value)}
                           style={{
                             width: "100%", padding: "3px 4px", fontSize: 10,
                             background: currentVal ? (isThisWeek ? ph.color + "22" : C.s2) : C.bg,
-                            border: `1px solid ${currentVal ? (isThisWeek ? ph.color : C.border) : C.border}`,
+                            border: `1px solid ${currentVal ? (isThisWeek ? ph.color : C.border) : C.muted}`,
                             borderRadius: 3, color: currentVal ? C.text : C.muted, cursor: "pointer",
                           }}
                         >
@@ -235,13 +268,11 @@ export default function PlanningCharge({ commandes, onPatch }: {
                             <option key={w.value} value={w.value}>{w.label}</option>
                           ))}
                         </select>
-                        {/* Temps + postes */}
                         <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
                           <span className="mono" style={{ fontSize: 10, color: ph.color, fontWeight: 700 }}>{hm(phData.min)}</span>
                           <span style={{ fontSize: 8, color: C.muted }}>{phData.postIds.join(" ")}</span>
                         </div>
-                        {/* Opérateurs compétents */}
-                        <div style={{ fontSize: 9, color: C.sec, marginTop: 2 }}>
+                        <div style={{ fontSize: 9, color: C.sec, marginTop: 1 }}>
                           {operators.join(", ")}
                         </div>
                       </td>
@@ -255,9 +286,7 @@ export default function PlanningCharge({ commandes, onPatch }: {
       </div>
 
       {cmdList.length === 0 && (
-        <div style={{ textAlign: "center", padding: 40, color: C.sec }}>
-          Aucune commande active.
-        </div>
+        <div style={{ textAlign: "center", padding: 40, color: C.sec }}>Aucune commande active.</div>
       )}
     </div>
   );
