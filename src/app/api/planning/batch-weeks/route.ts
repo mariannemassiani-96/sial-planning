@@ -20,30 +20,17 @@ function weekToMonday(weekStr: string): string {
   return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, "0")}-${String(target.getDate()).padStart(2, "0")}`;
 }
 
-function addWeeks(mondayStr: string, n: number): string {
-  const d = new Date(mondayStr + "T00:00:00");
-  d.setDate(d.getDate() + n * 7);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-// Vendredi de la semaine
-function mondayToFriday(mondayStr: string): string {
-  const d = new Date(mondayStr + "T00:00:00");
-  d.setDate(d.getDate() + 4);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 interface BatchItem {
   client: string;
   ref_chantier: string;
-  type_commande?: string;
-  semaine_livraison: string; // "S14 2026"
+  semaine_fab: string; // "S15 2026"
 }
 
 // POST /api/planning/batch-weeks
 // Body: { items: BatchItem[] }
+// Positionne toutes les phases sur la semaine de fabrication donnée
 export async function POST(req: NextRequest) {
-  // Auth : session OU secret pour appels batch
   const session = await getServerSession(authOptions);
   const url = new URL(req.url);
   const secret = url.searchParams.get("secret");
@@ -57,15 +44,12 @@ export async function POST(req: NextRequest) {
   const results: Array<{ client: string; ref: string; status: string; id?: string }> = [];
 
   for (const item of items) {
-    const mondayLivraison = weekToMonday(item.semaine_livraison);
-    if (!mondayLivraison) {
+    const monday = weekToMonday(item.semaine_fab);
+    if (!monday) {
       results.push({ client: item.client, ref: item.ref_chantier, status: "semaine invalide" });
       continue;
     }
 
-    const fridayLivraison = mondayToFriday(mondayLivraison);
-
-    // Trouver la commande par client + ref_chantier (recherche flexible)
     const clientLower = item.client.trim().toLowerCase();
     const refLower = (item.ref_chantier || "").trim().toLowerCase();
 
@@ -74,7 +58,6 @@ export async function POST(req: NextRequest) {
       select: { id: true, client: true, ref_chantier: true },
     });
 
-    // Chercher la meilleure correspondance
     let match = allCommandes.find(c =>
       c.client.toLowerCase().includes(clientLower) &&
       c.ref_chantier?.toLowerCase().includes(refLower)
@@ -90,21 +73,14 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // Toutes les phases sur la semaine de livraison par défaut.
-    // C'est l'utilisateur qui ajuste ensuite selon les arrivées matière et les dispos.
-    const semCoupe      = mondayLivraison;
-    const semMontage    = mondayLivraison;
-    const semVitrage    = mondayLivraison;
-    const semLogistique = mondayLivraison;
-
+    // Toutes les phases sur la même semaine de fabrication
     await prisma.commande.update({
       where: { id: match.id },
       data: {
-        date_livraison_souhaitee: fridayLivraison,
-        semaine_coupe: semCoupe,
-        semaine_montage: semMontage,
-        semaine_vitrage: semVitrage,
-        semaine_logistique: semLogistique,
+        semaine_coupe: monday,
+        semaine_montage: monday,
+        semaine_vitrage: monday,
+        semaine_logistique: monday,
       },
     });
 
