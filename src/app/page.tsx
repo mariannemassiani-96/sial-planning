@@ -205,7 +205,7 @@ export default function HomePage() {
         ))}
       </div>
 
-      <div style={{ maxWidth: 1400, margin: "0 auto", padding: 20 }}>
+      <div style={{ padding: "20px 16px" }}>
         {loading ? (
           <div style={{ textAlign: "center", padding: 60, color: C.sec }}>
             <div style={{ fontSize: 24, marginBottom: 10 }}>⏳</div>
