@@ -60,9 +60,29 @@ function mapToDb(data: any) {
   };
 }
 
+// Auto-migration : ajouter les colonnes manquantes
+let migrationDone = false;
+async function ensureColumns() {
+  if (migrationDone) return;
+  try {
+    const cols = [
+      "semaine_coupe", "semaine_montage", "semaine_vitrage", "semaine_logistique",
+    ];
+    for (const col of cols) {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "${col}" TEXT`
+      ).catch(() => {});
+    }
+    migrationDone = true;
+  } catch {
+    // Silently continue
+  }
+}
+
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+  await ensureColumns();
   const commandes = await prisma.commande.findMany({ orderBy: { createdAt: "desc" } });
   return NextResponse.json(commandes);
 }
