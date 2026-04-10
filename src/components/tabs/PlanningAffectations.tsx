@@ -143,43 +143,63 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
   const autoAssign = useCallback(() => {
     const newAff: AffMap = {};
 
+    // Minimum de personnes par créneau selon la phase
+    const MIN_PERS: Record<string, number> = { coupe: 2, montage: 1, vitrage: 1, logistique: 1 };
+
     for (const grp of activePosts) {
+      const minPers = MIN_PERS[grp.phase] || 1;
+
       for (const pid of grp.posts) {
         const pw = postWork[pid];
         if (!pw || pw.totalMin === 0) continue;
 
-        // Combien de demi-journées × opérateurs faut-il ?
-        const slotsNeeded = Math.ceil(pw.totalMin / DEMI_MIN);
+        // Combien de demi-journées faut-il avec minPers opérateurs ?
+        const slotsNeeded = Math.ceil(pw.totalMin / (DEMI_MIN * minPers));
 
-        // Opérateurs compétents pour cette phase
+        // Opérateurs compétents
         const competentOps = OPS.filter(op => op.competences.includes(grp.competence));
         if (competentOps.length === 0) continue;
 
-        // Répartir sur les créneaux
+        // Affecter par journée complète (AM+PM ensemble) pour ne pas faire sauter les gens d'un poste à l'autre
         let slotsPlaced = 0;
         for (let j = 0; j < 5 && slotsPlaced < slotsNeeded; j++) {
-          for (const d of ["am", "pm"] as const) {
-            if (slotsPlaced >= slotsNeeded) break;
-            const key = ck(pid, j, d);
+          const demis = j === 4
+            ? ["am", "pm"].filter(d => !(d === "pm" && competentOps.every(op => op.vendrediOff || op.id === "jp")))
+            : ["am", "pm"];
 
-            // Choisir l'opérateur le moins chargé cette demi-journée
-            const opLoads: Array<{ op: typeof competentOps[0]; load: number }> = competentOps
-              .filter(op => !(j === 4 && op.vendrediOff) && !(j === 4 && d === "pm" && op.id === "jp"))
-              .map(op => {
-                // Compter combien de postes cet opérateur a déjà sur ce créneau
-                let load = 0;
-                for (const k of Object.keys(newAff)) {
-                  if (k.endsWith(`|${j}|${d}`) && (newAff[k] || []).includes(op.nom)) load++;
-                }
-                return { op, load };
-              })
-              .sort((a, b) => a.load - b.load);
+          // Trouver les opérateurs les moins chargés ce jour-là
+          const opLoads = competentOps
+            .filter(op => !(j === 4 && op.vendrediOff))
+            .map(op => {
+              let load = 0;
+              for (const k of Object.keys(newAff)) {
+                const parts = k.split("|");
+                if (parseInt(parts[1]) === j && (newAff[k] || []).includes(op.nom)) load++;
+              }
+              return { op, load };
+            })
+            .sort((a, b) => a.load - b.load);
 
-            if (opLoads.length > 0 && opLoads[0].load === 0) {
-              // Affecter l'opérateur le moins chargé
-              newAff[key] = [...(newAff[key] || []), opLoads[0].op.nom];
-              slotsPlaced++;
+          // Prendre les N opérateurs les moins chargés (N = minPers)
+          const toAssign = opLoads.filter(o => o.load === 0).slice(0, minPers);
+          if (toAssign.length < minPers) {
+            // Pas assez d'opérateurs libres ce jour, prendre ceux qui ont le moins de charge
+            const needed = minPers - toAssign.length;
+            const more = opLoads.filter(o => o.load > 0).slice(0, needed);
+            toAssign.push(...more);
+          }
+
+          if (toAssign.length > 0) {
+            for (const d of demis) {
+              const key = ck(pid, j, d);
+              const names = toAssign
+                .filter(o => !(j === 4 && d === "pm" && o.op.id === "jp"))
+                .map(o => o.op.nom);
+              if (names.length > 0) {
+                newAff[key] = names;
+              }
             }
+            slotsPlaced += demis.length;
           }
         }
       }
@@ -393,7 +413,8 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
               </tr>,
               ...grp.posts.map(pid => {
                 const pw = postWork[pid];
-                const persNeeded = Math.max(1, Math.ceil(pw.totalMin / DEMI_MIN / 10));
+                const minPers = grp.phase === "coupe" ? 2 : 1;
+                const persNeeded = Math.max(minPers, Math.ceil(pw.totalMin / DEMI_MIN / 10));
                 let affMin = 0;
                 for (let j = 0; j < 5; j++) for (const d of ["am", "pm"]) affMin += (aff[ck(pid, j, d)]?.length || 0) * DEMI_MIN;
                 const pct = pw.totalMin > 0 ? Math.min(100, Math.round(affMin / pw.totalMin * 100)) : 0;
