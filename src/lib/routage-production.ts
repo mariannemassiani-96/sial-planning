@@ -86,9 +86,7 @@ export function getRoutage(
     if (tVitrage > 0) {
       etapes.push({ postId: "V1", label: "Vitrage hors standard", estimatedMin: tVitrage, phase: "vitrage", order: ord++ });
     }
-    etapes.push({ postId: "V3", label: "Emballage", estimatedMin: T.emballage * q, phase: "vitrage", order: ord++ });
-    etapes.push({ postId: "L6", label: "Réalisation palette", estimatedMin: T.palette * q, phase: "logistique", order: ord++ });
-    etapes.push({ postId: "L7", label: "Chargement palette", estimatedMin: T.chargement * q, phase: "logistique", order: ord++ });
+    // V3/L6/L7 = tâches fixes ou liées aux livraisons
     return etapes;
   }
 
@@ -101,8 +99,7 @@ export function getRoutage(
   let ord = 0;
 
   // ── PHASE COUPE ───────────────────────────────────────────────────────────
-  // C2 : Préparation barres (minimum 3 min)
-  etapes.push({ postId: "C2", label: "Préparation barres", estimatedMin: Math.max(3, Math.round(lmt * T.coupe_profil * q * 0.3)), phase: "coupe", order: ord++ });
+  // C1/C2 = tâches fixes hebdomadaires (pas par chantier)
 
   // C3 : Coupe LMT
   etapes.push({ postId: "C3", label: "Coupe LMT", estimatedMin: Math.round(lmt * T.coupe_profil * q), phase: "coupe", order: ord++ });
@@ -121,9 +118,6 @@ export function getRoutage(
   if (isPVC && isFrappe) {
     etapes.push({ postId: "C6", label: "Soudure PVC", estimatedMin: Math.round(T.soudure_pvc * nbCadres * q), phase: "coupe", order: ord++ });
   }
-
-  // ── PHASE LOGISTIQUE AMONT ────────────────────────────────────────────────
-  etapes.push({ postId: "L4", label: "Prépa accessoires fabrication", estimatedMin: Math.round(T.prep_accessoires_fab * q), phase: "logistique", order: ord++ });
 
   // ── PHASE MONTAGE ─────────────────────────────────────────────────────────
   if (isFrappe) {
@@ -158,12 +152,7 @@ export function getRoutage(
     etapes.push({ postId: "V2", label: "Vitrage coulissant/galandage", estimatedMin: Math.round(T.vitrage_coul_gland * ouvrants * q), phase: "vitrage", order: ord++ });
   }
 
-  // V3 : Emballage (toujours)
-  etapes.push({ postId: "V3", label: "Emballage", estimatedMin: Math.round(T.emballage * q), phase: "vitrage", order: ord++ });
-
-  // ── PHASE LOGISTIQUE AVAL ─────────────────────────────────────────────────
-  etapes.push({ postId: "L6", label: "Réalisation palette", estimatedMin: Math.round(T.palette * q), phase: "logistique", order: ord++ });
-  etapes.push({ postId: "L7", label: "Chargement palette", estimatedMin: Math.round(T.chargement * q), phase: "logistique", order: ord++ });
+  // L4/V3/L6/L7 = tâches fixes hebdomadaires ou liées aux livraisons (pas par chantier)
 
   return etapes;
 }
