@@ -771,16 +771,49 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       {/* ── Palettes opérateurs + chantiers + boutons ── */}
       <div style={{ display: "flex", gap: 12, marginBottom: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
-          {/* Palette opérateurs */}
+          {/* Palette opérateurs avec dispo restante */}
           <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px" }}>
             <div style={{ fontSize: 10, color: C.sec, marginBottom: 4, fontWeight: 700 }}>OPÉRATEURS — glisse vers un poste</div>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {ops.map(op => (
-                <div key={op.id} draggable onDragStart={(e) => { setDragOp(op.nom); e.dataTransfer.effectAllowed = "copy"; }}
-                  style={{ padding: "3px 8px", borderRadius: 4, cursor: "grab", userSelect: "none", background: OP_COLORS[op.key] || C.s2, color: "#000", fontSize: 10, fontWeight: 700 }}>
-                  {op.nom}
-                </div>
-              ))}
+              {ops.map(op => {
+                const eq = EQUIPE.find(e => e.nom === op.nom);
+                const baseMin = (eq?.h || 39) * 60;
+                // Soustraire les absences RH
+                const opRH = rhPlan[eq?.id || ""] || {};
+                let absMin = 0;
+                for (let j = 0; j < 5; j++) {
+                  const d = new Date(viewWeek + "T00:00:00");
+                  d.setDate(d.getDate() + j);
+                  const dayDispo = opRH[localStr(d)];
+                  if (dayDispo !== undefined && dayDispo === 0) {
+                    absMin += j === 4 ? (eq?.h === 39 ? 420 : eq?.h === 36 ? 240 : eq?.h === 35 ? 420 : 450) : (eq?.h === 39 ? 480 : eq?.h === 36 ? 480 : eq?.h === 35 ? 420 : 450);
+                  }
+                }
+                const dispoMin = Math.max(0, baseMin - absMin);
+                // Heures déjà affectées
+                let affMin = 0;
+                for (const [, cell] of Object.entries(aff)) {
+                  if (cell?.ops?.includes(op.nom)) affMin += DEMI_MIN;
+                }
+                const restant = Math.max(0, dispoMin - affMin);
+                const full = restant <= 0;
+                return (
+                  <div key={op.id}
+                    draggable={!full}
+                    onDragStart={!full ? (e) => { setDragOp(op.nom); e.dataTransfer.effectAllowed = "copy"; } : undefined}
+                    style={{
+                      padding: "3px 8px", borderRadius: 4, userSelect: "none",
+                      cursor: full ? "default" : "grab",
+                      background: full ? C.s2 : OP_COLORS[op.key] || C.s2,
+                      color: full ? C.muted : "#000",
+                      fontSize: 10, fontWeight: 700,
+                      opacity: full ? 0.4 : 1,
+                    }}>
+                    {op.nom} <span style={{ fontSize: 8, fontWeight: 400 }}>{hm(restant)}</span>
+                    {full && <span style={{ fontSize: 8 }}> ✓</span>}
+                  </div>
+                );
+              })}
             </div>
           </div>
           {/* Palette chantiers par poste — disparaît quand placé */}
