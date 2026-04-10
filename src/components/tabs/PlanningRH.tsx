@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { C, JOURS_FERIES, isWorkday, EQUIPE, POSTES_COMPETENCES } from "@/lib/sial-data";
+import { C, JOURS_FERIES, isWorkday, EQUIPE } from "@/lib/sial-data";
 import { H, Card } from "@/components/ui";
 
 // ── Couleurs par opérateur ────────────────────────────────────────────────────
@@ -18,15 +18,40 @@ const POSTES_LABELS: Record<string, string> = {
 };
 
 // Build EQUIPE_SIAL from central EQUIPE config
-const EQUIPE_SIAL = EQUIPE.map(op => ({
-  id: op.id,
-  nom: op.nom,
-  poste: POSTES_LABELS[op.poste] || op.poste,
-  c: OP_COLORS[op.id] || C.sec,
-  competences: op.competences,
-}));
+const EQUIPE_SIAL = EQUIPE.map(op => {
+  // Calculer les minutes par jour normal et vendredi
+  // h = heures/semaine, vendrediOff = absent vendredi
+  const jours = op.vendrediOff ? 4 : 5;
+  const totalMin = op.h * 60;
+  // Pour ceux à 39h : 4×8h + 7h = 39h → L-J=480, V=420
+  // Pour ceux à 35h : 5×7h → tous les jours=420
+  // Pour ceux à 36h (JP) : 4×8h + 4h → L-J=480, V=240
+  // Pour ceux à 30h (Alain) : 4×7.5h → L-J=450, V=0
+  let minLJ: number, minV: number;
+  if (op.vendrediOff) {
+    minLJ = Math.round(totalMin / jours);
+    minV = 0;
+  } else if (op.h === 39) {
+    minLJ = 480; minV = 420; // 8h L-J, 7h V
+  } else if (op.h === 36) {
+    minLJ = 480; minV = 240; // 8h L-J, 4h V (vendredi matin)
+  } else {
+    // 35h → 7h/jour uniformes
+    minLJ = Math.round(totalMin / 5);
+    minV = Math.round(totalMin / 5);
+  }
+  return {
+    id: op.id,
+    nom: op.nom,
+    poste: POSTES_LABELS[op.poste] || op.poste,
+    c: OP_COLORS[op.id] || C.sec,
+    competences: op.competences,
+    minLJ,
+    minV,
+  };
+});
 
-const STD_MIN = 480; // 8h par jour ouvré
+const STD_MIN = 480; // référence 8h (pour la colorimétrie)
 
 // ── Plan type: overrides uniquement ──────────────────────────────────────────
 // { "jean-pierre": { "2026-03-30": 240 }, ... }
@@ -65,7 +90,12 @@ function semaineId(mondayStr: string): string {
 function getDispo(plan: PlanRH, memberId: string, day: string): number {
   if (!isWorkday(day)) return 0;
   const override = plan[memberId]?.[day];
-  return override !== undefined ? override : STD_MIN;
+  if (override !== undefined) return override;
+  // Minutes par défaut selon le jour (vendredi = 4 = index du jour)
+  const membre = EQUIPE_SIAL.find(m => m.id === memberId);
+  if (!membre) return STD_MIN;
+  const dow = new Date(day + "T00:00:00").getDay(); // 0=dim, 5=ven
+  return dow === 5 ? membre.minV : membre.minLJ;
 }
 
 // ── Cell color based on minutes ───────────────────────────────────────────────
@@ -565,117 +595,6 @@ export default function PlanningRH({ commandes: _c }: { commandes: any[] }) {
           </span>
         </div>
       </Card>
-
-      {/* Compétences */}
-      <CompetencesPanel />
-    </div>
-  );
-}
-
-// ── Compétences Panel ─────────────────────────────────────────────────────────
-function CompetencesPanel() {
-  const [competences, setCompetences] = useState<Record<string, string[]>>(() =>
-    Object.fromEntries(EQUIPE_SIAL.map(op => [op.id, op.competences]))
-  );
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(true);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const toggle = (opId: string, compId: string) => {
-    setCompetences(prev => {
-      const cur = prev[opId] || [];
-      const next = cur.includes(compId) ? cur.filter(c => c !== compId) : [...cur, compId];
-      const updated = { ...prev, [opId]: next };
-      setSaved(false);
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(async () => {
-        setSaving(true);
-        try {
-          await fetch("/api/competences", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(updated),
-          });
-          setSaved(true);
-        } finally {
-          setSaving(false);
-        }
-      }, 600);
-      return updated;
-    });
-  };
-
-  useEffect(() => {
-    fetch("/api/competences")
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        // Ne remplace que si la DB contient des données réelles (pas un objet vide)
-        if (d && Object.keys(d).length > 0) setCompetences(d);
-      })
-      .catch(() => {});
-  }, []);
-
-  return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-        <H c={C.teal}>Compétences par opérateur</H>
-        <span style={{ fontSize: 10, color: saving ? C.orange : saved ? C.green : C.sec, marginLeft: "auto" }}>
-          {saving ? "Sauvegarde…" : saved ? "✓ Sauvegardé" : ""}
-        </span>
-      </div>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
-          <colgroup>
-            <col style={{ width: 150 }} />
-            {POSTES_COMPETENCES.map(p => <col key={p.id} />)}
-          </colgroup>
-          <thead>
-            <tr>
-              <th style={{ padding: "8px 10px", background: C.s2, border: `1px solid ${C.border}`, fontSize: 10, color: C.sec, textAlign: "left" }}>
-                OPÉRATEUR
-              </th>
-              {POSTES_COMPETENCES.map(p => (
-                <th key={p.id} style={{ padding: "8px 6px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10 }}>
-                  <div style={{ fontWeight: 700, color: p.c }}>{p.label}</div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {EQUIPE_SIAL.map(op => (
-              <tr key={op.id}>
-                <td style={{ padding: "8px 10px", background: C.s1, border: `1px solid ${C.border}` }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: op.c }}>{op.nom}</div>
-                  <div style={{ fontSize: 9, color: C.sec }}>{op.poste}</div>
-                </td>
-                {POSTES_COMPETENCES.map(p => {
-                  const has = (competences[op.id] || []).includes(p.id);
-                  return (
-                    <td key={p.id} style={{
-                      padding: "6px 4px",
-                      background: has ? p.c + "18" : C.bg,
-                      border: `1px solid ${has ? p.c + "44" : C.border}`,
-                      textAlign: "center",
-                      cursor: "pointer",
-                      transition: "background 0.1s",
-                    }}
-                      onClick={() => toggle(op.id, p.id)}
-                    >
-                      {has
-                        ? <span style={{ fontSize: 14, color: p.c }}>✓</span>
-                        : <span style={{ fontSize: 11, color: C.muted }}>—</span>
-                      }
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div style={{ fontSize: 10, color: C.muted, marginTop: 6 }}>
-        Cliquer une case pour ajouter / retirer une compétence
-      </div>
     </div>
   );
 }
