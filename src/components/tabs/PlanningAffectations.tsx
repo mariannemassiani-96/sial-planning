@@ -712,26 +712,35 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     for (const [key, cell] of Object.entries(aff)) {
       if (!cell?.ops?.length) continue;
       const pid = key.split("|")[0];
+      if (pid === "AUT") continue; // poste Autre = pas de contrôle
+      const grp = POST_GROUPS.find(g => g.ids.includes(pid));
       for (const opNom of cell.ops) {
         const op = ops.find(o => o.nom === opNom);
         if (!op) continue;
-        const level = op.skillLevels[pid] || 0;
-        const hasCompetence = op.competentPosts.includes(pid);
-        if (!hasCompetence && level === 0) {
-          const p = key.split("|");
-          issues.push(`🔴 ${opNom} sur ${pid} ${JOURS_N[parseInt(p[1])]} ${p[2] === "am" ? "AM" : "PM"} : aucune compétence cochée sur ce poste`);
-        }
+        // Vérifier : 1) poste coché en base 2) fallback compétence EQUIPE par phase
+        const hasPostSkill = op.competentPosts.includes(pid);
+        if (hasPostSkill) continue;
+        const eq = EQUIPE.find(e => e.nom === opNom);
+        const hasPhaseSkill = grp && eq?.competences.includes(grp.competence);
+        if (hasPhaseSkill) continue;
+        // Aucune compétence
+        const p = key.split("|");
+        issues.push(`🔴 ${opNom} sur ${pid} ${JOURS_N[parseInt(p[1])]} ${p[2] === "am" ? "AM" : "PM"} : aucune compétence sur ce poste`);
       }
     }
 
-    // 4. Débutants seuls sans expert (niveau ① seul sans ② ou ③)
+    // 4. Débutants seuls sans expert (seulement si des skills sont cochées)
     for (const [key, cell] of Object.entries(aff)) {
       if (!cell?.ops?.length) continue;
       const pid = key.split("|")[0];
+      if (pid === "AUT") continue;
+      // Vérifier uniquement si au moins un opérateur a un skill level coché pour ce poste
       const opLevels = cell.ops.map(opNom => {
         const op = ops.find(o => o.nom === opNom);
         return { nom: opNom, level: op?.skillLevels[pid] || 0 };
       });
+      const anyLevelSet = opLevels.some(o => o.level > 0);
+      if (!anyLevelSet) continue; // pas de niveaux cochés → on ne peut pas vérifier
       const hasExpert = opLevels.some(o => o.level >= 3);
       const hasAutonome = opLevels.some(o => o.level >= 2);
       const debutants = opLevels.filter(o => o.level === 1);
