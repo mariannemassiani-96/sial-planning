@@ -922,9 +922,9 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 </td>
               </tr>,
               ...grp.posts.map(pid => {
-                const pw = postWork[pid];
+                const pw = postWork[pid] || { totalMin: 0, cmds: [] };
                 const minPers = grp.phase === "coupe" ? 2 : 1;
-                const persNeeded = Math.max(minPers, Math.ceil(pw.totalMin / DEMI_MIN / 10));
+                const persNeeded = pw.totalMin > 0 ? Math.max(minPers, Math.ceil(pw.totalMin / DEMI_MIN / 10)) : 0;
                 const maxWeek = POST_MAX_WEEK[pid];
                 const overCapacity = maxWeek ? pw.totalMin > maxWeek : false;
                 let affMin = 0;
