@@ -1640,44 +1640,70 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 <button onClick={() => setDetailCmd(null)} style={{ background: "none", border: "none", color: C.sec, cursor: "pointer", fontSize: 18 }}>✕</button>
               </div>
 
-              {/* Nombre de barres LMT (C3) */}
-              <div style={{ display: "flex", gap: 12, marginBottom: 8, padding: "8px 10px", background: C.bg, borderRadius: 4, border: `1px solid ${C.border}`, alignItems: "center" }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#42A5F5" }}>C3 — Nombre de barres LMT</div>
-                  <div style={{ fontSize: 9, color: C.muted }}>80 barres/8h (2 pers.) · 120 barres/8h (3 pers.) · 6 min/barre</div>
-                </div>
-                <input
-                  type="number" min={0}
-                  defaultValue={cmdOverrides["_nb_barres_lmt"] || ""}
-                  placeholder="Nb barres"
-                  onBlur={(ev) => {
-                    const v = parseInt(ev.target.value);
-                    const nbBarres = isNaN(v) ? 0 : v;
-                    // Sauvegarder le nb barres ET recalculer C3
-                    const c3Min = nbBarres > 0 ? Math.round(nbBarres * 6) : 0;
-                    fetch(`/api/planning/affectations?semaine=cmd_temps_${detailCmd.cmdId}`)
-                      .then(r => r.ok ? r.json() : {})
-                      .then(existing => {
-                        const ov: Record<string, number> = (typeof existing === "object" && existing && !Array.isArray(existing)) ? { ...existing } : {};
-                        ov["_nb_barres_lmt"] = nbBarres;
-                        if (c3Min > 0) ov["C3"] = c3Min;
-                        return fetch("/api/planning/affectations", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ semaine: `cmd_temps_${detailCmd.cmdId}`, affectations: ov }) });
-                      }).catch(() => {});
-                    if (nbBarres > 0) {
-                      setAllCmdOverrides(prev => ({ ...prev, [detailCmd.cmdId]: { ...(prev[detailCmd.cmdId] || {}), _nb_barres_lmt: nbBarres, C3: Math.round(nbBarres * 6) } }));
-                    }
-                    ev.target.style.color = C.orange;
-                  }}
-                  onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }}
-                  style={{ width: 80, padding: "5px 8px", fontSize: 13, fontWeight: 700, background: C.s1, border: `1px solid ${C.border}`, borderRadius: 4, color: "#42A5F5", textAlign: "center", outline: "none" }}
-                />
-                {cmdOverrides["_nb_barres_lmt"] > 0 && (
-                  <div style={{ textAlign: "center" }}>
-                    <div className="mono" style={{ fontSize: 12, fontWeight: 700, color: "#42A5F5" }}>{hm(Math.round(cmdOverrides["_nb_barres_lmt"] * 6))}</div>
-                    <div style={{ fontSize: 8, color: C.muted }}>{cmdOverrides["_nb_barres_lmt"]} barres</div>
+              {/* Nombre de barres LMT (C3) — temps dépend du nb de personnes */}
+              {(() => {
+                const nbBarres = cmdOverrides["_nb_barres_lmt"] || 0;
+                // Barres/8h selon le nombre de personnes
+                const RATES = [
+                  { pers: 1, barres8h: 50, minPerBar: 480 / 50 },   // 9.6 min/barre
+                  { pers: 2, barres8h: 80, minPerBar: 480 / 80 },   // 6 min/barre
+                  { pers: 3, barres8h: 120, minPerBar: 480 / 120 },  // 4 min/barre
+                ];
+                // Compter combien d'opérateurs sont sur C3 dans la grille (prendre le max d'une demi-journée)
+                let maxOpsOnC3 = 0;
+                for (const [key, cell] of Object.entries(affWithAuto)) {
+                  if (key.startsWith("C3|") && cell?.ops?.length) {
+                    maxOpsOnC3 = Math.max(maxOpsOnC3, cell.ops.length);
+                  }
+                }
+                const currentPers = maxOpsOnC3 || 2; // par défaut 2 personnes
+                const currentRate = RATES.find(r => r.pers === currentPers) || RATES[1];
+
+                const saveBarres = (v: number) => {
+                  const c3Min = v > 0 ? Math.round(v * currentRate.minPerBar) : 0;
+                  fetch(`/api/planning/affectations?semaine=cmd_temps_${detailCmd.cmdId}`)
+                    .then(r => r.ok ? r.json() : {})
+                    .then(existing => {
+                      const ov: Record<string, number> = (typeof existing === "object" && existing && !Array.isArray(existing)) ? { ...existing } : {};
+                      ov["_nb_barres_lmt"] = v;
+                      if (c3Min > 0) ov["C3"] = c3Min;
+                      return fetch("/api/planning/affectations", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ semaine: `cmd_temps_${detailCmd.cmdId}`, affectations: ov }) });
+                    }).catch(() => {});
+                  setAllCmdOverrides(prev => ({ ...prev, [detailCmd.cmdId]: { ...(prev[detailCmd.cmdId] || {}), _nb_barres_lmt: v, C3: c3Min } }));
+                };
+
+                return (
+                  <div style={{ marginBottom: 8, padding: "8px 10px", background: C.bg, borderRadius: 4, border: `1px solid #42A5F5` + "44" }}>
+                    <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#42A5F5" }}>C3 — Barres LMT</div>
+                      </div>
+                      <input type="number" min={0} defaultValue={nbBarres || ""} placeholder="Nb barres"
+                        onBlur={ev => { const v = parseInt(ev.target.value); if (!isNaN(v)) saveBarres(v); }}
+                        onKeyDown={ev => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }}
+                        style={{ width: 70, padding: "4px 6px", fontSize: 13, fontWeight: 700, background: C.s1, border: `1px solid ${C.border}`, borderRadius: 4, color: "#42A5F5", textAlign: "center", outline: "none" }} />
+                    </div>
+                    {nbBarres > 0 && (
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {RATES.map(r => {
+                          const mins = Math.round(nbBarres * r.minPerBar);
+                          const isCurrent = r.pers === currentPers;
+                          return (
+                            <div key={r.pers} style={{ flex: 1, padding: "4px 8px", borderRadius: 4, textAlign: "center",
+                              background: isCurrent ? "#42A5F5" + "22" : C.s1,
+                              border: `1px solid ${isCurrent ? "#42A5F5" : C.border}`,
+                            }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: isCurrent ? "#42A5F5" : C.sec }}>{r.pers} pers.</div>
+                              <div style={{ fontSize: 9, color: C.muted }}>{r.barres8h} barres/8h</div>
+                              <div className="mono" style={{ fontSize: 12, fontWeight: 800, color: isCurrent ? "#42A5F5" : C.sec }}>{hm(mins)}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })()}
 
               <div style={{ fontSize: 11, color: C.orange, fontWeight: 700, marginBottom: 4 }}>
                 Total : {hm(totalMin)} · {allEtapes.length} étapes
