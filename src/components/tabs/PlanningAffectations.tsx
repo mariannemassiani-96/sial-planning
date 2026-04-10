@@ -73,7 +73,12 @@ const POST_MAX_WEEK: Record<string, number> = {
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type AffMap = Record<string, string[]>; // "postId|jourIdx|demi" → opérateurs
+// Chaque cellule poste|jour|demi contient : opérateurs + chantiers
+interface CellData {
+  ops: string[];     // noms opérateurs
+  cmds: string[];    // "client · chantier"
+}
+type AffMap = Record<string, CellData>;
 
 // ── Composant ────────────────────────────────────────────────────────────────
 
@@ -195,9 +200,9 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
   const onDrop = useCallback((key: string) => {
     if (!dragOp) return;
     const newAff = { ...aff };
-    const cur = newAff[key] || [];
-    if (!cur.includes(dragOp)) {
-      newAff[key] = [...cur, dragOp];
+    const cell = newAff[key] || { ops: [], cmds: [] };
+    if (!cell.ops.includes(dragOp)) {
+      newAff[key] = { ...cell, ops: [...cell.ops, dragOp] };
       saveAff(newAff);
     }
     setDragOp(null);
@@ -206,8 +211,20 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
 
   const removeOp = useCallback((key: string, opNom: string) => {
     const newAff = { ...aff };
-    newAff[key] = (newAff[key] || []).filter(o => o !== opNom);
-    if (newAff[key].length === 0) delete newAff[key];
+    const cell = newAff[key] || { ops: [], cmds: [] };
+    const newOps = cell.ops.filter(o => o !== opNom);
+    if (newOps.length === 0 && cell.cmds.length === 0) delete newAff[key];
+    else newAff[key] = { ...cell, ops: newOps };
+    saveAff(newAff);
+  }, [aff, saveAff]);
+
+  const toggleCmd = useCallback((key: string, cmdLabel: string) => {
+    const newAff = { ...aff };
+    const cell = newAff[key] || { ops: [], cmds: [] };
+    const hasCm = cell.cmds.includes(cmdLabel);
+    const newCmds = hasCm ? cell.cmds.filter(c => c !== cmdLabel) : [...cell.cmds, cmdLabel];
+    if (newCmds.length === 0 && cell.ops.length === 0) delete newAff[key];
+    else newAff[key] = { ...cell, cmds: newCmds };
     saveAff(newAff);
   }, [aff, saveAff]);
 
@@ -246,7 +263,7 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
               let load = 0;
               for (const k of Object.keys(newAff)) {
                 const parts = k.split("|");
-                if (parseInt(parts[1]) === j && (newAff[k] || []).includes(op.nom)) load++;
+                if (parseInt(parts[1]) === j && (newAff[k]?.ops || []).includes(op.nom)) load++;
               }
               return { op, load };
             })
@@ -268,7 +285,9 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
                 .filter(o => !(j === 4 && d === "pm" && o.op.id === "jp"))
                 .map(o => o.op.nom);
               if (names.length > 0) {
-                newAff[key] = names;
+                // Aussi affecter les chantiers de ce poste
+                const cmdLabels = pw.cmds.map(c => c.chantier ? `${c.client} · ${c.chantier}` : c.client);
+                newAff[key] = { ops: names, cmds: cmdLabels };
               }
             }
             slotsPlaced += demis.length;
@@ -289,22 +308,21 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
     // Construire le planning par opérateur
     const opPlannings: Record<string, Array<{ jour: string; demi: string; postId: string; postLabel: string; cmds: string[] }>> = {};
 
-    for (const [key, ops] of Object.entries(aff)) {
-      if (!ops || ops.length === 0) continue;
+    for (const [key, cell] of Object.entries(aff)) {
+      if (!cell || (!cell.ops?.length && !cell.cmds?.length)) continue;
       const [pid, jourStr, demi] = key.split("|");
       const jourIdx = parseInt(jourStr);
       const grp = POST_GROUPS.find(g => g.ids.includes(pid));
-      const pw = postWork[pid];
-      const cmdLabels = pw?.cmds.map(c => c.chantier ? `${c.client} · ${c.chantier}` : c.client) || [];
+      const cellCmds = cell.cmds?.length > 0 ? cell.cmds : (postWork[pid]?.cmds.map(c => c.chantier ? `${c.client} · ${c.chantier}` : c.client) || []);
 
-      for (const opNom of ops) {
+      for (const opNom of (cell.ops || [])) {
         if (!opPlannings[opNom]) opPlannings[opNom] = [];
         opPlannings[opNom].push({
           jour: JOURS[jourIdx],
           demi: demi === "am" ? "Matin" : "Après-midi",
           postId: pid,
           postLabel: `${POST_LABELS[pid] || pid} (${grp?.label || ""})`,
-          cmds: cmdLabels,
+          cmds: cellCmds,
         });
       }
     }
@@ -490,7 +508,7 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
                 const maxWeek = POST_MAX_WEEK[pid];
                 const overCapacity = maxWeek ? pw.totalMin > maxWeek : false;
                 let affMin = 0;
-                for (let j = 0; j < 5; j++) for (const d of ["am", "pm"]) affMin += (aff[ck(pid, j, d)]?.length || 0) * DEMI_MIN;
+                for (let j = 0; j < 5; j++) for (const d of ["am", "pm"]) affMin += (aff[ck(pid, j, d)]?.ops?.length || 0) * DEMI_MIN;
                 const pct = pw.totalMin > 0 ? Math.min(100, Math.round(affMin / pw.totalMin * 100)) : 0;
                 const barCol = pct >= 100 ? C.green : pct >= 50 ? C.orange : C.red;
 
@@ -517,8 +535,10 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
                     </td>
                     {JOURS.map((j, jIdx) => ["am", "pm"].map(demi => {
                       const key = ck(pid, jIdx, demi);
-                      const assigned = aff[key] || [];
+                      const cell = aff[key] || { ops: [], cmds: [] };
+                      const hasContent = cell.ops.length > 0 || cell.cmds.length > 0;
                       const isTarget = dropTarget === key;
+                      const allCmdLabels = pw.cmds.map(c => c.chantier ? `${c.client} · ${c.chantier}` : c.client);
                       return (
                         <td key={`${j}_${demi}`}
                           onDragOver={(e) => { e.preventDefault(); setDropTarget(key); }}
@@ -527,30 +547,60 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
                           style={{
                             padding: "3px 3px",
                             border: `1px solid ${isTarget ? C.orange : jIdx === todayIdx ? C.orange + "44" : C.border}`,
-                            background: isTarget ? grp.color + "18" : assigned.length > 0 ? grp.color + "08" : C.bg,
+                            background: isTarget ? grp.color + "18" : hasContent ? grp.color + "08" : C.bg,
                             verticalAlign: "top",
                           }}
                         >
-                          {assigned.length > 0 ? (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                              {assigned.map(opNom => {
+                          {/* Chantiers affectés à ce créneau */}
+                          {cell.cmds.length > 0 && (
+                            <div style={{ marginBottom: 2 }}>
+                              {cell.cmds.map(cmdLabel => (
+                                <div key={cmdLabel} style={{
+                                  fontSize: 8, padding: "2px 4px", borderRadius: 2, marginBottom: 1,
+                                  background: grp.color + "20", borderLeft: `2px solid ${grp.color}`,
+                                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                                }}>
+                                  <span style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cmdLabel}</span>
+                                  <span onClick={() => toggleCmd(key, cmdLabel)} style={{ cursor: "pointer", fontSize: 7, color: C.muted, marginLeft: 2 }}>✕</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {/* Opérateurs affectés */}
+                          {cell.ops.length > 0 && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                              {cell.ops.map(opNom => {
                                 const op = ops.find(o => o.nom === opNom);
                                 return (
                                   <div key={opNom} style={{
                                     display: "flex", alignItems: "center", justifyContent: "space-between",
-                                    padding: "2px 4px", borderRadius: 3,
+                                    padding: "1px 4px", borderRadius: 3,
                                     background: OP_COLORS[op?.key || ""] || C.s2,
-                                    color: "#000", fontSize: 9, fontWeight: 700,
+                                    color: "#000", fontSize: 8, fontWeight: 700,
                                   }}>
                                     {opNom}
-                                    <span onClick={() => removeOp(key, opNom)} style={{ cursor: "pointer", marginLeft: 3, fontSize: 8, opacity: 0.6 }}>✕</span>
+                                    <span onClick={() => removeOp(key, opNom)} style={{ cursor: "pointer", marginLeft: 2, fontSize: 7, opacity: 0.6 }}>✕</span>
                                   </div>
                                 );
                               })}
                             </div>
-                          ) : (
-                            <div style={{ color: C.muted, textAlign: "center", padding: "6px 0", fontSize: 10 }}>
-                              {isTarget ? "▼" : ""}
+                          )}
+                          {/* Boutons pour ajouter des chantiers (si pas tous affectés) */}
+                          {allCmdLabels.filter(c => !cell.cmds.includes(c)).length > 0 && cell.cmds.length === 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 1, marginTop: cell.ops.length > 0 ? 2 : 0 }}>
+                              {allCmdLabels.filter(c => !cell.cmds.includes(c)).map(cmdLabel => (
+                                <button key={cmdLabel} onClick={() => toggleCmd(key, cmdLabel)}
+                                  style={{ fontSize: 7, padding: "1px 3px", borderRadius: 2, cursor: "pointer", border: `1px solid ${C.border}`, background: C.s2, color: C.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 65 }}
+                                  title={cmdLabel}
+                                >
+                                  +{cmdLabel.split(" · ")[0]}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {!hasContent && (
+                            <div style={{ color: C.muted, textAlign: "center", padding: "4px 0", fontSize: 9 }}>
+                              {isTarget ? "▼" : "+"}
                             </div>
                           )}
                         </td>
