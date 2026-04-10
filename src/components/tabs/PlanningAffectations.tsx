@@ -771,21 +771,32 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             <div style={{ fontSize: 10, color: C.sec, marginBottom: 4, fontWeight: 700 }}>CHANTIERS À PLACER — glisse vers une demi-journée</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {(() => {
-                // Vérifier quels chantiers sont déjà placés pour chaque poste
-                const placedByPost: Record<string, Set<string>> = {};
+                // Calculer heures affectées par chantier par poste
+                // Un chantier disparaît quand : heures affectées (nb créneaux × nb opérateurs × DEMI_MIN) >= heures nécessaires
+                const affectedMinByPostCmd: Record<string, number> = {}; // "pid|chantier" → minutes
                 for (const [key, cell] of Object.entries(aff)) {
-                  if (!cell?.cmds?.length) continue;
+                  if (!cell?.cmds?.length || !cell?.ops?.length) continue;
                   const pid = key.split("|")[0];
-                  if (!placedByPost[pid]) placedByPost[pid] = new Set();
-                  cell.cmds.forEach(c => placedByPost[pid].add(c));
+                  const minPerSlot = cell.ops.length * DEMI_MIN;
+                  for (const ch of cell.cmds) {
+                    const k = `${pid}|${ch}`;
+                    affectedMinByPostCmd[k] = (affectedMinByPostCmd[k] || 0) + minPerSlot;
+                  }
                 }
                 return activePosts.map(grp => {
                   const postChantiers: Record<string, string[]> = {};
                   for (const pid of grp.visiblePosts || grp.posts) {
                     const pw = postWork[pid];
                     if (!pw) continue;
-                    const placed = placedByPost[pid] || new Set();
-                    const remaining = pw.cmds.map(c => c.chantier || c.client).filter(ch => !placed.has(ch) && !hiddenTasks.has(`${pid}|${ch}`));
+                    const remaining = pw.cmds
+                      .map(c => ({ ch: c.chantier || c.client, needed: c.min }))
+                      .filter(({ ch, needed }) => {
+                        if (hiddenTasks.has(`${pid}|${ch}`)) return false;
+                        const affected = affectedMinByPostCmd[`${pid}|${ch}`] || 0;
+                        return affected < needed; // pas assez d'heures → reste dans la palette
+                      })
+                      .map(({ ch }) => ch);
+                    if (remaining.length > 0) postChantiers[pid] = remaining;
                     if (remaining.length > 0) postChantiers[pid] = remaining;
                   }
                   const hasCmds = Object.values(postChantiers).some(v => v.length > 0);
