@@ -976,6 +976,34 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 </th>
               )))}
             </tr>
+            {/* Ligne % couverture opérateurs par demi-journée */}
+            <tr>
+              <th colSpan={2} style={{ padding: "4px 6px", background: C.s2, border: `1px solid ${C.border}`, fontSize: 9, color: C.sec, textAlign: "left" }}>% couvert</th>
+              {JOURS.map((j, jIdx) => ["am", "pm"].map(demi => {
+                let workMin = 0;
+                let opsMin = 0;
+                for (const grp of activePosts) {
+                  for (const pid of grp.visiblePosts) {
+                    const cell = aff[ck(pid, jIdx, demi)];
+                    if (!cell) continue;
+                    if ((cell.cmds?.length || 0) > 0 || (cell.extras?.length || 0) > 0) workMin += DEMI_MIN;
+                    opsMin += (cell.ops?.length || 0) * DEMI_MIN;
+                  }
+                }
+                const pct = workMin > 0 ? Math.round(opsMin / workMin * 100) : 0;
+                const hasWork = workMin > 0;
+                const col = !hasWork ? C.muted : pct >= 100 ? C.green : pct >= 50 ? C.orange : C.red;
+                return (
+                  <th key={`cov_${j}_${demi}`} style={{ padding: "3px 2px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center" }}>
+                    {hasWork ? (
+                      <span style={{ fontSize: 10, fontWeight: 800, color: col }}>{pct}%</span>
+                    ) : (
+                      <span style={{ fontSize: 9, color: C.muted }}>—</span>
+                    )}
+                  </th>
+                );
+              }))}
+            </tr>
           </thead>
           <tbody>
             {activePosts.map(grp => [
@@ -1111,53 +1139,6 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               }),
             ])}
           </tbody>
-          <tfoot>
-            <tr>
-              <td colSpan={2} style={{ padding: "6px 8px", background: C.s2, border: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.sec }}>COUVERTURE / JOUR</td>
-              {JOURS.map((j, jIdx) => {
-                // Calculer par demi-journée : travail positionné vs opérateurs
-                return ["am", "pm"].map(demi => {
-                  let workMin = 0; // heures de travail dans ce créneau
-                  let opsMin = 0;  // heures d'opérateurs dans ce créneau
-                  for (const grp of activePosts) {
-                    for (const pid of grp.visiblePosts) {
-                      const cell = aff[ck(pid, jIdx, demi)];
-                      if (!cell) continue;
-                      if ((cell.cmds?.length || 0) > 0) {
-                        // Compter les heures de travail des chantiers dans cette cellule
-                        const pw = postWork[pid];
-                        if (pw) {
-                          for (const cmdLabel of cell.cmds) {
-                            const cmd = pw.cmds.find(c => (c.chantier || c.client) === cmdLabel);
-                            if (cmd) workMin += cmd.min; // approximation : tout le travail du chantier
-                          }
-                        }
-                      }
-                      if ((cell.extras?.length || 0) > 0) workMin += DEMI_MIN; // extras = 4h
-                      opsMin += (cell.ops?.length || 0) * DEMI_MIN;
-                    }
-                  }
-                  // Simplifier : si du travail mais pas assez d'opérateurs
-                  const hasWork = workMin > 0;
-                  const hasOps = opsMin > 0;
-                  const ok = !hasWork || opsMin >= DEMI_MIN;
-                  const col = !hasWork ? C.muted : ok ? C.green : C.red;
-                  return (
-                    <td key={`${j}_${demi}`} style={{ padding: "4px 3px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center" }}>
-                      {hasWork ? (
-                        <div>
-                          <div style={{ fontSize: 9, fontWeight: 700, color: col }}>{hasOps ? `${Math.round(opsMin / 60)}h op.` : "⚠ 0 op."}</div>
-                          {!ok && <div style={{ fontSize: 8, color: C.red }}>manque</div>}
-                        </div>
-                      ) : (
-                        <span style={{ fontSize: 9, color: C.muted }}>—</span>
-                      )}
-                    </td>
-                  );
-                });
-              })}
-            </tr>
-          </tfoot>
         </table>
       </div>
 
