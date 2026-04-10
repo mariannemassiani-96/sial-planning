@@ -595,7 +595,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               }
             }
             // Extras comptent comme 4h
-            if (cell.extras?.length) cellWorkMin += cell.extras.length * DEMI_MIN;
+            if (cell.extras?.length) { for (const ext of cell.extras) { const m = ext.match(/\((\d+)h(\d+)?\)/); cellWorkMin += m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : DEMI_MIN; } }
             // Si pas de chantier ni extra mais des ops → travail non spécifié, compter 4h
             if (cellWorkMin === 0 && (cell.cmds?.length || 0) === 0 && (cell.extras?.length || 0) === 0) {
               cellWorkMin = DEMI_MIN;
@@ -635,7 +635,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             if (cmd) cellWorkMin += cmd.min;
           }
         }
-        if (cell.extras?.length) cellWorkMin += cell.extras.length * DEMI_MIN;
+        if (cell.extras?.length) { for (const ext of cell.extras) { const m = ext.match(/\((\d+)h(\d+)?\)/); cellWorkMin += m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : DEMI_MIN; } }
         if (cellWorkMin === 0 && (cell.cmds?.length || 0) === 0 && (cell.extras?.length || 0) === 0) cellWorkMin = DEMI_MIN;
         totalAffMin += Math.round(Math.min(cellWorkMin, DEMI_MIN) / nbOps);
       }
@@ -923,7 +923,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   if (pw2 && cell.cmds?.length) {
                     for (const cl of cell.cmds) { const cm = pw2.cmds.find(c2 => (c2.chantier || c2.client) === cl); if (cm) cellWork += cm.min; }
                   }
-                  if (cell.extras?.length) cellWork += cell.extras.length * DEMI_MIN;
+                  if (cell.extras?.length) { for (const ext of cell.extras) { const m = ext.match(/\((\d+)h(\d+)?\)/); cellWork += m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : DEMI_MIN; } }
                   if (cellWork === 0) cellWork = DEMI_MIN;
                   affMin += Math.round(Math.min(cellWork, DEMI_MIN) / nbOps);
                 }
@@ -1114,7 +1114,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             const nbOpsOcc = cell.ops.length;
             let cellW = 0;
             if (pwOcc && cell.cmds?.length) { for (const cl of cell.cmds) { const cm = pwOcc.cmds.find(c2 => (c2.chantier || c2.client) === cl); if (cm) cellW += cm.min; } }
-            if (cell.extras?.length) cellW += cell.extras.length * DEMI_MIN;
+            if (cell.extras?.length) { for (const ext of cell.extras) { const m = ext.match(/\((\d+)h(\d+)?\)/); cellW += m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : DEMI_MIN; } }
             if (cellW === 0) cellW = DEMI_MIN;
             affMin += Math.round(Math.min(cellW, DEMI_MIN) / nbOpsOcc);
           }
