@@ -939,6 +939,33 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               {overloaded.length > 0 && <span style={{ fontSize: 10, color: C.red }}>⚠ {overloaded.map(o => o.nom).join(", ")} surchargé{overloaded.length > 1 ? "s" : ""}</span>}
               {idle.length > 0 && <span style={{ fontSize: 10, color: C.muted }}>{idle.length} non affecté{idle.length > 1 ? "s" : ""}</span>}
             </div>
+            {/* Alerte journées vides par opérateur */}
+            {(() => {
+              const alerts: string[] = [];
+              for (const op of opStats) {
+                if (op.pct === 0) continue; // déjà listé comme non affecté
+                const eq = EQUIPE.find(e => e.nom === op.nom);
+                for (let j = 0; j < 5; j++) {
+                  if (j === 4 && eq?.vendrediOff) continue;
+                  let hasSlot = false;
+                  for (const d of ["am", "pm"]) {
+                    for (const [key, cell] of Object.entries(aff)) {
+                      if (!cell?.ops?.includes(op.nom)) continue;
+                      const parts = key.split("|");
+                      if (parseInt(parts[1]) === j && parts[2] === d) { hasSlot = true; break; }
+                    }
+                    if (hasSlot) break;
+                  }
+                  if (!hasSlot) alerts.push(`${op.nom} ${JOURS[j]}`);
+                }
+              }
+              if (alerts.length === 0) return null;
+              return (
+                <div style={{ fontSize: 10, color: C.orange, marginBottom: 4 }}>
+                  ⚠ Journées vides : {alerts.join(" · ")}
+                </div>
+              );
+            })()}
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
               {opStats.map(o => {
                 const barCol = o.pct > 100 ? C.red : o.pct > 80 ? C.orange : o.pct > 0 ? C.green : C.muted;
@@ -980,18 +1007,20 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             <tr>
               <th colSpan={2} style={{ padding: "4px 6px", background: C.s2, border: `1px solid ${C.border}`, fontSize: 9, color: C.sec, textAlign: "left" }}>% couvert</th>
               {JOURS.map((j, jIdx) => ["am", "pm"].map(demi => {
-                let workMin = 0;
-                let opsMin = 0;
-                for (const grp of activePosts) {
-                  for (const pid of grp.visiblePosts) {
-                    const cell = aff[ck(pid, jIdx, demi)];
-                    if (!cell) continue;
-                    if ((cell.cmds?.length || 0) > 0 || (cell.extras?.length || 0) > 0) workMin += DEMI_MIN;
-                    opsMin += (cell.ops?.length || 0) * DEMI_MIN;
-                  }
+                // Scanner TOUTES les cellules de ce créneau (tous postes)
+                let workSlots = 0; // nombre de postes avec du travail
+                let opsSlots = 0;  // nombre de postes avec des opérateurs
+                for (const [key, cell] of Object.entries(aff)) {
+                  const parts = key.split("|");
+                  if (parseInt(parts[1]) !== jIdx || parts[2] !== demi) continue;
+                  if (!cell) continue;
+                  const hasWork = (cell.cmds?.length || 0) > 0 || (cell.extras?.length || 0) > 0;
+                  const hasOps = (cell.ops?.length || 0) > 0;
+                  if (hasWork) workSlots++;
+                  if (hasWork && hasOps) opsSlots++;
                 }
-                const pct = workMin > 0 ? Math.round(opsMin / workMin * 100) : 0;
-                const hasWork = workMin > 0;
+                const pct = workSlots > 0 ? Math.round(opsSlots / workSlots * 100) : 0;
+                const hasWork = workSlots > 0;
                 const col = !hasWork ? C.muted : pct >= 100 ? C.green : pct >= 50 ? C.orange : C.red;
                 return (
                   <th key={`cov_${j}_${demi}`} style={{ padding: "3px 2px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center" }}>
