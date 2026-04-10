@@ -125,7 +125,17 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
       .then(r => r.ok ? r.json() : {})
       .then(data => {
         if (data && typeof data === "object" && Object.keys(data).length > 0) {
-          setAff(data as AffMap);
+          // Migrer l'ancien format (string[]) vers le nouveau (CellData)
+          const migrated: AffMap = {};
+          for (const [key, val] of Object.entries(data)) {
+            if (Array.isArray(val)) {
+              // Ancien format : string[] → { ops: string[], cmds: [] }
+              migrated[key] = { ops: val as string[], cmds: [] };
+            } else if (val && typeof val === "object" && "ops" in (val as any)) {
+              migrated[key] = val as CellData;
+            }
+          }
+          setAff(migrated);
         } else {
           setAff({});
         }
