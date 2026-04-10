@@ -1492,6 +1492,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         </div>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
           {[
+            { label: "Déchargement vitrage fournisseur", min: 480, icon: "🪟", color: "#4DB6AC" },
             { label: "Rangement stock", min: 60, icon: "🏗", color: C.purple },
             { label: "Nettoyage machines", min: 30, icon: "🧹", color: C.muted },
             { label: "Supervision", min: 240, icon: "👁", color: C.yellow },
