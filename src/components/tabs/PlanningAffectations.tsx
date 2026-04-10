@@ -574,25 +574,44 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           maxDayMin = eq?.h === 39 ? 480 : eq?.h === 36 ? 480 : eq?.h === 35 ? 420 : 450;
         }
 
-        // Compter les créneaux affectés ce jour
-        let slots = 0;
+        // Compter les heures réelles de tâches affectées ce jour
+        let affDayMin = 0;
+        let hasAnySlot = false;
         for (const demi of ["am", "pm"]) {
           for (const [key, cell] of Object.entries(aff)) {
             if (!cell?.ops?.includes(op.nom)) continue;
             const p = key.split("|");
-            if (parseInt(p[1]) === j && p[2] === demi) slots++;
+            if (parseInt(p[1]) !== j || p[2] !== demi) continue;
+            hasAnySlot = true;
+            const pid = p[0];
+            const pw = postWork[pid];
+            const nbOps = cell.ops.length;
+            // Heures réelles = somme des tâches (chantiers) dans cette cellule / nb opérateurs
+            let cellWorkMin = 0;
+            if (pw && cell.cmds?.length) {
+              for (const cmdLabel of cell.cmds) {
+                const cmd = pw.cmds.find(c => (c.chantier || c.client) === cmdLabel);
+                if (cmd) cellWorkMin += cmd.min;
+              }
+            }
+            // Extras comptent comme 4h
+            if (cell.extras?.length) cellWorkMin += cell.extras.length * DEMI_MIN;
+            // Si pas de chantier ni extra mais des ops → travail non spécifié, compter 4h
+            if (cellWorkMin === 0 && (cell.cmds?.length || 0) === 0 && (cell.extras?.length || 0) === 0) {
+              cellWorkMin = DEMI_MIN;
+            }
+            // Part de cet opérateur = total / nb opérateurs sur ce créneau
+            affDayMin += Math.round(cellWorkMin / nbOps);
           }
         }
-        const affDayMin = slots * DEMI_MIN;
 
-        if (isAbsent && slots > 0) {
+        if (isAbsent && hasAnySlot) {
           issues.push(`🔴 ${op.nom} ${JOURS_N[j]} : affecté mais ABSENT (RH)`);
-        } else if (isVenOff && slots > 0) {
+        } else if (isVenOff && hasAnySlot) {
           issues.push(`🔴 ${op.nom} ${JOURS_N[j]} : affecté mais ne travaille pas le vendredi`);
         } else if (affDayMin > maxDayMin && maxDayMin > 0) {
           issues.push(`🟠 ${op.nom} ${JOURS_N[j]} : ${hm(affDayMin)} affecté mais max ${hm(maxDayMin)}/jour`);
-        } else if (maxDayMin > 0 && slots === 0) {
-          // Jour travaillé mais pas affecté — on vérifie que l'opérateur a au moins 1 créneau dans la semaine
+        } else if (maxDayMin > 0 && !hasAnySlot) {
           let totalWeekSlots = 0;
           for (const [, cell] of Object.entries(aff)) { if (cell?.ops?.includes(op.nom)) totalWeekSlots++; }
           if (totalWeekSlots > 0) {
@@ -602,8 +621,24 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       }
 
       // Total semaine
+      // Total semaine = somme des heures réelles de tâches par créneau
       let totalAffMin = 0;
-      for (const [, cell] of Object.entries(aff)) { if (cell?.ops?.includes(op.nom)) totalAffMin += DEMI_MIN; }
+      for (const [key, cell] of Object.entries(aff)) {
+        if (!cell?.ops?.includes(op.nom)) continue;
+        const pid = key.split("|")[0];
+        const pw = postWork[pid];
+        const nbOps = cell.ops.length;
+        let cellWorkMin = 0;
+        if (pw && cell.cmds?.length) {
+          for (const cmdLabel of cell.cmds) {
+            const cmd = pw.cmds.find(c => (c.chantier || c.client) === cmdLabel);
+            if (cmd) cellWorkMin += cmd.min;
+          }
+        }
+        if (cell.extras?.length) cellWorkMin += cell.extras.length * DEMI_MIN;
+        if (cellWorkMin === 0 && (cell.cmds?.length || 0) === 0 && (cell.extras?.length || 0) === 0) cellWorkMin = DEMI_MIN;
+        totalAffMin += Math.round(cellWorkMin / nbOps);
+      }
       const baseMin = (eq?.h || 39) * 60;
       let absTotal = 0;
       for (let j = 0; j < 5; j++) {
@@ -877,10 +912,20 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   }
                 }
                 const dispoMin = Math.max(0, baseMin - absMin);
-                // Heures déjà affectées
+                // Heures réelles de tâches affectées
                 let affMin = 0;
-                for (const [, cell] of Object.entries(aff)) {
-                  if (cell?.ops?.includes(op.nom)) affMin += DEMI_MIN;
+                for (const [key, cell] of Object.entries(aff)) {
+                  if (!cell?.ops?.includes(op.nom)) continue;
+                  const pid = key.split("|")[0];
+                  const pw2 = postWork[pid];
+                  const nbOps = cell.ops.length;
+                  let cellWork = 0;
+                  if (pw2 && cell.cmds?.length) {
+                    for (const cl of cell.cmds) { const cm = pw2.cmds.find(c2 => (c2.chantier || c2.client) === cl); if (cm) cellWork += cm.min; }
+                  }
+                  if (cell.extras?.length) cellWork += cell.extras.length * DEMI_MIN;
+                  if (cellWork === 0) cellWork = DEMI_MIN;
+                  affMin += Math.round(cellWork / nbOps);
                 }
                 const restant = Math.max(0, dispoMin - affMin);
                 const full = restant <= 0;
@@ -1062,8 +1107,16 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           }
           const dispoMin = Math.max(0, baseMin - absMin);
           let affMin = 0;
-          for (const [, cell] of Object.entries(aff)) {
-            if (cell?.ops?.includes(op.nom)) affMin += DEMI_MIN;
+          for (const [key, cell] of Object.entries(aff)) {
+            if (!cell?.ops?.includes(op.nom)) continue;
+            const pidOcc = key.split("|")[0];
+            const pwOcc = postWork[pidOcc];
+            const nbOpsOcc = cell.ops.length;
+            let cellW = 0;
+            if (pwOcc && cell.cmds?.length) { for (const cl of cell.cmds) { const cm = pwOcc.cmds.find(c2 => (c2.chantier || c2.client) === cl); if (cm) cellW += cm.min; } }
+            if (cell.extras?.length) cellW += cell.extras.length * DEMI_MIN;
+            if (cellW === 0) cellW = DEMI_MIN;
+            affMin += Math.round(cellW / nbOpsOcc);
           }
           opStats.push({ nom: op.nom, key: op.key, affMin, dispoMin, pct: dispoMin > 0 ? Math.round(affMin / dispoMin * 100) : 0, absentDays });
         }
