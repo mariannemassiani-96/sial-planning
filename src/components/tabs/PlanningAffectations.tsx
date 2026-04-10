@@ -75,12 +75,21 @@ const POST_MAX_WEEK: Record<string, number> = {
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-// Chaque cellule poste|jour|demi contient : opérateurs + chantiers
+// Chaque cellule poste|jour|demi contient : opérateurs + chantiers + tâches extras
 interface CellData {
   ops: string[];     // noms opérateurs
   cmds: string[];    // "client · chantier"
+  extras?: string[]; // tâches supplémentaires ("INTERV: SAV Dupont 2h", "SUPERVISION")
 }
 type AffMap = Record<string, CellData>;
+
+// Tâche supplémentaire (intervention, supervision, etc.)
+interface ExtraTask {
+  id: string;
+  label: string;
+  min: number;
+  type: "intervention" | "supervision" | "autre";
+}
 
 // ── Composant ────────────────────────────────────────────────────────────────
 
@@ -94,8 +103,11 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   const [ops, setOps] = useState<OpResolved[]>(OPS_FALLBACK);
   // Habitudes : { "C3": { "Julien": 45, "Laurent": 38 }, ... }
   const [habits, setHabits] = useState<Record<string, Record<string, number>>>({});
-  // Absences RH : { "operateur_id": { "2026-04-13": 0 } }
+  // Absences RH
   const [rhPlan, setRhPlan] = useState<Record<string, Record<string, number>>>({});
+  // Tâches supplémentaires (interventions, etc.)
+  const [extraTasks, setExtraTasks] = useState<ExtraTask[]>([]);
+  const [newExtra, setNewExtra] = useState({ label: "", min: "" });
   const [dragOp, setDragOp] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -171,6 +183,11 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         setLoaded(viewWeek);
       })
       .catch(() => { setAff({}); setLoaded(viewWeek); });
+    // Charger les tâches extras de la semaine
+    fetch(`/api/planning/affectations?semaine=extras_${viewWeek}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => { if (Array.isArray(data)) setExtraTasks(data); else if (data?.tasks) setExtraTasks(data.tasks); else setExtraTasks([]); })
+      .catch(() => setExtraTasks([]));
   }, [viewWeek]);
 
   // ── Rafraîchissement auto toutes les 10s (si pas en train de sauvegarder) ──
@@ -296,8 +313,23 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
 
   const ck = (pid: string, j: number, d: string) => `${pid}|${j}|${d}`;
 
-  // ── Drop opérateur sur cellule ──
-  const onDrop = useCallback((key: string) => {
+  // ── Drop opérateur ou tâche extra sur cellule ──
+  const onDrop = useCallback((key: string, e?: React.DragEvent) => {
+    // Vérifier si c'est un extra
+    const data = e?.dataTransfer?.getData("text/plain") || "";
+    if (data.startsWith("extra:")) {
+      const extraLabel = data.slice(6);
+      const newAff = { ...aff };
+      const cell = newAff[key] || { ops: [], cmds: [], extras: [] };
+      const extras = cell.extras || [];
+      if (!extras.includes(extraLabel)) {
+        newAff[key] = { ...cell, extras: [...extras, extraLabel] };
+        saveAff(newAff);
+      }
+      setDropTarget(null);
+      return;
+    }
+    // Sinon c'est un opérateur
     if (!dragOp) return;
     const newAff = { ...aff };
     const cell = newAff[key] || { ops: [], cmds: [] };
@@ -325,6 +357,44 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     const newCmds = hasCm ? cell.cmds.filter(c => c !== cmdLabel) : [...cell.cmds, cmdLabel];
     if (newCmds.length === 0 && cell.ops.length === 0) delete newAff[key];
     else newAff[key] = { ...cell, cmds: newCmds };
+    saveAff(newAff);
+  }, [aff, saveAff]);
+
+  // ── Gestion tâches extras ──
+  const addExtra = useCallback(() => {
+    if (!newExtra.label.trim()) return;
+    const task: ExtraTask = {
+      id: `ext_${Date.now()}`,
+      label: newExtra.label.trim(),
+      min: parseInt(newExtra.min) || 60,
+      type: newExtra.label.toLowerCase().includes("superv") ? "supervision" : newExtra.label.toLowerCase().includes("interv") ? "intervention" : "autre",
+    };
+    const updated = [...extraTasks, task];
+    setExtraTasks(updated);
+    setNewExtra({ label: "", min: "" });
+    // Sauvegarder
+    fetch("/api/planning/affectations", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ semaine: `extras_${viewWeek}`, affectations: { tasks: updated } }),
+    }).catch(() => {});
+  }, [newExtra, extraTasks, viewWeek]);
+
+  const removeExtra = useCallback((id: string) => {
+    const updated = extraTasks.filter(t => t.id !== id);
+    setExtraTasks(updated);
+    fetch("/api/planning/affectations", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ semaine: `extras_${viewWeek}`, affectations: { tasks: updated } }),
+    }).catch(() => {});
+  }, [extraTasks, viewWeek]);
+
+  const toggleExtra = useCallback((key: string, extraLabel: string) => {
+    const newAff = { ...aff };
+    const cell = newAff[key] || { ops: [], cmds: [], extras: [] };
+    const extras = cell.extras || [];
+    const has = extras.includes(extraLabel);
+    const newExtras = has ? extras.filter(e => e !== extraLabel) : [...extras, extraLabel];
+    newAff[key] = { ...cell, extras: newExtras };
     saveAff(newAff);
   }, [aff, saveAff]);
 
@@ -818,7 +888,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                         <td key={`${j}_${demi}`}
                           onDragOver={(e) => { e.preventDefault(); setDropTarget(key); }}
                           onDragLeave={() => { if (dropTarget === key) setDropTarget(null); }}
-                          onDrop={() => onDrop(key)}
+                          onDrop={(ev) => onDrop(key, ev)}
                           style={{
                             padding: "3px 3px",
                             border: `1px solid ${isTarget ? C.orange : jIdx === todayIdx ? C.orange + "44" : C.border}`,
@@ -860,6 +930,22 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                               })}
                             </div>
                           )}
+                          {/* Tâches extras affectées */}
+                          {(cell.extras || []).length > 0 && (
+                            <div style={{ marginTop: 2 }}>
+                              {(cell.extras || []).map(ext => {
+                                const isInterv = ext.toLowerCase().includes("interv");
+                                const isSuperv = ext.toLowerCase().includes("superv");
+                                const col = isInterv ? C.red : isSuperv ? C.yellow : C.purple;
+                                return (
+                                  <div key={ext} style={{ fontSize: 8, padding: "1px 4px", borderRadius: 2, marginBottom: 1, background: col + "22", color: col, fontWeight: 600, display: "flex", justifyContent: "space-between" }}>
+                                    <span>{isInterv ? "🔧" : isSuperv ? "👁" : "📋"} {ext}</span>
+                                    <span onClick={() => toggleExtra(key, ext)} style={{ cursor: "pointer", opacity: 0.6 }}>✕</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                           {/* Boutons pour ajouter des chantiers (si pas tous affectés) */}
                           {allCmdLabels.filter(c => !cell.cmds.includes(c)).length > 0 && (
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 1, marginTop: cell.ops.length > 0 ? 2 : 0 }}>
@@ -887,6 +973,49 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             ])}
           </tbody>
         </table>
+      </div>
+
+      {/* ── Panneau tâches supplémentaires ── */}
+      <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px", marginTop: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Tâches supplémentaires (interventions, supervision...)</div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+          <input
+            value={newExtra.label}
+            onChange={e => setNewExtra(p => ({ ...p, label: e.target.value }))}
+            placeholder="Ex: SAV Dupont, Supervision coupe..."
+            style={{ flex: 1, minWidth: 200, padding: "5px 10px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, fontSize: 12 }}
+          />
+          <input
+            type="number"
+            value={newExtra.min}
+            onChange={e => setNewExtra(p => ({ ...p, min: e.target.value }))}
+            placeholder="min"
+            style={{ width: 60, padding: "5px 8px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, fontSize: 12, textAlign: "center" }}
+          />
+          <button onClick={addExtra} style={{ padding: "5px 14px", background: C.orange, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>+ Ajouter</button>
+        </div>
+        {extraTasks.length > 0 && (
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {extraTasks.map(t => (
+              <div key={t.id} style={{
+                padding: "4px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: "grab", userSelect: "none",
+                background: t.type === "intervention" ? C.red + "22" : t.type === "supervision" ? C.yellow + "22" : C.purple + "22",
+                color: t.type === "intervention" ? C.red : t.type === "supervision" ? C.yellow : C.purple,
+                border: `1px solid ${t.type === "intervention" ? C.red + "44" : t.type === "supervision" ? C.yellow + "44" : C.purple + "44"}`,
+                display: "flex", alignItems: "center", gap: 6,
+              }}
+                draggable
+                onDragStart={e => { setDragOp(null); e.dataTransfer.setData("text/plain", `extra:${t.label}`); e.dataTransfer.effectAllowed = "copy"; }}
+              >
+                {t.type === "intervention" ? "🔧" : t.type === "supervision" ? "👁" : "📋"} {t.label} ({hm(t.min)})
+                <span onClick={() => removeExtra(t.id)} style={{ cursor: "pointer", opacity: 0.6 }}>✕</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ fontSize: 9, color: C.muted, marginTop: 6 }}>
+          Tape &quot;intervention&quot; ou &quot;supervision&quot; dans le nom pour le colorer automatiquement. Glisse vers une cellule pour affecter.
+        </div>
       </div>
     </div>
   );
