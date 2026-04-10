@@ -84,15 +84,18 @@ type AffMap = Record<string, CellData>;
 
 // ── Composant ────────────────────────────────────────────────────────────────
 
-export default function PlanningAffectations({ commandes, viewWeek, onPatch }: {
+export default function PlanningAffectations({ commandes, viewWeek, onPatch, onWeekChange }: {
   commandes: CommandeCC[];
   viewWeek: string;
   onPatch?: (id: string, updates: Record<string, unknown>) => void;
+  onWeekChange?: (w: string) => void;
 }) {
   const [aff, setAff] = useState<AffMap>({});
   const [ops, setOps] = useState<OpResolved[]>(OPS_FALLBACK);
   // Habitudes : { "C3": { "Julien": 45, "Laurent": 38 }, ... }
   const [habits, setHabits] = useState<Record<string, Record<string, number>>>({});
+  // Absences RH : { "operateur_id": { "2026-04-13": 0 } }
+  const [rhPlan, setRhPlan] = useState<Record<string, Record<string, number>>>({});
   const [dragOp, setDragOp] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -130,6 +133,19 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch }: {
       .then(data => { if (data && typeof data === "object") setHabits(data as Record<string, Record<string, number>>); })
       .catch(() => {});
   }, []);
+
+  // ── Charger les absences RH ──
+  useEffect(() => {
+    const d = new Date(viewWeek + "T00:00:00");
+    const jan4 = new Date(d.getFullYear(), 0, 4);
+    const w1 = new Date(jan4); w1.setDate(jan4.getDate() - ((jan4.getDay() || 7) - 1));
+    const wn = Math.ceil((d.getTime() - w1.getTime()) / (7 * 86400000)) + 1;
+    const semRH = `${d.getFullYear()}-W${String(wn).padStart(2, "0")}`;
+    fetch(`/api/planning-rh?semaine=${encodeURIComponent(semRH)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.plan) setRhPlan(data.plan); else setRhPlan({}); })
+      .catch(() => setRhPlan({}));
+  }, [viewWeek]);
 
   // ── Charger les affectations depuis la base ──
   useEffect(() => {
@@ -596,6 +612,16 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch }: {
 
   return (
     <div>
+      {/* ── Navigation semaine ── */}
+      {onWeekChange && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <button onClick={() => { const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() - 7); onWeekChange(localStr(d)); }} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, padding: "6px 12px", cursor: "pointer", fontSize: 14 }}>←</button>
+          <button onClick={() => { const d = new Date(); const day = d.getDay(); d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); onWeekChange(localStr(d)); }} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, padding: "6px 10px", cursor: "pointer", fontSize: 11 }}>Auj.</button>
+          <button onClick={() => { const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() + 7); onWeekChange(localStr(d)); }} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, padding: "6px 12px", cursor: "pointer", fontSize: 14 }}>→</button>
+          <div style={{ fontSize: 16, fontWeight: 800 }}>Affectations {weekId(viewWeek)}</div>
+        </div>
+      )}
+
       {/* ── Palette opérateurs + boutons ── */}
       <div style={{ display: "flex", gap: 12, marginBottom: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ flex: 1, background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px" }}>
@@ -661,15 +687,37 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch }: {
       {/* ── Occupation opérateurs ── */}
       {(() => {
         // Calculer heures affectées par opérateur
-        const opStats: Array<{ nom: string; key: string; affMin: number; dispoMin: number; pct: number }> = [];
+        const opStats: Array<{ nom: string; key: string; affMin: number; dispoMin: number; pct: number; absentDays: number }> = [];
         for (const op of ops) {
           const eq = EQUIPE.find(e => e.nom === op.nom);
-          const dispoMin = (eq?.h || 39) * 60;
+          // Calculer la dispo réelle en tenant compte des absences RH
+          const baseMin = (eq?.h || 39) * 60;
+          // Compter les jours d'absence cette semaine depuis le plan RH
+          const opRH = rhPlan[eq?.id || ""] || {};
+          let absMin = 0;
+          let absentDays = 0;
+          for (let i = 0; i < 5; i++) {
+            const d = new Date(viewWeek + "T00:00:00");
+            d.setDate(d.getDate() + i);
+            const dayStr = localStr(d);
+            const dayDispo = opRH[dayStr];
+            if (dayDispo !== undefined && dayDispo === 0) {
+              // Absent ce jour
+              const isVendredi = i === 4;
+              absMin += isVendredi ? (eq?.h === 39 ? 420 : eq?.h === 36 ? 240 : eq?.h === 35 ? 420 : 450) : (eq?.h === 39 ? 480 : eq?.h === 36 ? 480 : eq?.h === 35 ? 420 : 450);
+              absentDays++;
+            } else if (dayDispo !== undefined && dayDispo < 480) {
+              // Demi-journée ou dispo réduite
+              const normalMin = i === 4 ? (eq?.h === 39 ? 420 : eq?.h === 36 ? 240 : eq?.h === 35 ? 420 : 450) : 480;
+              absMin += normalMin - dayDispo;
+            }
+          }
+          const dispoMin = Math.max(0, baseMin - absMin);
           let affMin = 0;
           for (const [, cell] of Object.entries(aff)) {
             if (cell?.ops?.includes(op.nom)) affMin += DEMI_MIN;
           }
-          opStats.push({ nom: op.nom, key: op.key, affMin, dispoMin, pct: dispoMin > 0 ? Math.round(affMin / dispoMin * 100) : 0 });
+          opStats.push({ nom: op.nom, key: op.key, affMin, dispoMin, pct: dispoMin > 0 ? Math.round(affMin / dispoMin * 100) : 0, absentDays });
         }
         const avgPct = opStats.length > 0 ? Math.round(opStats.reduce((s, o) => s + o.pct, 0) / opStats.length) : 0;
         const overloaded = opStats.filter(o => o.pct > 100);
@@ -694,6 +742,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch }: {
                     </div>
                     <div style={{ fontSize: 9, color: barCol, fontWeight: 700 }}>{o.pct}%</div>
                     <div style={{ fontSize: 8, color: C.muted }}>{hm(o.affMin)}/{hm(o.dispoMin)}</div>
+                    {o.absentDays > 0 && <div style={{ fontSize: 7, color: C.red }}>absent {o.absentDays}j</div>}
                   </div>
                 );
               })}

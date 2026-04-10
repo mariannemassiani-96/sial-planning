@@ -221,7 +221,7 @@ export default function HomePage() {
                   onChange={(id) => setPlanningSub(id as "charge" | "affectations")}
                 />
                 {planningSub === "charge" && <PlanningCharge commandes={commandes} onPatch={patchCommande} viewWeek={planningWeek} onWeekChange={setPlanningWeek} />}
-                {planningSub === "affectations" && <PlanningAffectations commandes={commandes} viewWeek={planningWeek} onPatch={patchCommande} />}
+                {planningSub === "affectations" && <PlanningAffectations commandes={commandes} viewWeek={planningWeek} onPatch={patchCommande} onWeekChange={setPlanningWeek} />}
               </>
             )}
 
