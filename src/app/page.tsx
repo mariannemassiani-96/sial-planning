@@ -99,10 +99,10 @@ export default function HomePage() {
     { id: "pointage",        l: "✅ Pointage" },
     { id: "affichage_atelier", l: "📺 Atelier" },
     { id: "isula",           l: "🔷 ISULA" },
+    { id: "referentiel",     l: "📐 Référentiel" },
     ...(isAdmin ? [
       { id: "qualite",      l: "✅ Qualité" },
       { id: "stocks",       l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
-      { id: "referentiel",  l: "📐 Référentiel" },
       { id: "import_csv",   l: "📥 Import" },
       { id: "stats_admin",  l: "📊 Stats" },
     ] : []),
