@@ -82,9 +82,10 @@ type AffMap = Record<string, CellData>;
 
 // ── Composant ────────────────────────────────────────────────────────────────
 
-export default function PlanningAffectations({ commandes, viewWeek }: {
+export default function PlanningAffectations({ commandes, viewWeek, onPatch }: {
   commandes: CommandeCC[];
   viewWeek: string;
+  onPatch?: (id: string, updates: Record<string, unknown>) => void;
 }) {
   const [aff, setAff] = useState<AffMap>({});
   const [ops, setOps] = useState<OpResolved[]>(OPS_FALLBACK);
@@ -481,6 +482,57 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
     openPrintWindow(`Planning ${wk} — Fiches opérateurs`, html);
   }, [aff, postWork, viewWeek]);
 
+  // ── Calcul de couverture globale ──
+  const coverage = useMemo(() => {
+    let totalNeeded = 0;
+    let totalAffected = 0;
+    const uncoveredPosts: Array<{ postId: string; label: string; needed: number; affected: number; deficit: number }> = [];
+
+    for (const grp of activePosts) {
+      for (const pid of grp.posts) {
+        const pw = postWork[pid];
+        if (!pw || pw.totalMin === 0) continue;
+        let affMin = 0;
+        for (let j = 0; j < 5; j++) for (const d of ["am", "pm"]) affMin += (aff[ck(pid, j, d)]?.ops?.length || 0) * DEMI_MIN;
+        totalNeeded += pw.totalMin;
+        totalAffected += Math.min(affMin, pw.totalMin);
+        if (affMin < pw.totalMin) {
+          uncoveredPosts.push({ postId: pid, label: POST_LABELS[pid] || pid, needed: pw.totalMin, affected: affMin, deficit: pw.totalMin - affMin });
+        }
+      }
+    }
+    const pct = totalNeeded > 0 ? Math.round(totalAffected / totalNeeded * 100) : 0;
+    return { pct, totalNeeded, totalAffected, uncoveredPosts, complete: pct >= 100 };
+  }, [activePosts, postWork, aff]);
+
+  // ── Reporter les tâches non couvertes à la semaine suivante ──
+  const reportNextWeek = useCallback(() => {
+    if (!onPatch) return;
+    const nextMonday = new Date(viewWeek + "T00:00:00");
+    nextMonday.setDate(nextMonday.getDate() + 7);
+    const nextWeekStr = localStr(nextMonday);
+
+    // Pour chaque commande qui a une phase sur cette semaine avec un poste non couvert
+    for (const cmd of commandes) {
+      const s = (cmd as any).statut;
+      if (s === "livre" || s === "terminee" || s === "annulee") continue;
+
+      for (const ph of ["coupe", "montage", "vitrage", "logistique"]) {
+        const field = PHASE_FIELD[ph];
+        if ((cmd as any)[field] !== viewWeek) continue;
+
+        // Vérifier si cette phase a des postes non couverts
+        const routage = getRoutage(cmd.type, cmd.quantite, (cmd as any).hsTemps as Record<string, unknown> | null);
+        const phasePostIds = routage.filter(e => e.phase === ph).map(e => e.postId);
+        const hasUncovered = phasePostIds.some(pid => coverage.uncoveredPosts.some(u => u.postId === pid));
+
+        if (hasUncovered) {
+          onPatch(String(cmd.id), { [field]: nextWeekStr });
+        }
+      }
+    }
+  }, [commandes, viewWeek, coverage, onPatch]);
+
   const todayIdx = (() => {
     const today = localStr(new Date());
     for (let i = 0; i < 5; i++) {
@@ -528,6 +580,39 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
             {saving ? "Sauvegarde..." : "Sauvegardé"}
           </span>
         </div>
+      </div>
+
+      {/* ── Bandeau couverture ── */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", marginBottom: 12,
+        background: coverage.complete ? C.green + "15" : C.orange + "15",
+        border: `1px solid ${coverage.complete ? C.green : C.orange}`,
+        borderRadius: 6,
+      }}>
+        <div style={{ fontSize: 28, fontWeight: 800, color: coverage.complete ? C.green : coverage.pct >= 50 ? C.orange : C.red }}>
+          {coverage.pct}%
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ height: 8, background: C.s2, borderRadius: 4, overflow: "hidden", marginBottom: 4 }}>
+            <div style={{ width: `${coverage.pct}%`, height: "100%", background: coverage.complete ? C.green : coverage.pct >= 50 ? C.orange : C.red, borderRadius: 4 }} />
+          </div>
+          {coverage.complete ? (
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.green }}>Toutes les tâches sont couvertes pour {weekId(viewWeek)}</div>
+          ) : (
+            <div style={{ fontSize: 11, color: C.sec }}>
+              <span style={{ fontWeight: 700, color: C.orange }}>{hm(coverage.totalNeeded - coverage.totalAffected)}</span> non couvertes —{" "}
+              {coverage.uncoveredPosts.map(u => `${u.postId} (${hm(u.deficit)})`).join(", ")}
+            </div>
+          )}
+        </div>
+        {!coverage.complete && onPatch && (
+          <button onClick={reportNextWeek} style={{
+            padding: "8px 14px", background: C.orange, border: "none", borderRadius: 4,
+            color: "#000", fontWeight: 700, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap",
+          }}>
+            Reporter à {weekId((() => { const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() + 7); return localStr(d); })())}
+          </button>
+        )}
       </div>
 
       {/* ── Grille ── */}
