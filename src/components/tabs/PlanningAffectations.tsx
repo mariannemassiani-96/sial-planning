@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { C, EQUIPE, hm, CommandeCC } from "@/lib/sial-data";
+import { C, EQUIPE, TYPES_MENUISERIE, hm, CommandeCC } from "@/lib/sial-data";
 import { getRoutage } from "@/lib/routage-production";
 import { openPrintWindow } from "@/lib/print-utils";
 
@@ -114,6 +114,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   // Tâches supplémentaires (interventions, etc.)
   const [extraTasks, setExtraTasks] = useState<ExtraTask[]>([]);
   const [newExtra, setNewExtra] = useState({ label: "", min: "" });
+  // Popup détail chantier
+  const [detailCmd, setDetailCmd] = useState<{ chantier: string; cmdId: string; cmd: any } | null>(null);
   const [dragOp, setDragOp] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1339,16 +1341,26 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                           {/* Chantiers affectés à ce créneau */}
                           {cell.cmds.length > 0 && (
                             <div style={{ marginBottom: 2 }}>
-                              {cell.cmds.map(cmdLabel => (
-                                <div key={cmdLabel} style={{
-                                  fontSize: 8, padding: "2px 4px", borderRadius: 2, marginBottom: 1,
-                                  background: grp.color + "20", borderLeft: `2px solid ${grp.color}`,
-                                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                                }}>
-                                  <span style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cmdLabel}</span>
-                                  <span onClick={() => toggleCmd(key, cmdLabel)} style={{ cursor: "pointer", fontSize: 7, color: C.muted, marginLeft: 2 }}>✕</span>
-                                </div>
-                              ))}
+                              {cell.cmds.map(cmdLabel => {
+                                // Trouver la commande correspondante
+                                const matchCmd = commandes.find(c => {
+                                  const ch = (c as any).ref_chantier || (c as any).client;
+                                  return ch === cmdLabel;
+                                });
+                                return (
+                                  <div key={cmdLabel} style={{
+                                    fontSize: 8, padding: "2px 4px", borderRadius: 2, marginBottom: 1,
+                                    background: grp.color + "20", borderLeft: `2px solid ${grp.color}`,
+                                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                                  }}>
+                                    <span
+                                      onClick={() => { if (matchCmd) setDetailCmd({ chantier: cmdLabel, cmdId: String(matchCmd.id), cmd: matchCmd }); }}
+                                      style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: matchCmd ? "pointer" : "default", textDecoration: matchCmd ? "underline" : "none", textDecorationColor: grp.color + "66" }}
+                                    >{cmdLabel}</span>
+                                    <span onClick={() => toggleCmd(key, cmdLabel)} style={{ cursor: "pointer", fontSize: 7, color: C.muted, marginLeft: 2 }}>✕</span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                           {/* Opérateurs affectés */}
@@ -1451,6 +1463,68 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           ))}
         </div>
       </div>
+
+      {/* ── Popup détail chantier ── */}
+      {detailCmd && (() => {
+        const cmd = detailCmd.cmd;
+        const lignes = Array.isArray(cmd.lignes) && cmd.lignes.length > 0 ? cmd.lignes : [{ type: cmd.type, quantite: cmd.quantite }];
+        const allEtapes: Array<{ postId: string; label: string; min: number; phase: string }> = [];
+        for (const ligne of lignes) {
+          const lType = ligne.type || cmd.type;
+          if (lType === "intervention_chantier") continue;
+          const lQte = parseInt(ligne.quantite) || cmd.quantite || 1;
+          const lHs = lType === "hors_standard" ? { t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage } : cmd.hsTemps;
+          const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null);
+          for (const e of routage) allEtapes.push({ postId: e.postId, label: e.label, min: e.estimatedMin, phase: e.phase });
+        }
+        const PHASE_C: Record<string, string> = { coupe: "#42A5F5", montage: "#FFA726", vitrage: "#26C6DA", logistique: "#CE93D8" };
+        const totalMin = allEtapes.reduce((s, e) => s + e.min, 0);
+
+        return (
+          <div style={{ position: "fixed", inset: 0, zIndex: 9000, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setDetailCmd(null)}>
+            <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: "20px 24px", minWidth: 400, maxWidth: 600, maxHeight: "80vh", overflowY: "auto", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800 }}>{detailCmd.chantier}</div>
+                  <div style={{ fontSize: 12, color: C.sec }}>{cmd.client} · {cmd.quantite}× {(TYPES_MENUISERIE as Record<string, any>)[cmd.type]?.label || cmd.type}</div>
+                </div>
+                <button onClick={() => setDetailCmd(null)} style={{ background: "none", border: "none", color: C.sec, cursor: "pointer", fontSize: 18 }}>✕</button>
+              </div>
+
+              <div style={{ fontSize: 11, color: C.orange, fontWeight: 700, marginBottom: 4 }}>
+                Total : {hm(totalMin)} · {allEtapes.length} étapes
+              </div>
+
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                <thead>
+                  <tr>
+                    <th style={{ padding: "4px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec }}>POSTE</th>
+                    <th style={{ padding: "4px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec }}>ÉTAPE</th>
+                    <th style={{ padding: "4px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 80 }}>TEMPS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allEtapes.map((e, i) => (
+                    <tr key={i}>
+                      <td style={{ padding: "4px 8px", border: `1px solid ${C.border}` }}>
+                        <span style={{ fontWeight: 700, color: PHASE_C[e.phase] || C.sec }}>{e.postId}</span>
+                      </td>
+                      <td style={{ padding: "4px 8px", border: `1px solid ${C.border}`, color: C.sec }}>{e.label}</td>
+                      <td style={{ padding: "4px 8px", border: `1px solid ${C.border}`, textAlign: "center" }}>
+                        <span className="mono" style={{ fontWeight: 700, color: PHASE_C[e.phase] || C.sec }}>{hm(e.min)}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div style={{ marginTop: 12, fontSize: 10, color: C.muted }}>
+                Pour modifier les temps → onglet Référentiel &gt; Temps par type (clic sur une cellule)
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
