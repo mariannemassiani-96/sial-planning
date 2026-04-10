@@ -116,6 +116,16 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   const [newExtra, setNewExtra] = useState({ label: "", min: "" });
   // Popup détail chantier
   const [detailCmd, setDetailCmd] = useState<{ chantier: string; cmdId: string; cmd: any } | null>(null);
+  const [cmdOverrides, setCmdOverrides] = useState<Record<string, number>>({});
+
+  // Charger les overrides quand on ouvre un détail
+  useEffect(() => {
+    if (!detailCmd) { setCmdOverrides({}); return; }
+    fetch(`/api/planning/affectations?semaine=cmd_temps_${detailCmd.cmdId}`)
+      .then(r => r.ok ? r.json() : {})
+      .then(data => { if (data && typeof data === "object" && !Array.isArray(data)) setCmdOverrides(data as Record<string, number>); })
+      .catch(() => setCmdOverrides({}));
+  }, [detailCmd?.cmdId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [dragOp, setDragOp] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1468,14 +1478,18 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       {detailCmd && (() => {
         const cmd = detailCmd.cmd;
         const lignes = Array.isArray(cmd.lignes) && cmd.lignes.length > 0 ? cmd.lignes : [{ type: cmd.type, quantite: cmd.quantite }];
-        const allEtapes: Array<{ postId: string; label: string; min: number; phase: string }> = [];
+        const allEtapes: Array<{ postId: string; label: string; min: number; phase: string; isOverridden: boolean }> = [];
         for (const ligne of lignes) {
           const lType = ligne.type || cmd.type;
           if (lType === "intervention_chantier") continue;
           const lQte = parseInt(ligne.quantite) || cmd.quantite || 1;
           const lHs = lType === "hors_standard" ? { t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage } : cmd.hsTemps;
           const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null);
-          for (const e of routage) allEtapes.push({ postId: e.postId, label: e.label, min: e.estimatedMin, phase: e.phase });
+          for (const e of routage) {
+            // Appliquer les overrides par commande si existants
+            const overrideMin = cmdOverrides[e.postId];
+            allEtapes.push({ postId: e.postId, label: e.label, min: overrideMin !== undefined ? overrideMin : e.estimatedMin, phase: e.phase, isOverridden: overrideMin !== undefined });
+          }
         }
         const PHASE_C: Record<string, string> = { coupe: "#42A5F5", montage: "#FFA726", vitrage: "#26C6DA", logistique: "#CE93D8" };
         const totalMin = allEtapes.reduce((s, e) => s + e.min, 0);
@@ -1509,7 +1523,10 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                       <td style={{ padding: "4px 8px", border: `1px solid ${C.border}` }}>
                         <span style={{ fontWeight: 700, color: PHASE_C[e.phase] || C.sec }}>{e.postId}</span>
                       </td>
-                      <td style={{ padding: "4px 8px", border: `1px solid ${C.border}`, color: C.sec }}>{e.label}</td>
+                      <td style={{ padding: "4px 8px", border: `1px solid ${C.border}`, color: C.sec }}>
+                        {e.label}
+                        {e.isOverridden && <span style={{ fontSize: 8, color: C.orange, marginLeft: 4 }}>modifié</span>}
+                      </td>
                       <td style={{ padding: "2px 4px", border: `1px solid ${C.border}`, textAlign: "center" }}>
                         <input
                           type="number"
@@ -1518,12 +1535,19 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                           onBlur={(ev) => {
                             const v = parseInt(ev.target.value);
                             if (isNaN(v) || v === e.min) return;
-                            fetch("/api/referentiel", {
-                              method: "PATCH",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ typeId: cmd.type, postId: e.postId, min: Math.round(v / (cmd.quantite || 1)) }),
-                            }).catch(() => {});
-                            // Mettre à jour visuellement
+                            // Sauvegarder par commande (pas par type)
+                            fetch(`/api/planning/affectations?semaine=cmd_temps_${detailCmd.cmdId}`)
+                              .then(r => r.ok ? r.json() : {})
+                              .then(existing => {
+                                const overrides: Record<string, number> = (typeof existing === "object" && existing && !Array.isArray(existing)) ? { ...existing } : {};
+                                overrides[e.postId] = v;
+                                return fetch("/api/planning/affectations", {
+                                  method: "PUT",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ semaine: `cmd_temps_${detailCmd.cmdId}`, affectations: overrides }),
+                                });
+                              })
+                              .catch(() => {});
                             ev.target.style.color = C.orange;
                           }}
                           onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }}
