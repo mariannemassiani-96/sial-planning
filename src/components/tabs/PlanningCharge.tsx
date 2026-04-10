@@ -46,6 +46,7 @@ const PHASE_CONFIG = [
   { id: "montage",    label: "Montage",    color: "#FFA726", field: "semaine_montage",    competence: "frappes" },
   { id: "vitrage",    label: "Vitrage",    color: "#26C6DA", field: "semaine_vitrage",    competence: "vitrage" },
   { id: "logistique", label: "Logistique", color: "#CE93D8", field: "semaine_logistique", competence: "logistique" },
+  { id: "isula",      label: "ISULA",      color: "#4DB6AC", field: "semaine_isula",      competence: "isula" },
 ];
 
 // ── Capacité réelle par phase (basée sur les opérateurs) ─────────────────────
@@ -136,6 +137,20 @@ export default function PlanningCharge({ commandes, onPatch, viewWeek: externalW
             t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage,
           } : (cmd as any).hsTemps;
           allEtapes.push(...getRoutage(lType, lQte, lHs as Record<string, unknown> | null));
+        }
+
+        // Ajouter les étapes ISULA si vitrages ISULA
+        if (!(cmd as any).aucun_vitrage) {
+          const vitrages = Array.isArray((cmd as any).vitrages) ? (cmd as any).vitrages : [];
+          const isulaVitrages = vitrages.filter((v: any) => (v.fournisseur || "").toLowerCase() === "isula");
+          if (isulaVitrages.length > 0) {
+            const nbV = isulaVitrages.reduce((s: number, v: any) => s + (parseInt(v.quantite) || 1), 0);
+            const IT: Record<string, number> = { I1: 5, I2: 15, I3: 8, I4: 5, I5: 12, I6: 10, I7: 5, I8: 5 };
+            let ord = allEtapes.length;
+            for (const [pid, t] of Object.entries(IT)) {
+              allEtapes.push({ postId: pid, label: pid, estimatedMin: t * nbV, phase: "isula" as any, order: ord++ });
+            }
+          }
         }
 
         const totalMin = allEtapes.reduce((s, e) => s + e.estimatedMin, 0);

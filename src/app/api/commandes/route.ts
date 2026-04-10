@@ -66,7 +66,7 @@ async function ensureColumns() {
   if (migrationDone) return;
   try {
     const cols = [
-      "semaine_coupe", "semaine_montage", "semaine_vitrage", "semaine_logistique",
+      "semaine_coupe", "semaine_montage", "semaine_vitrage", "semaine_logistique", "semaine_isula",
     ];
     for (const col of cols) {
       await prisma.$executeRawUnsafe(

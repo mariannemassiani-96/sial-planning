@@ -35,7 +35,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     "reliquat_alu","reliquat_alu_desc","reliquat_alu_date",
     "reliquat_pvc","reliquat_pvc_desc","reliquat_pvc_date",
     "reliquat_accessoires","reliquat_accessoires_desc","reliquat_accessoires_date",
-    "semaine_coupe","semaine_montage","semaine_vitrage","semaine_logistique",
+    "semaine_coupe","semaine_montage","semaine_vitrage","semaine_logistique","semaine_isula",
   ];
   for (const key of fields) {
     if (data[key] !== undefined) {

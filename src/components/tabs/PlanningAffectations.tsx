@@ -646,7 +646,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch }: {
           const eq = EQUIPE.find(e => e.nom === op.nom);
           const dispoMin = (eq?.h || 39) * 60;
           let affMin = 0;
-          for (const [k, cell] of Object.entries(aff)) {
+          for (const [, cell] of Object.entries(aff)) {
             if (cell?.ops?.includes(op.nom)) affMin += DEMI_MIN;
           }
           opStats.push({ nom: op.nom, key: op.key, affMin, dispoMin, pct: dispoMin > 0 ? Math.round(affMin / dispoMin * 100) : 0 });
