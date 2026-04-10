@@ -103,7 +103,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
 }) {
   const [aff, setAff] = useState<AffMap>({});
   const [locked, setLocked] = useState(false);
-  const [hiddenPosts, setHiddenPosts] = useState<Set<string>>(new Set());
+  // Tâches masquées : "C3|BAT C", "C6|AZARA", etc.
+  const [hiddenTasks, setHiddenTasks] = useState<Set<string>>(new Set());
   const [ops, setOps] = useState<OpResolved[]>(OPS_FALLBACK);
   // Habitudes : { "C3": { "Julien": 45, "Laurent": 38 }, ... }
   const [habits, setHabits] = useState<Record<string, Record<string, number>>>({});
@@ -192,10 +193,10 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       .then(r => r.ok ? r.json() : {})
       .then(data => {
         setLocked(!!(data as any)?.locked);
-        const hidden = (data as any)?.hiddenPosts;
-        setHiddenPosts(Array.isArray(hidden) ? new Set(hidden) : new Set());
+        const hidden = (data as any)?.hiddenTasks || (data as any)?.hiddenPosts;
+        setHiddenTasks(Array.isArray(hidden) ? new Set(hidden) : new Set());
       })
-      .catch(() => { setLocked(false); setHiddenPosts(new Set()); });
+      .catch(() => { setLocked(false); setHiddenTasks(new Set()); });
     // Charger les tâches extras de la semaine
     fetch(`/api/planning/affectations?semaine=extras_${viewWeek}`)
       .then(r => r.ok ? r.json() : [])
@@ -320,13 +321,18 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   }, [commandes, viewWeek]);
 
   const activePosts = useMemo(() =>
-    POST_GROUPS.map(grp => ({
-      ...grp,
-      posts: grp.phase === "autre" ? grp.ids : grp.ids.filter(pid => postWork[pid]?.totalMin > 0),
-      visiblePosts: (grp.phase === "autre" ? grp.ids : grp.ids.filter(pid => postWork[pid]?.totalMin > 0)).filter(pid => !hiddenPosts.has(pid)),
-      allPosts: grp.phase === "autre" ? grp.ids : grp.ids.filter(pid => postWork[pid]?.totalMin > 0),
-    })).filter(g => g.allPosts.length > 0),
-    [postWork, hiddenPosts]
+    POST_GROUPS.map(grp => {
+      const allPosts = grp.phase === "autre" ? grp.ids : grp.ids.filter(pid => postWork[pid]?.totalMin > 0);
+      // Un poste est masqué si TOUS ses chantiers sont marqués "fait"
+      const visiblePosts = allPosts.filter(pid => {
+        const pw = postWork[pid];
+        if (!pw || pw.cmds.length === 0) return true; // poste AUTRE ou vide = toujours visible
+        const allDone = pw.cmds.every(c => hiddenTasks.has(`${pid}|${c.chantier || c.client}`));
+        return !allDone;
+      });
+      return { ...grp, posts: allPosts, visiblePosts, allPosts };
+    }).filter(g => g.allPosts.length > 0),
+    [postWork, hiddenTasks]
   );
 
   const ck = (pid: string, j: number, d: string) => `${pid}|${j}|${d}`;
@@ -395,22 +401,23 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   const saveLockState = useCallback(async (newLocked: boolean, newHidden: Set<string>) => {
     await fetch("/api/planning/affectations", {
       method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ semaine: `lock_${viewWeek}`, affectations: { locked: newLocked, hiddenPosts: Array.from(newHidden) } }),
+      body: JSON.stringify({ semaine: `lock_${viewWeek}`, affectations: { locked: newLocked, hiddenTasks: Array.from(newHidden) } }),
     }).catch(() => {});
   }, [viewWeek]);
 
   const toggleLock = useCallback(async () => {
     const newLocked = !locked;
     setLocked(newLocked);
-    saveLockState(newLocked, hiddenPosts);
-  }, [locked, hiddenPosts, saveLockState]);
+    saveLockState(newLocked, hiddenTasks);
+  }, [locked, hiddenTasks, saveLockState]);
 
-  const toggleHidePost = useCallback((pid: string) => {
-    const newHidden = new Set(hiddenPosts);
-    if (newHidden.has(pid)) newHidden.delete(pid); else newHidden.add(pid);
-    setHiddenPosts(newHidden);
+  const toggleHideTask = useCallback((pid: string, chantier: string) => {
+    const key = `${pid}|${chantier}`;
+    const newHidden = new Set(hiddenTasks);
+    if (newHidden.has(key)) newHidden.delete(key); else newHidden.add(key);
+    setHiddenTasks(newHidden);
     saveLockState(locked, newHidden);
-  }, [hiddenPosts, locked, saveLockState]);
+  }, [hiddenTasks, locked, saveLockState]);
 
   // ── Gestion tâches extras ──
   const addExtra = useCallback(() => {
@@ -778,7 +785,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                     const pw = postWork[pid];
                     if (!pw) continue;
                     const placed = placedByPost[pid] || new Set();
-                    const remaining = pw.cmds.map(c => c.chantier || c.client).filter(ch => !placed.has(ch));
+                    const remaining = pw.cmds.map(c => c.chantier || c.client).filter(ch => !placed.has(ch) && !hiddenTasks.has(`${pid}|${ch}`));
                     if (remaining.length > 0) postChantiers[pid] = remaining;
                   }
                   const hasCmds = Object.values(postChantiers).some(v => v.length > 0);
@@ -948,14 +955,10 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               <tr key={`h-${grp.label}`}>
                 <td colSpan={2 + 10} style={{ padding: "5px 8px", background: grp.color + "15", borderBottom: `2px solid ${grp.color}`, fontSize: 10, fontWeight: 700, color: grp.color, textTransform: "uppercase", letterSpacing: 1 }}>
                   {grp.label}
-                  {/* Postes masqués */}
-                  {grp.allPosts.filter(p => hiddenPosts.has(p)).length > 0 && (
-                    <span style={{ fontWeight: 400, fontSize: 9, marginLeft: 8, color: C.muted, textTransform: "none" }}>
-                      Masqués : {grp.allPosts.filter(p => hiddenPosts.has(p)).map(p => (
-                        <button key={p} onClick={() => toggleHidePost(p)} style={{ background: "none", border: `1px solid ${C.muted}`, borderRadius: 3, color: C.muted, fontSize: 8, padding: "1px 4px", margin: "0 2px", cursor: "pointer" }}>
-                          {p} ↩
-                        </button>
-                      ))}
+                  {/* Postes entièrement faits (tous chantiers cochés) */}
+                  {grp.allPosts.filter(p => !grp.visiblePosts.includes(p)).length > 0 && (
+                    <span style={{ fontWeight: 400, fontSize: 9, marginLeft: 8, color: C.green, textTransform: "none" }}>
+                      ✓ {grp.allPosts.filter(p => !grp.visiblePosts.includes(p)).map(p => p).join(", ")}
                     </span>
                   )}
                 </td>
@@ -973,12 +976,22 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
 
                 return (
                   <tr key={pid} style={{ borderBottom: `1px solid ${C.border}` }}>
-                    <td style={{ padding: "5px 8px", background: C.s1, border: `1px solid ${C.border}`, verticalAlign: "top" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <span style={{ fontWeight: 700, color: grp.color }}>{pid}</span>
-                        <button onClick={() => toggleHidePost(pid)} title="Pas cette semaine" style={{ background: "none", border: `1px solid ${C.muted}`, borderRadius: 3, color: C.muted, fontSize: 7, padding: "1px 4px", cursor: "pointer", marginLeft: "auto" }}>✓ fait</button>
-                      </div>
-                      <div style={{ fontSize: 8, color: C.muted }}>{POST_LABELS[pid]}</div>
+                    <td style={{ padding: "4px 6px", background: C.s1, border: `1px solid ${C.border}`, verticalAlign: "top" }}>
+                      <div style={{ fontWeight: 700, color: grp.color, fontSize: 11 }}>{pid} <span style={{ fontWeight: 400, color: C.muted, fontSize: 8 }}>{POST_LABELS[pid]}</span></div>
+                      {pw.cmds.map((c, ci) => {
+                        const ch = c.chantier || c.client;
+                        const isDone = hiddenTasks.has(`${pid}|${ch}`);
+                        return (
+                          <div key={ci} style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 2, opacity: isDone ? 0.4 : 1 }}>
+                            <button onClick={() => toggleHideTask(pid, ch)} style={{
+                              width: 14, height: 14, borderRadius: 3, border: `1px solid ${isDone ? C.green : C.muted}`,
+                              background: isDone ? C.green : "none", color: isDone ? "#000" : C.muted,
+                              fontSize: 8, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, flexShrink: 0,
+                            }}>{isDone ? "✓" : ""}</button>
+                            <span style={{ fontSize: 9, color: isDone ? C.muted : C.sec, textDecoration: isDone ? "line-through" : "none" }}>{ch}</span>
+                          </div>
+                        );
+                      })}
                       <div style={{ fontSize: 9, color: C.sec, marginTop: 2 }}>{pw.cmds.length} cmd</div>
                     </td>
                     <td style={{ padding: "4px", border: `1px solid ${overCapacity ? C.red : C.border}`, textAlign: "center", verticalAlign: "top" }}>
