@@ -95,81 +95,6 @@ function getOperatorsForPhase(phase: string, famille?: string): string[] {
   return OP_CAPACITIES.filter(op => op.competences.includes(competence)).map(op => op.nom);
 }
 
-// ── Données batch : semaines de FABRICATION ──────────────────────────────────
-const BATCH_DATA = [
-// S15
-{"client":"Delta Alu","ref_chantier":"POLI JL 2","semaine_fab":"S15 2026"},
-{"client":"Demeures Corses","ref_chantier":"OPA INVEST OUVRANTS","semaine_fab":"S15 2026"},
-{"client":"EGMF","ref_chantier":"SUPERETTE","semaine_fab":"S15 2026"},
-{"client":"Marcia Diffusion","ref_chantier":"Marinella Porte","semaine_fab":"S15 2026"},
-// S16
-{"client":"RANCH","ref_chantier":"TCHEUREKDJIAN","semaine_fab":"S16 2026"},
-{"client":"CECCALDI","ref_chantier":"Garde Corps Partie 2","semaine_fab":"S16 2026"},
-{"client":"CELIA","ref_chantier":"AZARA","semaine_fab":"S16 2026"},
-{"client":"DI LEGNU","ref_chantier":"Filippi 4 vitrage","semaine_fab":"S16 2026"},
-{"client":"GEDIMAT CASTELLI","ref_chantier":"MRB MILANINI","semaine_fab":"S16 2026"},
-{"client":"JPC","ref_chantier":"ANTONIA 2","semaine_fab":"S16 2026"},
-{"client":"RANCH","ref_chantier":"BIONDUCCI","semaine_fab":"S16 2026"},
-{"client":"RANCH","ref_chantier":"E&J","semaine_fab":"S16 2026"},
-{"client":"RANCH","ref_chantier":"FILISA","semaine_fab":"S16 2026"},
-{"client":"RANCH","ref_chantier":"PATURLE","semaine_fab":"S16 2026"},
-{"client":"U QUERCIU","ref_chantier":"BAT C","semaine_fab":"S16 2026"},
-// S17
-{"client":"EGMF","ref_chantier":"GUIBERT","semaine_fab":"S17 2026"},
-{"client":"MATIBAT","ref_chantier":"GASNAULT","semaine_fab":"S17 2026"},
-{"client":"RANCH","ref_chantier":"CASITA BIANCA","semaine_fab":"S17 2026"},
-{"client":"RANCH","ref_chantier":"KH MARINA","semaine_fab":"S17 2026"},
-{"client":"Ranch","ref_chantier":"LUCCHINI","semaine_fab":"S17 2026"},
-{"client":"RINUVA","ref_chantier":"ALLASIO","semaine_fab":"S17 2026"},
-{"client":"SAMMARCELLI","ref_chantier":"SUP","semaine_fab":"S17 2026"},
-{"client":"U QUERCIU","ref_chantier":"Bat B","semaine_fab":"S17 2026"},
-{"client":"Probat","ref_chantier":"Marifani","semaine_fab":"S17 2026"},
-// S18
-{"client":"MENCO","ref_chantier":"CAMPO LONGO 3","semaine_fab":"S18 2026"},
-{"client":"U QUERCIU","ref_chantier":"BAT D","semaine_fab":"S18 2026"},
-{"client":"VAN HULLEBUSCH","ref_chantier":"VAN HULLEBUSCH","semaine_fab":"S18 2026"},
-// S19
-{"client":"EGMF","ref_chantier":"MAMA SCI","semaine_fab":"S19 2026"},
-{"client":"MENCO","ref_chantier":"CAMPO LONGO 4","semaine_fab":"S19 2026"},
-{"client":"Balagne","ref_chantier":"SA CONSTRUCTION","semaine_fab":"S19 2026"},
-{"client":"RANCH","ref_chantier":"GAMBARELLI","semaine_fab":"S19 2026"},
-{"client":"VOLPE","ref_chantier":"BEAUCE PARC","semaine_fab":"S19 2026"},
-{"client":"BERNARDINI","ref_chantier":"VOLET","semaine_fab":"S19 2026"},
-{"client":"JPC","ref_chantier":"POMPES FUNEBRE","semaine_fab":"S19 2026"},
-// S20
-{"client":"MASSIANI","ref_chantier":"Porte Cave","semaine_fab":"S20 2026"},
-{"client":"BAMPA","ref_chantier":"GARDE CORPS EXT","semaine_fab":"S20 2026"},
-{"client":"BAMPA","ref_chantier":"GARDE CORPS INT","semaine_fab":"S20 2026"},
-{"client":"GERONIMI","ref_chantier":"VOLETS","semaine_fab":"S20 2026"},
-{"client":"ALPHA POSE","ref_chantier":"SASSI","semaine_fab":"S20 2026"},
-{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO APPARTEMENT","semaine_fab":"S20 2026"},
-{"client":"MATIBAT","ref_chantier":"GUERIN","semaine_fab":"S20 2026"},
-{"client":"MENCO","ref_chantier":"TAMBINI","semaine_fab":"S20 2026"},
-{"client":"NEPITA","ref_chantier":"PORTE BAT A","semaine_fab":"S20 2026"},
-{"client":"REBANI","ref_chantier":"ACHILLI","semaine_fab":"S20 2026"},
-{"client":"REBANI","ref_chantier":"HOUARI","semaine_fab":"S20 2026"},
-{"client":"REBANI","ref_chantier":"PERSO","semaine_fab":"S20 2026"},
-{"client":"PASQUALINI Fille","ref_chantier":"Paumelle","semaine_fab":"S20 2026"},
-// S21
-{"client":"MENCO","ref_chantier":"CAMPO LONGO 5","semaine_fab":"S21 2026"},
-{"client":"SAMMARCELLI","ref_chantier":"Garde Corps Partie 2","semaine_fab":"S21 2026"},
-{"client":"CAS'APERTURA","ref_chantier":"MERCIER PINEA","semaine_fab":"S21 2026"},
-{"client":"CECCALDI","ref_chantier":"GC PARTIE 3","semaine_fab":"S21 2026"},
-{"client":"PROBAT","ref_chantier":"ROCCA D'ISTRIA","semaine_fab":"S21 2026"},
-// S22
-{"client":"MENCO","ref_chantier":"CAMPO LONGO 6","semaine_fab":"S22 2026"},
-{"client":"U QUERCIU","ref_chantier":"BAT E","semaine_fab":"S22 2026"},
-// S23
-{"client":"EGMF","ref_chantier":"ST JEAN","semaine_fab":"S23 2026"},
-{"client":"MENCO","ref_chantier":"CAMPO LONGO 7","semaine_fab":"S23 2026"},
-{"client":"MORANDINI","ref_chantier":"ALERIA","semaine_fab":"S23 2026"},
-// S25-S28
-{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO 1","semaine_fab":"S25 2026"},
-{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO 2","semaine_fab":"S26 2026"},
-{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO 3","semaine_fab":"S27 2026"},
-{"client":"EGMF","ref_chantier":"LOGIS CORSE AJACCIO 4","semaine_fab":"S28 2026"},
-];
-
 // ── Composant principal ──────────────────────────────────────────────────────
 
 export default function PlanningCharge({ commandes, onPatch }: {
@@ -249,27 +174,7 @@ export default function PlanningCharge({ commandes, onPatch }: {
     [cmdList]
   );
 
-  // ── Import batch des semaines de livraison ──
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<string | null>(null);
-  const runBatchImport = async () => {
-    setImporting(true);
-    setImportResult(null);
-    try {
-      const res = await fetch("/api/planning/batch-weeks?secret=batch2026sial", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: BATCH_DATA }),
-      });
-      const data = await res.json();
-      setImportResult(`${data.ok} mises à jour, ${data.fail} non trouvées sur ${data.total}`);
-      // Recharger la page pour voir les changements
-      window.location.reload();
-    } catch {
-      setImportResult("Erreur lors de l'import");
-    }
-    setImporting(false);
-  };
+
 
   const prevWeek = () => { const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() - 7); setViewWeek(localStr(d)); };
   const nextWeek = () => { const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() + 7); setViewWeek(localStr(d)); };
@@ -337,17 +242,6 @@ export default function PlanningCharge({ commandes, onPatch }: {
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 16, fontWeight: 800 }}>Planning {currentWeekId}</div>
         </div>
-        {/* Bouton import batch (une seule fois) */}
-        {unplannedCmds.length > 10 && (
-          <button
-            onClick={runBatchImport}
-            disabled={importing}
-            style={{ padding: "6px 14px", background: C.orange, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 11, cursor: importing ? "wait" : "pointer" }}
-          >
-            {importing ? "Import en cours..." : "Positionner les semaines de fab"}
-          </button>
-        )}
-        {importResult && <span style={{ fontSize: 11, color: C.green }}>{importResult}</span>}
       </div>
 
       {/* ── Charge vs Capacité par phase ── */}
