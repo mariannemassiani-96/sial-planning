@@ -65,19 +65,24 @@ async function main() {
   await prisma.operator.deleteMany();
   await prisma.operator.createMany({
     data: [
-      { name: "Laurent",       weekHours: 39, posts: ["C1","C2","C3","C5","V2"],                           workingDays: [0,1,2,3,4], notes: "Prépa + coupe LMT + soudure PVC (seul) + soutien expédition" },
-      { name: "Julien",        weekHours: 39, posts: ["C1","C2","C3","C4","C6"],                           workingDays: [0,1,2,3,4], notes: "Prépa + coupe LMT + coupe double tête (seul)" },
-      { name: "Alain",         weekHours: 30, posts: ["M1","M2","M3","F1","F2","F3"],                      workingDays: [0,1,2,3],   notes: "Montage dormants coulissant+galandage · Absent vendredi" },
-      { name: "Jean-Pierre",   weekHours: 36, posts: ["M1","M2","M3","F1","F2","F3","V1","C1","C2","C3"], workingDays: [0,1,2,3,4], notes: "Sur-mesure / Luxe / Hors-normes · Polyvalent tous postes" },
-      { name: "Michel",        weekHours: 36, posts: ["M1","M2","M3","F1","F2","F3","C1","C2","C3"],      workingDays: [0,1,2,3,4], notes: "Montage frappes · Polyvalent coulissant+soudure PVC" },
-      { name: "Jean-François", weekHours: 39, posts: ["F1","F2","F3","M1","M2","M3","V1","V2","C1","C2","C3"], workingDays: [0,1,2,3,4], notes: "Montage frappes · Polyvalent coulissant+vitrage OV+coupe" },
-      { name: "Guillaume",     weekHours: 39, posts: ["I1","I2","I5","I6","I7","I8","V1"],                workingDays: [0,1,2,3,4], notes: "Réceptions · Rangement · Prépa accessoires · Chargements" },
-      { name: "Momo",          weekHours: 39, posts: ["I1","I2","I3","I4","I5","I6","I8","V1"],           workingDays: [0,1,2,3,4], notes: "Opérateur ISULA A→Z · Remplace vitrage OV" },
-      { name: "Bruno",         weekHours: 39, posts: ["I1","I2","I3","I4","I5","I6","I7","I8","F1","F2","F3","M1","M2","M3"], workingDays: [0,1,2,3,4], notes: "Responsable QC+procédures ISULA+SIAL · Supervision" },
-      { name: "Francescu",     weekHours: 39, posts: ["F1","F2","F3","C1","C2","C3"],                     workingDays: [0,1,2,3,4], notes: "Montage frappes · Soutien coupe" },
-      { name: "Ali",           weekHours: 39, posts: ["I1","I2","I3","I4","I5","I6","I7","I8"],           workingDays: [0,1,2,3,4], notes: "Opérateur ISULA A→Z · Présent tous les jours" },
-      { name: "Matéo",         weekHours: 39, posts: ["C1","C2","C3","C4","C5","C6"],                     workingDays: [0,1,2,3,4], notes: "Coupe · Apprenti avancé" },
-      { name: "Kentin",        weekHours: 39, posts: ["C1","C2","C3","F1","F2","F3"],                     workingDays: [0,1,2,3,4], notes: "Coupe + soutien montage frappes" },
+      // 8h/jour sauf vendredi 7h → 39h/semaine
+      { name: "Laurent",       weekHours: 39, posts: ["C1","C2","C3","C5","V2"],                           workingDays: [0,1,2,3,4], notes: "Prépa + coupe LMT + soudure PVC (seul) + soutien expédition · 8h L-J, 7h V" },
+      { name: "Julien",        weekHours: 39, posts: ["C1","C2","C3","C4","C6"],                           workingDays: [0,1,2,3,4], notes: "Prépa + coupe LMT + coupe double tête (seul) · 8h L-J, 7h V" },
+      { name: "Jean-François", weekHours: 39, posts: ["F1","F2","F3","M1","M2","M3","V1","V2","C1","C2","C3"], workingDays: [0,1,2,3,4], notes: "Montage frappes · Polyvalent coulissant+vitrage OV+coupe · 8h L-J, 7h V" },
+      { name: "Guillaume",     weekHours: 39, posts: ["I1","I2","I5","I6","I7","I8","V1"],                workingDays: [0,1,2,3,4], notes: "Réceptions · Rangement · Prépa accessoires · Chargements · 8h L-J, 7h V" },
+      { name: "Momo",          weekHours: 39, posts: ["I1","I2","I3","I4","I5","I6","I8","V1"],           workingDays: [0,1,2,3,4], notes: "Opérateur ISULA A→Z · Remplace vitrage OV · 8h L-J, 7h V" },
+      { name: "Bruno",         weekHours: 39, posts: ["I1","I2","I3","I4","I5","I6","I7","I8","F1","F2","F3","M1","M2","M3"], workingDays: [0,1,2,3,4], notes: "Responsable QC+procédures ISULA+SIAL · Supervision · 8h L-J, 7h V" },
+      { name: "Francescu",     weekHours: 39, posts: ["F1","F2","F3","C1","C2","C3"],                     workingDays: [0,1,2,3,4], notes: "Montage frappes · Soutien coupe · 8h L-J, 7h V" },
+      // Alain : pas de vendredi → 4 jours × 7.5h = 30h
+      { name: "Alain",         weekHours: 30, posts: ["M1","M2","M3","F1","F2","F3"],                      workingDays: [0,1,2,3],   notes: "Montage dormants coulissant+galandage · Absent vendredi · 7h30 L-J" },
+      // Jean-Pierre : vendredi AM seulement → 4×8h + 4h = 36h
+      { name: "Jean-Pierre",   weekHours: 36, posts: ["M1","M2","M3","F1","F2","F3","V1","C1","C2","C3"], workingDays: [0,1,2,3,4], notes: "Sur-mesure / Luxe / Hors-normes · Polyvalent tous postes · 8h L-J, vendredi matin seul (4h)" },
+      // Michel : 7h/jour × 5j = 35h
+      { name: "Michel",        weekHours: 35, posts: ["M1","M2","M3","F1","F2","F3","C1","C2","C3"],      workingDays: [0,1,2,3,4], notes: "Montage frappes · Polyvalent coulissant+soudure PVC · 7h/jour" },
+      // Matéo, Kentin, Ali : 7h/jour × 5j = 35h
+      { name: "Ali",           weekHours: 35, posts: ["I1","I2","I3","I4","I5","I6","I7","I8"],           workingDays: [0,1,2,3,4], notes: "Opérateur ISULA A→Z · 7h/jour" },
+      { name: "Matéo",         weekHours: 35, posts: ["C1","C2","C3","C4","C5","C6"],                     workingDays: [0,1,2,3,4], notes: "Coupe · Apprenti avancé · 7h/jour" },
+      { name: "Kentin",        weekHours: 35, posts: ["C1","C2","C3","F1","F2","F3"],                     workingDays: [0,1,2,3,4], notes: "Coupe + soutien montage frappes · 7h/jour" },
     ],
   });
 

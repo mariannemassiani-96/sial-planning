@@ -3,63 +3,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
-function mapToDb(data: any) {
-  return {
-    num_commande:            data.num_commande            || "",
-    client:                  data.client                  || "",
-    ref_chantier:            data.ref_chantier            || null,
-    zone:                    data.zone                    || "SIAL",
-    priorite:                data.priorite                || "normale",
-    semaine_theorique:       data.semaine_theorique       || null,
-    semaine_atteignable:     data.semaine_atteignable     || null,
-    date_alu:                data.date_alu                || null,
-    date_pvc:                data.date_pvc                || null,
-    date_accessoires:        data.date_accessoires        || null,
-    date_panneau_porte:      data.date_panneau_porte      || null,
-    date_volet_roulant:      data.date_volet_roulant      || null,
-    date_livraison_souhaitee: data.date_livraison_souhaitee || null,
-    type:                    data.type                    || "ob1_pvc",
-    quantite:                parseInt(data.quantite)      || 1,
-    hsTemps:                 data.hsTemps                 ?? null,
-    lignes:                  data.lignes                  ?? null,
-    vitrages:                data.vitrages                ?? null,
-    aucun_vitrage:           data.aucun_vitrage           ?? false,
-    cmd_alu_passee:          data.cmd_alu_passee          ?? false,
-    cmd_pvc_passee:          data.cmd_pvc_passee          ?? false,
-    cmd_accessoires_passee:  data.cmd_accessoires_passee  ?? false,
-    cmd_panneau_passee:      data.cmd_panneau_passee      ?? false,
-    cmd_volet_passee:        data.cmd_volet_passee        ?? false,
-    cmd_alu_necessaire:      data.cmd_alu_necessaire      ?? false,
-    cmd_pvc_necessaire:      data.cmd_pvc_necessaire      ?? false,
-    cmd_accessoires_necessaire: data.cmd_accessoires_necessaire ?? false,
-    cmd_panneau_necessaire:  data.cmd_panneau_necessaire  ?? false,
-    cmd_volet_necessaire:    data.cmd_volet_necessaire    ?? false,
-    transporteur:            data.transporteur            || null,
-    etape_coupe_ok:          data.etape_coupe_ok          ?? false,
-    etape_montage_ok:        data.etape_montage_ok        ?? false,
-    etape_vitrage_ok:        data.etape_vitrage_ok        ?? false,
-    etape_palette_ok:        data.etape_palette_ok        ?? false,
-    notes:                   data.notes                   || null,
-    type_commande:           data.type_commande           || null,
-    atelier:                 data.atelier                 || "SIAL",
-    montant_ht:              data.montant_ht != null ? parseFloat(data.montant_ht) || null : null,
-    avancement:              parseInt(data.avancement)    || 0,
-    statut:                  data.statut                  || "en_attente",
-    acompte_recu:              data.acompte_recu              ?? false,
-    acompte_montant:           data.acompte_montant != null ? parseFloat(data.acompte_montant) || null : null,
-    acompte_date:              data.acompte_date              || null,
-    reliquat_alu:              data.reliquat_alu              ?? false,
-    reliquat_alu_desc:         data.reliquat_alu_desc         || null,
-    reliquat_alu_date:         data.reliquat_alu_date         || null,
-    reliquat_pvc:              data.reliquat_pvc              ?? false,
-    reliquat_pvc_desc:         data.reliquat_pvc_desc         || null,
-    reliquat_pvc_date:         data.reliquat_pvc_date         || null,
-    reliquat_accessoires:      data.reliquat_accessoires      ?? false,
-    reliquat_accessoires_desc: data.reliquat_accessoires_desc || null,
-    reliquat_accessoires_date: data.reliquat_accessoires_date || null,
-  };
-}
-
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
@@ -72,7 +15,38 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   const data = await req.json();
-  const cmd = await prisma.commande.update({ where: { id: params.id }, data: mapToDb(data) });
+
+  // Vrai PATCH : ne met à jour que les champs explicitement envoyés
+  // pour ne pas écraser statut, étapes, etc. avec des valeurs par défaut
+  const partial: Record<string, unknown> = {};
+  const fields = [
+    "num_commande","client","ref_chantier","zone","priorite",
+    "semaine_theorique","semaine_atteignable",
+    "date_alu","date_pvc","date_accessoires","date_panneau_porte","date_volet_roulant",
+    "date_livraison_souhaitee","type","quantite","hsTemps","lignes","vitrages",
+    "aucun_vitrage",
+    "cmd_alu_passee","cmd_pvc_passee","cmd_accessoires_passee","cmd_panneau_passee","cmd_volet_passee",
+    "cmd_alu_necessaire","cmd_pvc_necessaire","cmd_accessoires_necessaire","cmd_panneau_necessaire","cmd_volet_necessaire",
+    "transporteur",
+    "etape_coupe_ok","etape_montage_ok","etape_vitrage_ok","etape_palette_ok",
+    "etape_coupe_date","etape_montage_date","etape_vitrage_date","etape_palette_date",
+    "notes","type_commande","atelier","montant_ht","avancement","statut",
+    "acompte_recu","acompte_montant","acompte_date",
+    "reliquat_alu","reliquat_alu_desc","reliquat_alu_date",
+    "reliquat_pvc","reliquat_pvc_desc","reliquat_pvc_date",
+    "reliquat_accessoires","reliquat_accessoires_desc","reliquat_accessoires_date",
+  ];
+  for (const key of fields) {
+    if (data[key] !== undefined) {
+      let val = data[key];
+      if (key === "quantite") val = parseInt(val) || 1;
+      else if (key === "montant_ht" || key === "acompte_montant") val = val != null ? parseFloat(val) || null : null;
+      else if (key === "avancement") val = parseInt(val) || 0;
+      partial[key] = val;
+    }
+  }
+
+  const cmd = await prisma.commande.update({ where: { id: params.id }, data: partial });
   return NextResponse.json(cmd);
 }
 

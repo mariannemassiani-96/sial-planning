@@ -9,6 +9,7 @@ const OP_COLORS: Record<string, string> = {
   ali: "#26C6DA", jp: "#FF7043", jf: "#66BB6A",
   michel: "#42A5F5", alain: "#FFCA28", francescu: "#AB47BC",
   julien: "#80CBC4", laurent: "#A5D6A7",
+  mateo: "#EF5350", kentin: "#7E57C2",
 };
 
 const POSTES_LABELS: Record<string, string> = {
@@ -607,7 +608,10 @@ function CompetencesPanel() {
   useEffect(() => {
     fetch("/api/competences")
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setCompetences(d); })
+      .then(d => {
+        // Ne remplace que si la DB contient des données réelles (pas un objet vide)
+        if (d && Object.keys(d).length > 0) setCompetences(d);
+      })
       .catch(() => {});
   }, []);
 
