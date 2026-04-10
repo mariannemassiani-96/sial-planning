@@ -157,6 +157,26 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch }: {
       .catch(() => { setAff({}); setLoaded(viewWeek); });
   }, [viewWeek]);
 
+  // ── Rafraîchissement auto toutes les 10s (si pas en train de sauvegarder) ──
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (saving || saveTimer.current) return; // ne pas écraser pendant une sauvegarde
+      fetch(`/api/planning/affectations?semaine=${viewWeek}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data || typeof data !== "object") return;
+          const migrated: AffMap = {};
+          for (const [key, val] of Object.entries(data)) {
+            if (Array.isArray(val)) migrated[key] = { ops: val as string[], cmds: [] };
+            else if (val && typeof val === "object" && "ops" in (val as any)) migrated[key] = val as CellData;
+          }
+          if (Object.keys(migrated).length > 0) setAff(migrated);
+        })
+        .catch(() => {});
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [viewWeek, saving]);
+
   // ── Sauvegarde auto (debounce 1s) + apprentissage ──
   const saveAff = useCallback((newAff: AffMap) => {
     setAff(newAff);

@@ -80,6 +80,16 @@ export default function HomePage() {
     if (status === "authenticated") fetchAll();
   }, [status, fetchAll]);
 
+  // Rafraîchissement auto toutes les 10s
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    const interval = setInterval(() => {
+      fetch("/api/commandes").then(r => r.ok ? r.json() : null).then(data => { if (data) setCommandes(data); }).catch(() => {});
+      fetch("/api/stocks").then(r => r.ok ? r.json() : null).then(data => { if (data) setStocks(data); }).catch(() => {});
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [status]);
+
   const ruptures = Object.entries(STOCKS_DEF).filter(([id, st]) => {
     const a = parseFloat(String(stocks[id]?.actuel)) || 0; return a > 0 && a < st.min;
   }).length;
