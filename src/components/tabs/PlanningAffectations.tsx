@@ -42,6 +42,7 @@ const POST_GROUPS = [
   { label: "Montage",       color: "#FFA726", phase: "montage", competence: "frappes", ids: ["M1","M2","M3","F1","F2","F3","MHS"] },
   { label: "Vitrage",       color: "#26C6DA", phase: "vitrage", competence: "vitrage", ids: ["V1","V2","V3"] },
   { label: "Logistique",    color: "#CE93D8", phase: "logistique", competence: "logistique", ids: ["L4","L6","L7"] },
+  { label: "ISULA",         color: "#4DB6AC", phase: "isula", competence: "isula", ids: ["I1","I2","I3","I4","I5","I6","I7","I8"] },
 ];
 const POST_LABELS: Record<string, string> = {
   C2:"Prépa barres",C3:"Coupe LMT",C4:"Coupe 2 têtes",C5:"Renfort acier",C6:"Soudure PVC",
@@ -49,9 +50,10 @@ const POST_LABELS: Record<string, string> = {
   MHS:"Montage HS",
   V1:"Vitr. Frappe",V2:"Vitr. Coul/Gal",V3:"Emballage",
   L4:"Prépa acc.",L6:"Palettes",L7:"Chargement",
+  I1:"Réception verre",I2:"Coupe verre",I3:"Coupe interc.",I4:"Butyle",I5:"Assemblage",I6:"Gaz+scell.",I7:"CQ CEKAL",I8:"Sortie chaîne",
 };
 const PHASE_FIELD: Record<string, string> = {
-  coupe: "semaine_coupe", montage: "semaine_montage", vitrage: "semaine_vitrage", logistique: "semaine_logistique",
+  coupe: "semaine_coupe", montage: "semaine_montage", vitrage: "semaine_vitrage", logistique: "semaine_logistique", isula: "semaine_vitrage",
 };
 // Fallback statique (utilisé seulement si l'API ne répond pas)
 const OPS_FALLBACK = EQUIPE.map(op => ({
@@ -223,6 +225,27 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch }: {
             }
             const existing = work[e.postId].cmds.find(c => c.client === client && c.chantier === chantier);
             if (existing) existing.min += e.estimatedMin;
+          }
+        }
+      }
+
+      // Postes ISULA : si la commande a des vitrages et est planifiée en vitrage cette semaine
+      if ((cmd as any).semaine_vitrage === viewWeek && !(cmd as any).aucun_vitrage) {
+        const vitrages = Array.isArray((cmd as any).vitrages) ? (cmd as any).vitrages : [];
+        const isulaVitrages = vitrages.filter((v: any) => (v.fournisseur || "").toLowerCase() === "isula");
+        if (isulaVitrages.length > 0) {
+          const nbVitrages = isulaVitrages.reduce((s: number, v: any) => s + (parseInt(v.quantite) || 1), 0);
+          // Temps estimés par poste ISULA (min par vitrage)
+          const ISULA_TIMES: Record<string, number> = { I1: 5, I2: 15, I3: 8, I4: 5, I5: 12, I6: 10, I7: 5, I8: 5 };
+          for (const [pid, tPerUnit] of Object.entries(ISULA_TIMES)) {
+            const min = tPerUnit * nbVitrages;
+            if (!work[pid]) work[pid] = { totalMin: 0, cmds: [] };
+            work[pid].totalMin += min;
+            if (!work[pid].cmds.some(c => c.client === client && c.chantier === chantier)) {
+              work[pid].cmds.push({ client, chantier, min: 0 });
+            }
+            const existing = work[pid].cmds.find(c => c.client === client && c.chantier === chantier);
+            if (existing) existing.min += min;
           }
         }
       }
