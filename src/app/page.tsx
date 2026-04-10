@@ -19,8 +19,8 @@ import Qualite from "@/components/tabs/Qualite";
 import ImportCSV from "@/components/tabs/ImportCSV";
 import Pointage from "@/components/tabs/Pointage";
 import AffichageAtelier from "@/components/tabs/AffichageAtelier";
-import DashboardMatin from "@/components/tabs/DashboardMatin";
 import PlanningCharge from "@/components/tabs/PlanningCharge";
+import PlanningAffectations from "@/components/tabs/PlanningAffectations";
 import StatsAdmin from "@/components/tabs/StatsAdmin";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
 import TutoAJ from "@/components/TutoAJ";
@@ -45,13 +45,20 @@ function SubTabs({ tabs, active, onChange }: { tabs: { id: string; l: string }[]
 
 export default function HomePage() {
   const { data: session, status } = useSession();
-  const [ong, setOng] = useState("dashboard_matin");
+  const [ong, setOng] = useState("planning_fab");
   const [commandes, setCommandes] = useState<CommandeCC[]>([]);
   const [cmdEdit, setCmdEdit] = useState<CommandeCC | null>(null);
   const [stocks, setStocks] = useState<Record<string, { actuel: number }>>({});
   const [loading, setLoading] = useState(true);
 
   // Sub-tab states for merged tabs
+  const [planningSub, setPlanningSub] = useState<"charge" | "affectations">("charge");
+  const [planningWeek, setPlanningWeek] = useState<string>(() => {
+    const d = new Date(); const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    d.setDate(d.getDate() + diff); d.setHours(0,0,0,0);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  });
   const [dashSub, setDashSub] = useState<"tableau" | "crise">("tableau");
   const [rhSub, setRhSub] = useState<"planning" | "competences">("planning");
   const [isulaSub, setIsulaSub] = useState<"planning" | "besoins">("planning");
@@ -83,7 +90,6 @@ export default function HomePage() {
 
   // ── Navigation — 12 onglets (au lieu de 20) ──────────────────────────────
   const nav = [
-    { id: "dashboard_matin", l: "🌅 Matin" },
     { id: "planning_fab",    l: "📅 Planning" },
     { id: "dashboard",       l: `🏠 Suivi${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
     { id: "livraison",       l: "🚚 Livraisons" },
@@ -189,7 +195,7 @@ export default function HomePage() {
         ))}
       </div>
 
-      <div style={{ maxWidth: 1000, margin: "0 auto", padding: 20 }}>
+      <div style={{ maxWidth: 1400, margin: "0 auto", padding: 20 }}>
         {loading ? (
           <div style={{ textAlign: "center", padding: 60, color: C.sec }}>
             <div style={{ fontSize: 24, marginBottom: 10 }}>⏳</div>
@@ -197,9 +203,17 @@ export default function HomePage() {
           </div>
         ) : (
           <>
-            {ong === "dashboard_matin" && <DashboardMatin />}
-
-            {ong === "planning_fab" && <PlanningCharge commandes={commandes} onPatch={patchCommande} />}
+            {ong === "planning_fab" && (
+              <>
+                <SubTabs
+                  tabs={[{ id: "charge", l: "Charge & Semaines" }, { id: "affectations", l: "Affectations" }]}
+                  active={planningSub}
+                  onChange={(id) => setPlanningSub(id as "charge" | "affectations")}
+                />
+                {planningSub === "charge" && <PlanningCharge commandes={commandes} onPatch={patchCommande} viewWeek={planningWeek} onWeekChange={setPlanningWeek} />}
+                {planningSub === "affectations" && <PlanningAffectations commandes={commandes} viewWeek={planningWeek} />}
+              </>
+            )}
 
             {/* Tableau de bord + Crise fusionnés */}
             {ong === "dashboard" && (

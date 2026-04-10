@@ -97,11 +97,15 @@ function getOperatorsForPhase(phase: string, famille?: string): string[] {
 
 // ── Composant principal ──────────────────────────────────────────────────────
 
-export default function PlanningCharge({ commandes, onPatch }: {
+export default function PlanningCharge({ commandes, onPatch, viewWeek: externalWeek, onWeekChange }: {
   commandes: CommandeCC[];
   onPatch: (id: string, updates: Record<string, unknown>) => void;
+  viewWeek?: string;
+  onWeekChange?: (w: string) => void;
 }) {
-  const [viewWeek, setViewWeek] = useState<string>(() => localStr(getMonday(new Date())));
+  const [internalWeek, setInternalWeek] = useState<string>(() => localStr(getMonday(new Date())));
+  const viewWeek = externalWeek || internalWeek;
+  const setViewWeek = (w: string) => { if (onWeekChange) onWeekChange(w); else setInternalWeek(w); };
   const weekOptions = useMemo(() => getWeekOptions(), []);
   const currentWeekId = weekId(viewWeek);
 
