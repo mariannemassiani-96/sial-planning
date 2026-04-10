@@ -20,8 +20,7 @@ import ImportCSV from "@/components/tabs/ImportCSV";
 import Pointage from "@/components/tabs/Pointage";
 import AffichageAtelier from "@/components/tabs/AffichageAtelier";
 import DashboardMatin from "@/components/tabs/DashboardMatin";
-import PlanningSemaine from "@/components/tabs/PlanningSemaine";
-import DetailCommande from "@/components/tabs/DetailCommande";
+import PlanningCharge from "@/components/tabs/PlanningCharge";
 import StatsAdmin from "@/components/tabs/StatsAdmin";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
 import TutoAJ from "@/components/TutoAJ";
@@ -47,7 +46,6 @@ function SubTabs({ tabs, active, onChange }: { tabs: { id: string; l: string }[]
 export default function HomePage() {
   const { data: session, status } = useSession();
   const [ong, setOng] = useState("dashboard_matin");
-  const [planningOrderId, setPlanningOrderId] = useState<string | null>(null);
   const [commandes, setCommandes] = useState<CommandeCC[]>([]);
   const [cmdEdit, setCmdEdit] = useState<CommandeCC | null>(null);
   const [stocks, setStocks] = useState<Record<string, { actuel: number }>>({});
@@ -201,11 +199,7 @@ export default function HomePage() {
           <>
             {ong === "dashboard_matin" && <DashboardMatin />}
 
-            {ong === "planning_fab" && (
-              planningOrderId
-                ? <DetailCommande orderId={planningOrderId} onBack={() => setPlanningOrderId(null)} />
-                : <PlanningSemaine onSelectOrder={(id) => setPlanningOrderId(id)} />
-            )}
+            {ong === "planning_fab" && <PlanningCharge commandes={commandes} />}
 
             {/* Tableau de bord + Crise fusionnés */}
             {ong === "dashboard" && (
