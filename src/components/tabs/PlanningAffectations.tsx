@@ -18,39 +18,35 @@ function weekId(mondayStr: string): string {
 }
 
 const JOURS = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
-const DEMI = ["matin", "aprèm"] as const;
 
-const PHASE_CONFIG = [
-  { id: "coupe",      label: "Coupe",      color: "#42A5F5", field: "semaine_coupe",      competence: "coupe" },
-  { id: "montage",    label: "Montage",    color: "#FFA726", field: "semaine_montage",    competence: "frappes" },
-  { id: "vitrage",    label: "Vitrage",    color: "#26C6DA", field: "semaine_vitrage",    competence: "vitrage" },
-  { id: "logistique", label: "Logistique", color: "#CE93D8", field: "semaine_logistique", competence: "logistique" },
+const POST_GROUPS = [
+  { label: "Coupe & Prépa", color: "#42A5F5", phase: "coupe", ids: ["C2","C3","C4","C5","C6"] },
+  { label: "Montage",       color: "#FFA726", phase: "montage", ids: ["M1","M2","M3","F1","F2","F3"] },
+  { label: "Vitrage",       color: "#26C6DA", phase: "vitrage", ids: ["V1","V2","V3"] },
+  { label: "Logistique",    color: "#CE93D8", phase: "logistique", ids: ["L4","L6","L7"] },
 ];
+const POST_LABELS: Record<string, string> = {
+  C2:"Prépa barres",C3:"Coupe LMT",C4:"Coupe 2 têtes",C5:"Renfort acier",C6:"Soudure PVC",
+  M1:"Dorm. couliss.",M2:"Dorm. galand.",M3:"Portes ALU",F1:"Dorm. frappe ALU",F2:"Ouv.+ferrage",F3:"Mise bois+CQ",
+  V1:"Vitr. Frappe",V2:"Vitr. Coul/Gal",V3:"Emballage",
+  L4:"Prépa acc.",L6:"Palettes",L7:"Chargement",
+};
+const PHASE_COMPETENCE: Record<string, string> = {
+  coupe: "coupe", montage: "frappes", vitrage: "vitrage", logistique: "logistique",
+};
+const PHASE_FIELD: Record<string, string> = {
+  coupe: "semaine_coupe", montage: "semaine_montage", vitrage: "semaine_vitrage", logistique: "semaine_logistique",
+};
 
-// ── Opérateurs avec leur capacité par demi-journée ──────────────────────────
+const OPS = EQUIPE.map(op => ({ id: op.id, nom: op.nom, competences: op.competences, vendrediOff: op.vendrediOff }));
 
-const OPERATORS = EQUIPE.map(op => {
-  // Minutes par demi-journée (L-J vs V)
-  const minLJ = op.h === 39 ? 240 : op.h === 36 ? 240 : op.h === 35 ? 210 : op.h === 30 ? 225 : 240;
-  const minV  = op.vendrediOff ? 0 : op.h === 39 ? 210 : op.h === 36 ? 120 : op.h === 35 ? 210 : 210;
-  // JP vendredi : 240 matin, 0 aprèm
-  return { id: op.id, nom: op.nom, competences: op.competences, minLJ, minV, vendrediOff: op.vendrediOff };
-});
+// Minutes par demi-journée standard
+const DEMI_JOURNEE_MIN = 240; // 4h
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-// Clé d'affectation : "operateur_id|jour_index|demi"
-// Valeur : { postId, cmdId, cmdLabel, min }
-interface Affectation {
-  postId: string;
-  cmdId: string;
-  cmdLabel: string;
-  phase: string;
-  min: number;
-  color: string;
-}
-
-type AffectationsMap = Record<string, Affectation | null>;
+// Clé : "postId|jourIdx|demi"  →  liste de noms d'opérateurs affectés
+type AffectationsMap = Record<string, string[]>;
 
 // ── Composant principal ──────────────────────────────────────────────────────
 
@@ -59,194 +55,181 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
   viewWeek: string;
 }) {
   const [affectations, setAffectations] = useState<AffectationsMap>({});
-  const [editingCell, setEditingCell] = useState<string | null>(null);
-  const mondayStr = viewWeek;
 
-  // Commandes planifiées cette semaine (au moins une phase)
-  const weekCmds = useMemo(() => {
-    return commandes
-      .filter(cmd => {
-        const s = (cmd as any).statut;
-        if (s === "livre" || s === "terminee" || s === "annulee") return false;
-        return PHASE_CONFIG.some(ph => (cmd as any)[ph.field] === mondayStr);
-      })
-      .map(cmd => {
-        const routage = getRoutage(cmd.type, cmd.quantite, (cmd as any).hsTemps as Record<string, unknown> | null);
-        const tm = (TYPES_MENUISERIE as Record<string, any>)[cmd.type];
-        // Phases actives cette semaine
-        const phases: Array<{ phase: string; phaseLabel: string; color: string; min: number; postIds: string[] }> = [];
-        for (const ph of PHASE_CONFIG) {
-          if ((cmd as any)[ph.field] !== mondayStr) continue;
-          const etapes = routage.filter(e => e.phase === ph.id);
-          const min = etapes.reduce((s, e) => s + e.estimatedMin, 0);
-          if (min > 0) {
-            phases.push({ phase: ph.id, phaseLabel: ph.label, color: ph.color, min, postIds: etapes.map(e => e.postId).filter((v, i, a) => a.indexOf(v) === i) });
+  // Calculer le travail par poste cette semaine
+  const postWork = useMemo(() => {
+    const work: Record<string, { totalMin: number; cmds: Array<{ client: string; ref: string; type: string; min: number }> }> = {};
+
+    for (const cmd of commandes) {
+      const s = (cmd as any).statut;
+      if (s === "livre" || s === "terminee" || s === "annulee") continue;
+      if (!cmd.type || cmd.type === "intervention_chantier") continue;
+
+      const routage = getRoutage(cmd.type, cmd.quantite, (cmd as any).hsTemps as Record<string, unknown> | null);
+      const tm = (TYPES_MENUISERIE as Record<string, any>)[cmd.type];
+
+      for (const grp of POST_GROUPS) {
+        const field = PHASE_FIELD[grp.phase];
+        if ((cmd as any)[field] !== viewWeek) continue;
+
+        for (const e of routage.filter(r => r.phase === grp.phase)) {
+          if (!work[e.postId]) work[e.postId] = { totalMin: 0, cmds: [] };
+          work[e.postId].totalMin += e.estimatedMin;
+          if (!work[e.postId].cmds.some(c => c.client === (cmd as any).client && c.ref === ((cmd as any).ref_chantier || ""))) {
+            work[e.postId].cmds.push({
+              client: (cmd as any).client,
+              ref: (cmd as any).ref_chantier || "",
+              type: tm?.label || cmd.type,
+              min: e.estimatedMin,
+            });
           }
         }
-        return { cmd, tm, phases, label: `${(cmd as any).client} — ${(cmd as any).ref_chantier || ""}`.trim() };
-      })
-      .filter(c => c.phases.length > 0);
-  }, [commandes, mondayStr]);
-
-  // Construire la liste des tâches disponibles pour affecter
-  const availableTasks = useMemo(() => {
-    const tasks: Array<{ id: string; label: string; phase: string; color: string; postIds: string[]; min: number; cmdId: string }> = [];
-    for (const c of weekCmds) {
-      for (const ph of c.phases) {
-        tasks.push({
-          id: `${c.cmd.id}_${ph.phase}`,
-          label: `${(c.cmd as any).client} · ${ph.phaseLabel}`,
-          phase: ph.phase,
-          color: ph.color,
-          postIds: ph.postIds,
-          min: ph.min,
-          cmdId: String(c.cmd.id),
-        });
       }
     }
-    return tasks;
-  }, [weekCmds]);
+    return work;
+  }, [commandes, viewWeek]);
 
-  const cellKey = (opId: string, jour: number, demi: string) => `${opId}|${jour}|${demi}`;
+  // Postes actifs
+  const activePosts = useMemo(() => {
+    return POST_GROUPS.map(grp => ({
+      ...grp,
+      posts: grp.ids.filter(pid => postWork[pid]?.totalMin > 0),
+    })).filter(grp => grp.posts.length > 0);
+  }, [postWork]);
 
-  const setAffectation = useCallback((key: string, task: Affectation | null) => {
-    setAffectations(prev => ({ ...prev, [key]: task }));
-    setEditingCell(null);
+  const cellKey = (postId: string, jour: number, demi: string) => `${postId}|${jour}|${demi}`;
+
+  const toggleOp = useCallback((key: string, opNom: string) => {
+    setAffectations(prev => {
+      const cur = prev[key] || [];
+      const next = cur.includes(opNom) ? cur.filter(o => o !== opNom) : [...cur, opNom];
+      return { ...prev, [key]: next };
+    });
   }, []);
 
-  const todayStr = localStr(new Date());
   const todayIdx = (() => {
+    const today = localStr(new Date());
     for (let i = 0; i < 5; i++) {
-      const d = new Date(mondayStr + "T00:00:00");
+      const d = new Date(viewWeek + "T00:00:00");
       d.setDate(d.getDate() + i);
-      if (localStr(d) === todayStr) return i;
+      if (localStr(d) === today) return i;
     }
     return -1;
   })();
 
+  if (activePosts.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: 40, color: C.sec }}>
+        Aucun poste actif en {weekId(viewWeek)}.
+      </div>
+    );
+  }
+
   return (
-    <div>
-      {/* ── Commandes de la semaine (résumé) ── */}
-      {weekCmds.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 30, color: C.sec, background: C.s1, borderRadius: 6, border: `1px solid ${C.border}`, marginBottom: 16 }}>
-          Aucune commande planifiée en {weekId(viewWeek)}. Va dans l&apos;onglet Charge pour affecter des semaines.
-        </div>
-      ) : (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-          {weekCmds.map(c => (
-            <div key={String(c.cmd.id)} style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 4, padding: "4px 8px", fontSize: 10 }}>
-              <span style={{ fontWeight: 700 }}>{(c.cmd as any).client}</span>
-              <span style={{ color: C.sec, marginLeft: 4 }}>{c.cmd.quantite}× {c.tm?.label || c.cmd.type}</span>
-              <div style={{ display: "flex", gap: 3, marginTop: 2 }}>
-                {c.phases.map(ph => (
-                  <span key={ph.phase} style={{ padding: "0 4px", borderRadius: 2, background: ph.color + "22", color: ph.color, fontSize: 9, fontWeight: 700 }}>
-                    {ph.phaseLabel} {hm(ph.min)}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+        <thead>
+          <tr>
+            <th style={{ padding: "6px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec, width: 100 }}>POSTE</th>
+            <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 50 }}>CHARGE</th>
+            <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 40 }}>PERS.</th>
+            {JOURS.map((j, jIdx) => ["AM", "PM"].map(d => (
+              <th key={`${j}_${d}`} style={{
+                padding: "4px 2px", background: jIdx === todayIdx ? C.s2 : C.s1,
+                border: `1px solid ${jIdx === todayIdx ? C.orange : C.border}`,
+                textAlign: "center", fontSize: 9, color: jIdx === todayIdx ? C.orange : C.sec, minWidth: 75,
+              }}>
+                {j} {d}
+              </th>
+            )))}
+          </tr>
+        </thead>
+        <tbody>
+          {activePosts.map(grp => [
+            <tr key={`h-${grp.label}`}>
+              <td colSpan={3 + 10} style={{ padding: "5px 8px", background: grp.color + "15", borderBottom: `2px solid ${grp.color}`, fontSize: 10, fontWeight: 700, color: grp.color, textTransform: "uppercase", letterSpacing: 1 }}>
+                {grp.label}
+              </td>
+            </tr>,
+            ...grp.posts.map(pid => {
+              const pw = postWork[pid];
+              // Combien de personnes nécessaires ? total min / (10 demi-journées × 240 min)
+              const totalDemiJournees = pw.totalMin / DEMI_JOURNEE_MIN;
+              const persNeeded = Math.max(1, Math.ceil(totalDemiJournees / 10));
+              // Opérateurs compétents pour ce poste
+              const competentOps = OPS.filter(op => op.competences.includes(PHASE_COMPETENCE[grp.phase]));
+              // Heures déjà affectées cette semaine
+              let affectedMin = 0;
+              for (let j = 0; j < 5; j++) {
+                for (const d of ["matin", "aprem"]) {
+                  const ops = affectations[cellKey(pid, j, d)] || [];
+                  affectedMin += ops.length * DEMI_JOURNEE_MIN;
+                }
+              }
+              const pctDone = pw.totalMin > 0 ? Math.round(affectedMin / pw.totalMin * 100) : 0;
+              const barColor = pctDone >= 100 ? C.green : pctDone >= 50 ? C.orange : C.red;
 
-      {/* ── Grille opérateurs × jours × demi-journées ── */}
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-          <thead>
-            <tr>
-              <th style={{ padding: "6px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec, width: 110 }}>OPÉRATEUR</th>
-              {JOURS.map((j, jIdx) => (
-                <th key={j} colSpan={2} style={{
-                  padding: "6px 4px", background: jIdx === todayIdx ? C.s2 : C.s1,
-                  border: `1px solid ${jIdx === todayIdx ? C.orange : C.border}`,
-                  textAlign: "center", fontSize: 11, color: jIdx === todayIdx ? C.orange : C.sec, fontWeight: jIdx === todayIdx ? 700 : 400,
-                }}>
-                  {j}
-                </th>
-              ))}
-            </tr>
-            <tr>
-              <th style={{ background: C.s2, border: `1px solid ${C.border}` }} />
-              {JOURS.map((j) => DEMI.map(d => (
-                <th key={`${j}_${d}`} style={{
-                  padding: "3px 4px", background: C.s1, border: `1px solid ${C.border}`,
-                  textAlign: "center", fontSize: 9, color: C.muted, fontWeight: 400, width: 80,
-                }}>
-                  {d === "matin" ? "AM" : "PM"}
-                </th>
-              )))}
-            </tr>
-          </thead>
-          <tbody>
-            {OPERATORS.map(op => (
-              <tr key={op.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-                <td style={{ padding: "6px 8px", background: C.s1, border: `1px solid ${C.border}`, verticalAlign: "top" }}>
-                  <div style={{ fontWeight: 700, fontSize: 11 }}>{op.nom}</div>
-                  <div style={{ fontSize: 8, color: C.muted }}>{op.competences.join(", ")}</div>
-                </td>
-                {JOURS.map((j, jourIdx) => DEMI.map(demi => {
-                  const key = cellKey(op.id, jourIdx, demi);
-                  const aff = affectations[key];
-                  const isEditing = editingCell === key;
-                  const isVendredi = jourIdx === 4;
-                  const isOff = (isVendredi && op.vendrediOff) || (isVendredi && demi === "aprèm" && op.id === "jp");
-                  const minDispo = isVendredi ? (demi === "matin" ? Math.min(op.minV, 240) : (op.id === "jp" ? 0 : Math.max(op.minV - 240, 0))) : op.minLJ;
+              return (
+                <tr key={pid} style={{ borderBottom: `1px solid ${C.border}` }}>
+                  {/* Poste */}
+                  <td style={{ padding: "5px 8px", background: C.s1, border: `1px solid ${C.border}`, verticalAlign: "top" }}>
+                    <div style={{ fontWeight: 700, color: grp.color }}>{pid}</div>
+                    <div style={{ fontSize: 9, color: C.muted }}>{POST_LABELS[pid]}</div>
+                    {pw.cmds.map((c, i) => (
+                      <div key={i} style={{ fontSize: 8, color: C.sec, marginTop: 1 }}>{c.client} {hm(c.min)}</div>
+                    ))}
+                  </td>
+                  {/* Charge totale */}
+                  <td style={{ padding: "4px 4px", border: `1px solid ${C.border}`, textAlign: "center", verticalAlign: "top" }}>
+                    <div className="mono" style={{ fontWeight: 700, color: grp.color, fontSize: 12 }}>{hm(pw.totalMin)}</div>
+                    <div style={{ height: 4, background: C.s2, borderRadius: 2, overflow: "hidden", marginTop: 3 }}>
+                      <div style={{ width: `${Math.min(pctDone, 100)}%`, height: "100%", background: barColor, borderRadius: 2 }} />
+                    </div>
+                    <div style={{ fontSize: 8, color: barColor, marginTop: 1 }}>{pctDone}% affecté</div>
+                  </td>
+                  {/* Personnes nécessaires */}
+                  <td style={{ padding: "4px 4px", border: `1px solid ${C.border}`, textAlign: "center", verticalAlign: "top" }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: grp.color }}>{persNeeded}</div>
+                    <div style={{ fontSize: 8, color: C.muted }}>pers.</div>
+                  </td>
+                  {/* 10 créneaux */}
+                  {JOURS.map((j, jourIdx) => ["matin", "aprem"].map(demi => {
+                    const key = cellKey(pid, jourIdx, demi);
+                    const assigned = affectations[key] || [];
 
-                  if (isOff || minDispo === 0) {
                     return (
-                      <td key={`${j}_${demi}`} style={{ background: C.s2 + "66", border: `1px solid ${C.border}`, textAlign: "center", color: C.muted, fontSize: 9 }}>
-                        OFF
+                      <td key={`${j}_${demi}`} style={{
+                        padding: "3px 3px", border: `1px solid ${jourIdx === todayIdx ? C.orange + "44" : C.border}`,
+                        background: assigned.length > 0 ? grp.color + "08" : C.bg, verticalAlign: "top",
+                      }}>
+                        <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+                          {competentOps.map(op => {
+                            const isOff = (jourIdx === 4 && op.vendrediOff) || (jourIdx === 4 && demi === "aprem" && op.id === "jp");
+                            if (isOff) return null;
+                            const isOn = assigned.includes(op.nom);
+                            return (
+                              <button key={op.id} onClick={() => toggleOp(key, op.nom)}
+                                style={{
+                                  fontSize: 8, padding: "2px 4px", borderRadius: 3, cursor: "pointer", border: "none",
+                                  background: isOn ? grp.color : C.s2,
+                                  color: isOn ? "#000" : C.muted,
+                                  fontWeight: isOn ? 800 : 400,
+                                }}
+                              >
+                                {op.nom}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </td>
                     );
-                  }
-
-                  // Tâches compatibles avec les compétences de cet opérateur
-                  const compatibleTasks = availableTasks.filter(t => {
-                    const phCfg = PHASE_CONFIG.find(p => p.id === t.phase);
-                    return phCfg && op.competences.includes(phCfg.competence);
-                  });
-
-                  return (
-                    <td key={`${j}_${demi}`} style={{
-                      padding: "3px 4px", border: `1px solid ${jourIdx === todayIdx ? C.orange + "44" : C.border}`,
-                      background: aff ? aff.color + "10" : C.bg, verticalAlign: "top", cursor: "pointer", minWidth: 80,
-                    }}
-                      onClick={() => setEditingCell(isEditing ? null : key)}
-                    >
-                      {aff ? (
-                        <div style={{ borderLeft: `3px solid ${aff.color}`, paddingLeft: 4, borderRadius: 2 }}>
-                          <div style={{ fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{aff.cmdLabel}</div>
-                          <div style={{ fontSize: 9, color: aff.color }}>{aff.postId} · {hm(aff.min)}</div>
-                          <button onClick={(e) => { e.stopPropagation(); setAffectation(key, null); }} style={{ fontSize: 8, color: C.red, background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 2 }}>✕ retirer</button>
-                        </div>
-                      ) : isEditing ? (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                          {compatibleTasks.length === 0 ? (
-                            <div style={{ fontSize: 9, color: C.muted, fontStyle: "italic" }}>Pas de tâche compatible</div>
-                          ) : compatibleTasks.map(t => (
-                            <button key={t.id} onClick={(e) => {
-                              e.stopPropagation();
-                              setAffectation(key, { postId: t.postIds[0], cmdId: t.cmdId, cmdLabel: t.label, phase: t.phase, min: Math.min(t.min, minDispo), color: t.color });
-                            }} style={{
-                              fontSize: 9, padding: "3px 5px", background: t.color + "15", border: `1px solid ${t.color}44`,
-                              borderRadius: 3, color: t.color, cursor: "pointer", textAlign: "left", fontWeight: 600,
-                            }}>
-                              {t.label} ({hm(t.min)})
-                            </button>
-                          ))}
-                          <button onClick={(e) => { e.stopPropagation(); setEditingCell(null); }} style={{ fontSize: 8, color: C.muted, background: "none", border: "none", cursor: "pointer" }}>annuler</button>
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: 9, color: C.muted, textAlign: "center", padding: "6px 0" }}>+</div>
-                      )}
-                    </td>
-                  );
-                }))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                  }))}
+                </tr>
+              );
+            }),
+          ])}
+        </tbody>
+      </table>
     </div>
   );
 }
