@@ -1548,6 +1548,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                     <th style={{ padding: "4px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec }}>POSTE</th>
                     <th style={{ padding: "4px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec }}>ÉTAPE</th>
                     <th style={{ padding: "4px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 80 }}>TEMPS (min)</th>
+                    <th style={{ padding: "4px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 120 }}>SEMAINE</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1597,6 +1598,31 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                             color: PHASE_C[e.phase] || C.sec, textAlign: "center", outline: "none",
                           }}
                         />
+                      </td>
+                      <td style={{ padding: "2px 4px", border: `1px solid ${C.border}`, textAlign: "center" }}>
+                        {(() => {
+                          // Trouver la phase du poste → le champ semaine correspondant
+                          const grp = POST_GROUPS.find(g => g.ids.includes(e.postId));
+                          const field = grp ? PHASE_FIELD[grp.phase] : null;
+                          const currentWeek = field ? (cmd as any)[field] || "" : "";
+                          const wkOpts = (() => {
+                            const opts: Array<{ v: string; l: string }> = [];
+                            const mon = new Date(); const day = mon.getDay(); mon.setDate(mon.getDate() - (day === 0 ? 6 : day - 1));
+                            for (let i = -2; i < 14; i++) {
+                              const d = new Date(mon); d.setDate(d.getDate() + i * 7);
+                              const ms = localStr(d);
+                              opts.push({ v: ms, l: weekId(ms) });
+                            }
+                            return opts;
+                          })();
+                          return field && onPatch ? (
+                            <select value={currentWeek} onChange={ev => onPatch(detailCmd.cmdId, { [field]: ev.target.value || null })}
+                              style={{ padding: "2px 4px", fontSize: 10, background: currentWeek === viewWeek ? (PHASE_C[e.phase] || C.s2) + "22" : C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.text, cursor: "pointer" }}>
+                              <option value="">—</option>
+                              {wkOpts.map(w => <option key={w.v} value={w.v}>{w.l}</option>)}
+                            </select>
+                          ) : <span style={{ color: C.muted }}>—</span>;
+                        })()}
                       </td>
                     </tr>
                   ))}
