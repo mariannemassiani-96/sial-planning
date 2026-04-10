@@ -605,7 +605,7 @@ export default function PlanningAffectations({ commandes, viewWeek }: {
                             </div>
                           )}
                           {/* Boutons pour ajouter des chantiers (si pas tous affectés) */}
-                          {allCmdLabels.filter(c => !cell.cmds.includes(c)).length > 0 && cell.cmds.length === 0 && (
+                          {allCmdLabels.filter(c => !cell.cmds.includes(c)).length > 0 && (
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 1, marginTop: cell.ops.length > 0 ? 2 : 0 }}>
                               {allCmdLabels.filter(c => !cell.cmds.includes(c)).map(cmdLabel => (
                                 <button key={cmdLabel} onClick={() => toggleCmd(key, cmdLabel)}
