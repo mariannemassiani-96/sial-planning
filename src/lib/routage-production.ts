@@ -15,7 +15,7 @@ const T = {
   coupe_profil:           1,    // par profil LMT
   coupe_double_tete:      1.5,  // par profil DT
   coupe_renfort:          2,    // par renfort acier
-  soudure_pvc:            5,    // par cadre PVC
+  soudure_pvc:            7,    // par cadre PVC (7 min/cadre, séquentiel, 1 pers max)
   poincon_alu:            10,   // par cadre ALU
   // Montage
   prep_dormant:           5,

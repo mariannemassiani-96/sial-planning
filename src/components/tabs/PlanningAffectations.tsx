@@ -71,9 +71,11 @@ const DEMI_MIN = 240;
 
 // Capacité max par poste en minutes par semaine (contrainte machine)
 // Si pas listé → pas de plafond (limité seulement par les opérateurs)
-const POST_MAX_WEEK: Record<string, number> = {
-  C3: 39 * 60, // Coupe LMT : 39h/semaine max
-  C6: 39 * 60, // Soudure PVC : 39h/semaine max
+// Contraintes par poste : max personnes
+const POST_MAX_PERS: Record<string, number> = {
+  C4: 1, // Coupe double tête : 1 seule personne
+  C5: 1, // Coupe renfort : 1 seule personne
+  C6: 1, // Soudure PVC : 1 seule personne (séquentiel)
 };
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -1456,8 +1458,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 const pw = postWork[pid] || { totalMin: 0, cmds: [] };
                 const minPers = grp.phase === "coupe" ? 2 : 1;
                 const persNeeded = pw.totalMin > 0 ? Math.max(minPers, Math.ceil(pw.totalMin / DEMI_MIN / 10)) : 0;
-                const maxWeek = POST_MAX_WEEK[pid];
-                const overCapacity = maxWeek ? pw.totalMin > maxWeek : false;
+                const maxPers = POST_MAX_PERS[pid];
+                const overCapacity = false; // plus de plafond hebdo
                 let affMin = 0;
                 for (let j = 0; j < 5; j++) for (const d of ["am", "pm"]) affMin += (aff[ck(pid, j, d)]?.ops?.length || 0) * DEMI_MIN;
                 const pct = pw.totalMin > 0 ? Math.min(100, Math.round(affMin / pw.totalMin * 100)) : 0;
@@ -1485,7 +1487,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                     </td>
                     <td style={{ padding: "4px", border: `1px solid ${overCapacity ? C.red : C.border}`, textAlign: "center", verticalAlign: "top" }}>
                       <div className="mono" style={{ fontWeight: 700, color: overCapacity ? C.red : grp.color }}>{hm(pw.totalMin)}</div>
-                      {maxWeek && <div style={{ fontSize: 8, color: overCapacity ? C.red : C.muted }}>max {hm(maxWeek)}</div>}
+                      {maxPers && <div style={{ fontSize: 8, color: C.muted }}>max {maxPers} pers.</div>}
                       {overCapacity && <div style={{ fontSize: 8, color: C.red, fontWeight: 700 }}>SURCHARGE</div>}
                       <div style={{ fontSize: 9, color: grp.color, fontWeight: 700 }}>{persNeeded}p.</div>
                       <div style={{ height: 4, background: C.s2, borderRadius: 2, overflow: "hidden", marginTop: 2 }}>
@@ -1759,6 +1761,62 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   </div>
                 );
               })()}
+
+              {/* C4, C5 barres + C6 cadres auto-calculé */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                {[
+                  { key: "_nb_barres_c4", postId: "C4", label: "C4 — Barres double tête", note: "1 pers. max · temps/barre à définir", color: "#42A5F5" },
+                  { key: "_nb_barres_c5", postId: "C5", label: "C5 — Barres renfort acier", note: "1 pers. max · temps/barre à définir", color: "#42A5F5" },
+                ].map(field => {
+                  const nb = cmdOverrides[field.key] || 0;
+                  const saveField = (v: number) => {
+                    fetch(`/api/planning/affectations?semaine=cmd_temps_${detailCmd.cmdId}`)
+                      .then(r => r.ok ? r.json() : {})
+                      .then(existing => {
+                        const ov: Record<string, number> = (typeof existing === "object" && existing && !Array.isArray(existing)) ? { ...existing } : {};
+                        ov[field.key] = v;
+                        return fetch("/api/planning/affectations", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ semaine: `cmd_temps_${detailCmd.cmdId}`, affectations: ov }) });
+                      }).catch(() => {});
+                    setAllCmdOverrides(prev => ({ ...prev, [detailCmd.cmdId]: { ...(prev[detailCmd.cmdId] || {}), [field.key]: v } }));
+                  };
+                  return (
+                    <div key={field.key} style={{ flex: 1, padding: "6px 8px", background: C.bg, borderRadius: 4, border: `1px solid ${field.color}44` }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: field.color, marginBottom: 2 }}>{field.label}</div>
+                      <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>{field.note}</div>
+                      <input type="number" min={0} defaultValue={nb || ""} placeholder="Nb barres"
+                        onBlur={ev => { const v = parseInt(ev.target.value); if (!isNaN(v)) saveField(v); }}
+                        onKeyDown={ev => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }}
+                        style={{ width: 60, padding: "3px 6px", fontSize: 12, fontWeight: 700, background: C.s1, border: `1px solid ${C.border}`, borderRadius: 4, color: field.color, textAlign: "center", outline: "none" }} />
+                    </div>
+                  );
+                })}
+                {/* C6 cadres auto-calculé */}
+                <div style={{ flex: 1, padding: "6px 8px", background: C.bg, borderRadius: 4, border: `1px solid #42A5F544` }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#42A5F5", marginBottom: 2 }}>C6 — Cadres soudure PVC</div>
+                  <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>7 min/cadre · 1 pers. max · séquentiel</div>
+                  {(() => {
+                    // Auto-calculer le nb de cadres depuis les lignes PVC
+                    const lignesCmd = Array.isArray(cmd.lignes) && cmd.lignes.length > 0 ? cmd.lignes : [{ type: cmd.type, quantite: cmd.quantite }];
+                    let totalCadres = 0;
+                    for (const ligne of lignesCmd) {
+                      const lType = (ligne.type || "").toLowerCase();
+                      const tm2 = (TYPES_MENUISERIE as Record<string, any>)[lType];
+                      if (tm2 && tm2.mat === "PVC" && (tm2.famille === "frappe" || tm2.famille === "porte")) {
+                        const lQte = parseInt(ligne.quantite) || 1;
+                        totalCadres += (1 + (tm2.ouvrants || 0)) * lQte;
+                      }
+                    }
+                    const totalMin = totalCadres * 7;
+                    return (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: "#42A5F5" }}>{totalCadres}</span>
+                        <span style={{ fontSize: 10, color: C.muted }}>cadres</span>
+                        <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: "#42A5F5" }}>{hm(totalMin)}</span>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
 
               {/* Nombre de plaques ISULA */}
               <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
