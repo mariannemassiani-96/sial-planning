@@ -43,8 +43,13 @@ interface BatchItem {
 // POST /api/planning/batch-weeks
 // Body: { items: BatchItem[] }
 export async function POST(req: NextRequest) {
+  // Auth : session OU secret pour appels batch
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+  const url = new URL(req.url);
+  const secret = url.searchParams.get("secret");
+  if (!session && secret !== "batch2026sial") {
+    return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+  }
 
   const { items } = await req.json() as { items: BatchItem[] };
   if (!Array.isArray(items)) return NextResponse.json({ error: "items requis" }, { status: 400 });
