@@ -783,18 +783,18 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   }
                 }
                 return activePosts.map(grp => {
-                  const postChantiers: Record<string, string[]> = {};
+                  const postChantiers: Record<string, Array<{ ch: string; affected: number; needed: number }>> = {};
                   for (const pid of grp.visiblePosts || grp.posts) {
                     const pw = postWork[pid];
                     if (!pw) continue;
-                    const remaining = pw.cmds
-                      .map(c => ({ ch: c.chantier || c.client, needed: c.min }))
-                      .filter(({ ch, needed }) => {
-                        if (hiddenTasks.has(`${pid}|${ch}`)) return false;
-                        const affected = affectedMinByPostCmd[`${pid}|${ch}`] || 0;
-                        return affected < needed; // pas assez d'heures → reste dans la palette
-                      })
-                      .map(({ ch }) => ch);
+                    const remaining: Array<{ ch: string; affected: number; needed: number }> = [];
+                    for (const c of pw.cmds) {
+                      const ch = c.chantier || c.client;
+                      if (hiddenTasks.has(`${pid}|${ch}`)) continue;
+                      const affected = affectedMinByPostCmd[`${pid}|${ch}`] || 0;
+                      if (affected < c.min) remaining.push({ ch, affected, needed: c.min });
+                    }
+                    if (remaining.length > 0) postChantiers[pid] = remaining;
                     if (remaining.length > 0) postChantiers[pid] = remaining;
                     if (remaining.length > 0) postChantiers[pid] = remaining;
                   }
@@ -803,14 +803,14 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   return (
                     <div key={grp.label}>
                       <div style={{ display: "flex", gap: 6, alignItems: "flex-start", flexWrap: "wrap" }}>
-                        {Object.entries(postChantiers).map(([pid, cmds]) => (
+                        {Object.entries(postChantiers).map(([pid, items]) => (
                           <div key={pid} style={{ display: "flex", alignItems: "center", gap: 3 }}>
                             <span style={{ fontSize: 9, fontWeight: 700, color: grp.color, minWidth: 22 }}>{pid}</span>
-                            {cmds.map(ch => (
+                            {(items as Array<{ ch: string; affected: number; needed: number }>).map(({ ch, affected, needed }) => (
                               <div key={`${pid}_${ch}`} draggable
                                 onDragStart={(e) => { setDragOp(null); e.dataTransfer.setData("text/plain", `cmd:${ch}`); e.dataTransfer.effectAllowed = "copy"; }}
                                 style={{ padding: "2px 6px", borderRadius: 3, cursor: "grab", userSelect: "none", background: grp.color + "22", border: `1px solid ${grp.color}44`, color: grp.color, fontSize: 9, fontWeight: 600 }}>
-                                {ch}
+                                {ch} <span style={{ fontSize: 8, opacity: 0.7 }}>{hm(affected)}/{hm(needed)}</span>
                               </div>
                             ))}
                           </div>
