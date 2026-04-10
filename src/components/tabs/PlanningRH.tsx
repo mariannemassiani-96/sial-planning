@@ -13,8 +13,8 @@ const OP_COLORS: Record<string, string> = {
 };
 
 const POSTES_LABELS: Record<string, string> = {
-  magasin: "Magasin", isula: "ISULA", hors_std: "Hors-std",
-  frappes: "Frappes", coulissant: "Coulissant", coupe: "Coupe", vitrage_ov: "Vitrage OV",
+  logistique: "Logistique", isula: "ISULA", hors_std: "Hors-std",
+  frappes: "Frappes", coulissant: "Coulissant", coupe: "Coupe", vitrage: "Vitrage",
 };
 
 // Build EQUIPE_SIAL from central EQUIPE config

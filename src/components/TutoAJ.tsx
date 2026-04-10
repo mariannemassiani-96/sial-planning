@@ -211,10 +211,11 @@ function MockupPlanningSemaine() {
 const CONFIG_KEY = "config_done";
 
 const CFG_POST_GROUPS = [
-  { label: "Coupe & Prépa",         ids: ["C1","C2","C3","C4","C5","C6"] },
-  { label: "Montage",               ids: ["M1","M2","M3","F1","F2","F3"] },
-  { label: "Vitrage & Expédition",  ids: ["V1","V2"] },
-  { label: "ISULA",                 ids: ["I1","I2","I3","I4","I5","I6","I7","I8"] },
+  { label: "Coupe & Prépa",  ids: ["C1","C2","C3","C4","C5","C6"] },
+  { label: "Montage",        ids: ["M1","M2","M3","F1","F2","F3"] },
+  { label: "Vitrage",        ids: ["V1","V2","V3"] },
+  { label: "Logistique",     ids: ["L1","L2","L3","L4","L5","L6","L7"] },
+  { label: "ISULA",          ids: ["I1","I2","I3","I4","I5","I6","I7","I8"] },
 ];
 
 const CFG_PRODUCT_TYPES = [

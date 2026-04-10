@@ -242,30 +242,30 @@ export const STOCKS_DEF: Record<string, {
   verre_brut:       { label:"Verre brut ISULA",              localisation:"Stockage verre ISULA",        unite:"m²",       cap_unite:1,   min:100,max:400,cible:250, raison:"Délai fournisseur >1 semaine — ISULA 300 vitrages/sem",          c:"#4DB6AC" },
 };
 
-// Compétences postes : coupe, frappes, coulissant, vitrage_ov, isula, magasin
+// Compétences postes : coupe, frappes, coulissant, vitrage, logistique, isula
 export const POSTES_COMPETENCES = [
-  { id:"coupe",      label:"Coupe",       c:"#42A5F5" },
-  { id:"frappes",    label:"Frappes",     c:"#FFA726" },
-  { id:"coulissant", label:"Coulissant",  c:"#66BB6A" },
-  { id:"vitrage_ov", label:"Vitrage OV",  c:"#26C6DA" },
-  { id:"isula",      label:"ISULA",       c:"#4DB6AC" },
-  { id:"magasin",    label:"Magasin",     c:"#CE93D8" },
+  { id:"coupe",       label:"Coupe",       c:"#42A5F5" },
+  { id:"frappes",     label:"Frappes",     c:"#FFA726" },
+  { id:"coulissant",  label:"Coulissant",  c:"#66BB6A" },
+  { id:"vitrage",     label:"Vitrage",     c:"#26C6DA" },
+  { id:"logistique",  label:"Logistique",  c:"#CE93D8" },
+  { id:"isula",       label:"ISULA",       c:"#4DB6AC" },
 ];
 
 export const EQUIPE = [
-  { id:"guillaume", nom:"Guillaume",     poste:"magasin",    h:39, vendrediOff:false, remplace:["isula_op","vitrage_ov"], competences:["magasin","vitrage_ov","isula"],         note:"Réceptions · Rangement · Prépa accessoires · Chargements · 8h L-J, 7h V" },
-  { id:"momo",      nom:"Momo",          poste:"isula",      h:39, vendrediOff:false, remplace:["vitrage_ov"],            competences:["isula","vitrage_ov"],                   note:"Opérateur ISULA A→Z · Remplace vitrage OV · 8h L-J, 7h V" },
-  { id:"bruno",     nom:"Bruno",         poste:"isula",      h:39, vendrediOff:false, remplace:["isula_op"],              competences:["isula","frappes","coulissant"],          note:"Responsable QC+procédures ISULA+SIAL · Supervision · 8h L-J, 7h V" },
-  { id:"ali",       nom:"Ali",           poste:"isula",      h:35, vendrediOff:false, remplace:[],                        competences:["isula"],                                note:"Opérateur ISULA A→Z · 7h/jour" },
-  { id:"jp",        nom:"Jean-Pierre",   poste:"hors_std",   h:36, vendrediOff:false, remplace:["frappes","coulissant","vitrage_ov"], competences:["frappes","coulissant","vitrage_ov","coupe"], note:"Sur-mesure / Luxe / Hors-normes · Polyvalent · 8h L-J, vendredi matin seul (4h)" },
-  { id:"jf",        nom:"Jean-François", poste:"frappes",    h:39, vendrediOff:false, remplace:["coulissant","vitrage_ov"], competences:["frappes","coulissant","vitrage_ov","coupe"], note:"Montage frappes · Polyvalent coulissant+vitrage OV+coupe · 8h L-J, 7h V" },
-  { id:"michel",    nom:"Michel",        poste:"frappes",    h:35, vendrediOff:false, remplace:["coulissant","soudure_pvc"], competences:["frappes","coulissant","coupe"],       note:"Montage frappes · Polyvalent coulissant+soudure PVC · 7h/jour" },
-  { id:"alain",     nom:"Alain",         poste:"coulissant", h:30, vendrediOff:true,  remplace:["frappes"],               competences:["coulissant","frappes"],                 note:"Montage dormants coulissant+galandage · SEUL sur ce poste · Absent vendredi · 7h30 L-J" },
-  { id:"francescu", nom:"Francescu",     poste:"frappes",    h:39, vendrediOff:false, remplace:[],                        competences:["frappes","coupe"],                      note:"Montage frappes · Soutien coupe · 8h L-J, 7h V" },
-  { id:"julien",    nom:"Julien",        poste:"coupe",      h:39, vendrediOff:false, remplace:[], specialite:"Double tête", competences:["coupe"],                             note:"Prépa + coupe LMT + coupe double tête (seul) · 8h L-J, 7h V" },
-  { id:"laurent",   nom:"Laurent",       poste:"coupe",      h:39, vendrediOff:false, remplace:["vitrage_ov"], specialite:"Soudure PVC", competences:["coupe","vitrage_ov"],    note:"Prépa + coupe LMT + soudure PVC (seul) + soutien expédition · 8h L-J, 7h V" },
-  { id:"mateo",     nom:"Matéo",         poste:"coupe",      h:35, vendrediOff:false, remplace:[],                        competences:["coupe"],                                note:"Coupe · Apprenti avancé · 7h/jour" },
-  { id:"kentin",    nom:"Kentin",        poste:"coupe",      h:35, vendrediOff:false, remplace:["frappes"],               competences:["coupe","frappes"],                      note:"Coupe + soutien montage frappes · 7h/jour" },
+  { id:"guillaume", nom:"Guillaume",     poste:"logistique", h:39, vendrediOff:false, remplace:["isula_op","vitrage"], competences:["logistique","vitrage","isula"],      note:"Réceptions · Rangement · Prépa accessoires · Chargements · 8h L-J, 7h V" },
+  { id:"momo",      nom:"Momo",          poste:"isula",      h:39, vendrediOff:false, remplace:["vitrage"],            competences:["isula","vitrage"],                   note:"Opérateur ISULA A→Z · Remplace vitrage · 8h L-J, 7h V" },
+  { id:"bruno",     nom:"Bruno",         poste:"isula",      h:39, vendrediOff:false, remplace:["isula_op"],           competences:["isula","frappes","coulissant"],       note:"Responsable QC+procédures ISULA+SIAL · Supervision · 8h L-J, 7h V" },
+  { id:"ali",       nom:"Ali",           poste:"isula",      h:35, vendrediOff:false, remplace:[],                     competences:["isula"],                             note:"Opérateur ISULA A→Z · 7h/jour" },
+  { id:"jp",        nom:"Jean-Pierre",   poste:"hors_std",   h:36, vendrediOff:false, remplace:["frappes","coulissant","vitrage"], competences:["frappes","coulissant","vitrage","coupe"], note:"Sur-mesure / Luxe / Hors-normes · Polyvalent · 8h L-J, vendredi matin seul (4h)" },
+  { id:"jf",        nom:"Jean-François", poste:"frappes",    h:39, vendrediOff:false, remplace:["coulissant","vitrage"], competences:["frappes","coulissant","vitrage","coupe"], note:"Montage frappes · Polyvalent coulissant+vitrage+coupe · 8h L-J, 7h V" },
+  { id:"michel",    nom:"Michel",        poste:"frappes",    h:35, vendrediOff:false, remplace:["coulissant","soudure_pvc"], competences:["frappes","coulissant","coupe"],  note:"Montage frappes · Polyvalent coulissant+soudure PVC · 7h/jour" },
+  { id:"alain",     nom:"Alain",         poste:"coulissant", h:30, vendrediOff:true,  remplace:["frappes"],            competences:["coulissant","frappes"],               note:"Montage dormants coulissant+galandage · SEUL sur ce poste · Absent vendredi · 7h30 L-J" },
+  { id:"francescu", nom:"Francescu",     poste:"frappes",    h:39, vendrediOff:false, remplace:[],                     competences:["frappes","coupe"],                    note:"Montage frappes · Soutien coupe · 8h L-J, 7h V" },
+  { id:"julien",    nom:"Julien",        poste:"coupe",      h:39, vendrediOff:false, remplace:[], specialite:"Double tête", competences:["coupe"],                        note:"Prépa + coupe LMT + coupe double tête (seul) · 8h L-J, 7h V" },
+  { id:"laurent",   nom:"Laurent",       poste:"coupe",      h:39, vendrediOff:false, remplace:["logistique"], specialite:"Soudure PVC", competences:["coupe","logistique"], note:"Prépa + coupe LMT + soudure PVC (seul) + soutien expédition · 8h L-J, 7h V" },
+  { id:"mateo",     nom:"Matéo",         poste:"coupe",      h:35, vendrediOff:false, remplace:[],                     competences:["coupe"],                             note:"Coupe · Apprenti avancé · 7h/jour" },
+  { id:"kentin",    nom:"Kentin",        poste:"coupe",      h:35, vendrediOff:false, remplace:["frappes"],            competences:["coupe","frappes"],                    note:"Coupe + soutien montage frappes · 7h/jour" },
 ];
 
 export const ZONES = ["SIAL","Porto-Vecchio","Balagne","Ajaccio","Plaine Orientale","Continent","Sur chantier","Autre"];

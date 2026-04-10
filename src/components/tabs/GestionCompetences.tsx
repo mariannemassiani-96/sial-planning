@@ -33,7 +33,8 @@ interface Operator {
 const POST_GROUPS = [
   { label: "Coupe & Prépa", ids: ["C1","C2","C3","C4","C5","C6"] },
   { label: "Montage", ids: ["M1","M2","M3","F1","F2","F3"] },
-  { label: "Vitrage & Expédition", ids: ["V1","V2"] },
+  { label: "Vitrage", ids: ["V1","V2","V3"] },
+  { label: "Logistique", ids: ["L1","L2","L3","L4","L5","L6","L7"] },
   { label: "ISULA",  ids: ["I1","I2","I3","I4","I5","I6","I7","I8"] },
 ];
 const ALL_POST_IDS = POST_GROUPS.flatMap((g) => g.ids);
@@ -395,7 +396,8 @@ export default function GestionCompetences() {
   const POST_LABELS: Record<string, string> = {
     C1:"Déchargement",C2:"Prép. barres",C3:"Coupe LMT 65",C4:"Coupe 2 têtes",C5:"Coupe acier",C6:"Soudure PVC",
     M1:"Dorm. couliss.",M2:"Dorm. galand.",M3:"Portes ALU",F1:"Dorm. frappe",F2:"Ouv. frappe",F3:"Mise en bois",
-    V1:"Vitrage",V2:"Emballage",
+    V1:"Vitr. Frappe",V2:"Vitr. Coul/Gal",V3:"Emballage",
+    L1:"Décharg. fourn.",L2:"Rang. profilés",L3:"Rang. access.",L4:"Prépa acc. fab.",L5:"Prépa acc. livr.",L6:"Réal. palettes",L7:"Charg. palettes",
     I1:"Réception",I2:"Coupe verre",I3:"Interc.",I4:"Butyle",I5:"Assemblage",I6:"Gaz+scell.",I7:"CQ CEKAL",I8:"Sortie chaîne",
   };
   const postKeys = ALL_POST_IDS.map((id) => ({ id, label: POST_LABELS[id] ?? id }));

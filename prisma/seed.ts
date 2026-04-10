@@ -38,9 +38,18 @@ async function main() {
     { id: "F1", label: "Dormants frappe ALU",         atelier: "SIAL" as const, capacityMinDay: 1080, defaultOperators: ["Alain", "Jean-Pierre", "Michel"] },
     { id: "F2", label: "Ouvrants frappe + ferrage",   atelier: "SIAL" as const, capacityMinDay: 1080, defaultOperators: ["Alain", "Jean-Pierre", "Michel"] },
     { id: "F3", label: "Mise en bois + contrôle",     atelier: "SIAL" as const, capacityMinDay: 1080, defaultOperators: ["Alain", "Jean-Pierre", "Michel"] },
-    // SIAL Vitrage & Expédition
-    { id: "V1", label: "Vitrage menuiserie",          atelier: "SIAL" as const, capacityMinDay: 480,  defaultOperators: ["Jean-François", "Momo", "Guillaume"] },
-    { id: "V2", label: "Emballage + expédition",      atelier: "SIAL" as const, capacityMinDay: 480,  defaultOperators: ["Jean-François", "Laurent"] },
+    // SIAL Vitrage
+    { id: "V1", label: "Vitrage Frappe",              atelier: "SIAL" as const, capacityMinDay: 480,  defaultOperators: ["Jean-François", "Michel"] },
+    { id: "V2", label: "Vitrage Coulissant/Galandage",atelier: "SIAL" as const, capacityMinDay: 480,  defaultOperators: ["Jean-François", "Momo", "Guillaume"] },
+    { id: "V3", label: "Emballage",                   atelier: "SIAL" as const, capacityMinDay: 480,  defaultOperators: ["Jean-François", "Laurent"] },
+    // SIAL Logistique
+    { id: "L1", label: "Déchargement Fournisseur",    atelier: "SIAL" as const, capacityMinDay: 480,  defaultOperators: ["Guillaume", "Laurent"] },
+    { id: "L2", label: "Rangement Stock Profilés",    atelier: "SIAL" as const, capacityMinDay: 480,  defaultOperators: ["Guillaume"] },
+    { id: "L3", label: "Rangement Stock Accessoires", atelier: "SIAL" as const, capacityMinDay: 480,  defaultOperators: ["Guillaume"] },
+    { id: "L4", label: "Prépa Accessoires Fabrication",atelier: "SIAL" as const, capacityMinDay: 480, defaultOperators: ["Guillaume"] },
+    { id: "L5", label: "Prépa Accessoires Livraison", atelier: "SIAL" as const, capacityMinDay: 480,  defaultOperators: ["Guillaume"] },
+    { id: "L6", label: "Réalisation des palettes",    atelier: "SIAL" as const, capacityMinDay: 480,  defaultOperators: ["Guillaume", "Laurent"] },
+    { id: "L7", label: "Chargement des palettes",     atelier: "SIAL" as const, capacityMinDay: 480,  defaultOperators: ["Guillaume", "Laurent"] },
     // ISULA — 3 jours/semaine : lundi, mardi, jeudi
     { id: "I1", label: "Réception verre",             atelier: "ISULA" as const, capacityMinDay: 840,  defaultOperators: ["Momo", "Guillaume"] },
     { id: "I2", label: "Coupe float/feuilleté/formes",atelier: "ISULA" as const, capacityMinDay: 840,  defaultOperators: ["Momo", "Guillaume"] },
@@ -66,17 +75,17 @@ async function main() {
   await prisma.operator.createMany({
     data: [
       // 8h/jour sauf vendredi 7h → 39h/semaine
-      { name: "Laurent",       weekHours: 39, posts: ["C1","C2","C3","C5","V2"],                           workingDays: [0,1,2,3,4], notes: "Prépa + coupe LMT + soudure PVC (seul) + soutien expédition · 8h L-J, 7h V" },
+      { name: "Laurent",       weekHours: 39, posts: ["C1","C2","C3","C5","V3","L1","L6","L7"],             workingDays: [0,1,2,3,4], notes: "Prépa + coupe LMT + soudure PVC (seul) + soutien expédition · 8h L-J, 7h V" },
       { name: "Julien",        weekHours: 39, posts: ["C1","C2","C3","C4","C6"],                           workingDays: [0,1,2,3,4], notes: "Prépa + coupe LMT + coupe double tête (seul) · 8h L-J, 7h V" },
-      { name: "Jean-François", weekHours: 39, posts: ["F1","F2","F3","M1","M2","M3","V1","V2","C1","C2","C3"], workingDays: [0,1,2,3,4], notes: "Montage frappes · Polyvalent coulissant+vitrage OV+coupe · 8h L-J, 7h V" },
-      { name: "Guillaume",     weekHours: 39, posts: ["I1","I2","I5","I6","I7","I8","V1"],                workingDays: [0,1,2,3,4], notes: "Réceptions · Rangement · Prépa accessoires · Chargements · 8h L-J, 7h V" },
-      { name: "Momo",          weekHours: 39, posts: ["I1","I2","I3","I4","I5","I6","I8","V1"],           workingDays: [0,1,2,3,4], notes: "Opérateur ISULA A→Z · Remplace vitrage OV · 8h L-J, 7h V" },
+      { name: "Jean-François", weekHours: 39, posts: ["F1","F2","F3","M1","M2","M3","V1","V2","V3","C1","C2","C3"], workingDays: [0,1,2,3,4], notes: "Montage frappes · Polyvalent coulissant+vitrage+coupe · 8h L-J, 7h V" },
+      { name: "Guillaume",     weekHours: 39, posts: ["I1","I2","I5","I6","I7","I8","V2","L1","L2","L3","L4","L5","L6","L7"], workingDays: [0,1,2,3,4], notes: "Réceptions · Rangement · Prépa accessoires · Chargements · 8h L-J, 7h V" },
+      { name: "Momo",          weekHours: 39, posts: ["I1","I2","I3","I4","I5","I6","I8","V2"],           workingDays: [0,1,2,3,4], notes: "Opérateur ISULA A→Z · Remplace vitrage · 8h L-J, 7h V" },
       { name: "Bruno",         weekHours: 39, posts: ["I1","I2","I3","I4","I5","I6","I7","I8","F1","F2","F3","M1","M2","M3"], workingDays: [0,1,2,3,4], notes: "Responsable QC+procédures ISULA+SIAL · Supervision · 8h L-J, 7h V" },
       { name: "Francescu",     weekHours: 39, posts: ["F1","F2","F3","C1","C2","C3"],                     workingDays: [0,1,2,3,4], notes: "Montage frappes · Soutien coupe · 8h L-J, 7h V" },
       // Alain : pas de vendredi → 4 jours × 7.5h = 30h
       { name: "Alain",         weekHours: 30, posts: ["M1","M2","M3","F1","F2","F3"],                      workingDays: [0,1,2,3],   notes: "Montage dormants coulissant+galandage · Absent vendredi · 7h30 L-J" },
       // Jean-Pierre : vendredi AM seulement → 4×8h + 4h = 36h
-      { name: "Jean-Pierre",   weekHours: 36, posts: ["M1","M2","M3","F1","F2","F3","V1","C1","C2","C3"], workingDays: [0,1,2,3,4], notes: "Sur-mesure / Luxe / Hors-normes · Polyvalent tous postes · 8h L-J, vendredi matin seul (4h)" },
+      { name: "Jean-Pierre",   weekHours: 36, posts: ["M1","M2","M3","F1","F2","F3","V1","V2","C1","C2","C3"], workingDays: [0,1,2,3,4], notes: "Sur-mesure / Luxe / Hors-normes · Polyvalent tous postes · 8h L-J, vendredi matin seul (4h)" },
       // Michel : 7h/jour × 5j = 35h
       { name: "Michel",        weekHours: 35, posts: ["M1","M2","M3","F1","F2","F3","C1","C2","C3"],      workingDays: [0,1,2,3,4], notes: "Montage frappes · Polyvalent coulissant+soudure PVC · 7h/jour" },
       // Matéo, Kentin, Ali : 7h/jour × 5j = 35h
@@ -104,7 +113,7 @@ async function main() {
     }
   }
 
-  console.log("✓ Seed OK — 2 users · 22 postes de travail · 13 opérateurs · 6 stocks tampons");
+  console.log("✓ Seed OK — 2 users · 31 postes de travail · 13 opérateurs · 6 stocks tampons");
 }
 
 main().catch(console.error).finally(() => prisma.$disconnect());
