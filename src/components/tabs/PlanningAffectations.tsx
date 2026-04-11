@@ -557,23 +557,21 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   const autoAssign = useCallback(() => {
     const newAff: AffMap = {};
 
-    // Minimum de personnes par créneau selon la phase
     const MIN_PERS: Record<string, number> = { coupe: 2, montage: 1, vitrage: 1, logistique: 1 };
 
     for (const grp of activePosts) {
+      if (grp.phase === "autre") continue;
       const minPers = MIN_PERS[grp.phase] || 1;
 
       for (const pid of grp.posts) {
         const pw = postWork[pid];
         if (!pw || pw.totalMin === 0) continue;
 
-        // Combien de demi-journées faut-il avec minPers opérateurs ?
         const slotsNeeded = Math.ceil(pw.totalMin / (DEMI_MIN * minPers));
+        const cmdLabels = pw.cmds.map(c => c.chantier || c.client);
 
-        // Opérateurs compétents pour CE poste
-        // 1) D'abord ceux qui ont le poste coché en base
+        // Opérateurs compétents
         let competentOps = ops.filter(op => op.competentPosts.includes(pid));
-        // 2) Fallback : opérateurs avec la compétence de la phase (depuis EQUIPE)
         if (competentOps.length === 0) {
           const equipeComp = grp.competence;
           competentOps = ops.filter(op => {
@@ -583,63 +581,48 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         }
         if (competentOps.length === 0) continue;
 
-        // Affecter par journée complète (AM+PM ensemble) pour ne pas faire sauter les gens d'un poste à l'autre
+        // Remplir TOUS les jours nécessaires
         let slotsPlaced = 0;
         for (let j = 0; j < 5 && slotsPlaced < slotsNeeded; j++) {
-          const demis = j === 4
-            ? ["am", "pm"].filter(d => !(d === "pm" && competentOps.every(op => op.vendrediOff || op.id === "jp")))
-            : ["am", "pm"];
+          for (const d of ["am", "pm"] as const) {
+            if (slotsPlaced >= slotsNeeded) break;
+            const key = ck(pid, j, d);
+            if (newAff[key]) continue; // déjà rempli
 
-          // Trouver les meilleurs opérateurs : habitude élevée + charge faible
-          const postHabits = habits[pid] || {};
-          const opScores = competentOps
-            .filter(op => !(j === 4 && op.vendrediOff))
-            .map(op => {
-              let load = 0;
-              for (const k of Object.keys(newAff)) {
-                const parts = k.split("|");
-                if (parseInt(parts[1]) === j && (newAff[k]?.ops || []).includes(op.nom)) load++;
-              }
-              const habit = postHabits[op.nom] || 0;
-              const brainScore = brainScores[op.nom]?.[pid] || 0;
-              return { op, load, habit, brainScore };
-            })
-            // Trier : libres d'abord, puis score cerveau + habitude
-            .sort((a, b) => {
-              if (a.load !== b.load) return a.load - b.load;
-              const scoreA = a.brainScore * 0.5 + a.habit * 0.5;
-              const scoreB = b.brainScore * 0.5 + b.habit * 0.5;
-              return scoreB - scoreA;
-            });
+            // Trouver les opérateurs disponibles ce créneau
+            const postHabits = habits[pid] || {};
+            const available = competentOps
+              .filter(op => !(j === 4 && op.vendrediOff))
+              .filter(op => !(j === 4 && d === "pm" && op.id === "jp"))
+              .map(op => {
+                // Compter combien de postes cet opérateur a déjà sur ce créneau
+                let load = 0;
+                for (const k of Object.keys(newAff)) {
+                  const p = k.split("|");
+                  if (parseInt(p[1]) === j && p[2] === d && (newAff[k]?.ops || []).includes(op.nom)) load++;
+                }
+                const habit = postHabits[op.nom] || 0;
+                const brain = brainScores[op.nom]?.[pid] || 0;
+                return { op, load, score: brain * 0.5 + habit * 0.5 };
+              })
+              .sort((a, b) => {
+                if (a.load !== b.load) return a.load - b.load;
+                return b.score - a.score;
+              });
 
-          // Prendre les N meilleurs (N = minPers)
-          const toAssign = opScores.filter(o => o.load === 0).slice(0, minPers);
-          if (toAssign.length < minPers) {
-            const needed = minPers - toAssign.length;
-            const more = opScores.filter(o => o.load > 0).slice(0, needed);
-            toAssign.push(...more);
-          }
-
-          if (toAssign.length > 0) {
-            for (const d of demis) {
-              const key = ck(pid, j, d);
-              const names = toAssign
-                .filter(o => !(j === 4 && d === "pm" && o.op.id === "jp"))
-                .map(o => o.op.nom);
-              if (names.length > 0) {
-                // Aussi affecter les chantiers de ce poste
-                const cmdLabels = pw.cmds.map(c => c.chantier || c.client);
-                newAff[key] = { ops: names, cmds: cmdLabels };
-              }
+            // Prendre les N meilleurs
+            const toAssign = available.slice(0, minPers);
+            if (toAssign.length > 0) {
+              newAff[key] = { ops: toAssign.map(o => o.op.nom), cmds: cmdLabels };
+              slotsPlaced++;
             }
-            slotsPlaced += demis.length;
           }
         }
       }
     }
 
     saveAff(newAff);
-  }, [activePosts, postWork, saveAff]);
+  }, [activePosts, postWork, saveAff, ops, habits, brainScores]);
 
   // ── Tout effacer ──
   const clearAll = useCallback(() => { saveAff({}); }, [saveAff]);
