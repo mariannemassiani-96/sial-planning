@@ -113,11 +113,13 @@ export default function PlanningCommandes({ commandes, onPatch }: {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
           <thead>
             <tr>
+              <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.green, fontWeight: 700, width: 100 }}>SEM. LIVR.</th>
               <th style={{ padding: "6px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec }}>CLIENT</th>
               <th style={{ padding: "6px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec }}>CHANTIER</th>
               <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 80 }}>STATUT</th>
               <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.orange, fontWeight: 700, width: 100 }}>SEM. FAB</th>
-              <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.green, fontWeight: 700, width: 100 }}>SEM. LIVR.</th>
+              <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.muted, width: 50 }}>PAS FAB</th>
+              <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.muted, width: 50 }}>PAS VIT.</th>
             </tr>
           </thead>
           <tbody>
@@ -126,7 +128,13 @@ export default function PlanningCommandes({ commandes, onPatch }: {
               const borderColor = cc?.critique ? C.red : cc?.enRetard ? C.orange : C.green;
               const statut = a.statut || "en_attente";
               return (
-                <tr key={String(cmd.id)} style={{ borderBottom: `1px solid ${C.border}` }}>
+                <tr key={String(cmd.id)} style={{ borderBottom: `1px solid ${C.border}`, opacity: a.aucune_menuiserie && a.aucun_vitrage ? 0.5 : 1 }}>
+                  <td style={{ padding: "2px 4px", border: `1px solid ${C.border}` }}>
+                    <select value={getSemaineLivraison(a)} onChange={e => setSemaineLivraison(String(cmd.id), e.target.value)}
+                      style={{ width: "100%", padding: "3px 4px", fontSize: 10, background: getSemaineLivraison(a) ? C.green + "15" : C.bg, border: `1px solid ${getSemaineLivraison(a) ? C.green + "66" : C.border}`, borderRadius: 3, color: C.text, cursor: "pointer" }}>
+                      {weekOptions.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
+                    </select>
+                  </td>
                   <td style={{ padding: "5px 8px", borderLeft: `3px solid ${borderColor}`, border: `1px solid ${C.border}`, fontWeight: 700, fontSize: 12 }}>{a.client}</td>
                   <td style={{ padding: "5px 8px", border: `1px solid ${C.border}`, color: C.sec }}>{a.ref_chantier || "—"}</td>
                   <td style={{ padding: "4px", border: `1px solid ${C.border}`, textAlign: "center" }}>
@@ -138,11 +146,13 @@ export default function PlanningCommandes({ commandes, onPatch }: {
                       {weekOptions.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
                     </select>
                   </td>
-                  <td style={{ padding: "2px 4px", border: `1px solid ${C.border}` }}>
-                    <select value={getSemaineLivraison(a)} onChange={e => setSemaineLivraison(String(cmd.id), e.target.value)}
-                      style={{ width: "100%", padding: "3px 4px", fontSize: 10, background: getSemaineLivraison(a) ? C.green + "15" : C.bg, border: `1px solid ${getSemaineLivraison(a) ? C.green + "66" : C.border}`, borderRadius: 3, color: C.text, cursor: "pointer" }}>
-                      {weekOptions.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
-                    </select>
+                  <td style={{ padding: "2px 4px", border: `1px solid ${C.border}`, textAlign: "center" }}>
+                    <input type="checkbox" checked={!!a.aucune_menuiserie} onChange={e => onPatch(String(cmd.id), { aucune_menuiserie: e.target.checked })}
+                      style={{ cursor: "pointer" }} title="Pas de fabrication menuiserie" />
+                  </td>
+                  <td style={{ padding: "2px 4px", border: `1px solid ${C.border}`, textAlign: "center" }}>
+                    <input type="checkbox" checked={!!a.aucun_vitrage} onChange={e => onPatch(String(cmd.id), { aucun_vitrage: e.target.checked })}
+                      style={{ cursor: "pointer" }} title="Pas de vitrage" />
                   </td>
                 </tr>
               );

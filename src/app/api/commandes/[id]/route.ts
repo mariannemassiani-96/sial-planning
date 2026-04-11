@@ -24,7 +24,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     "semaine_theorique","semaine_atteignable",
     "date_alu","date_pvc","date_accessoires","date_panneau_porte","date_volet_roulant",
     "date_livraison_souhaitee","type","quantite","hsTemps","lignes","vitrages",
-    "aucun_vitrage",
+    "aucun_vitrage","aucune_menuiserie",
     "cmd_alu_passee","cmd_pvc_passee","cmd_accessoires_passee","cmd_panneau_passee","cmd_volet_passee",
     "cmd_alu_necessaire","cmd_pvc_necessaire","cmd_accessoires_necessaire","cmd_panneau_necessaire","cmd_volet_necessaire",
     "transporteur",

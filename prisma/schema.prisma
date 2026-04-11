@@ -47,6 +47,7 @@ model Commande {
   lignes                  Json?
   vitrages                Json?
   aucun_vitrage           Boolean  @default(false)
+  aucune_menuiserie       Boolean  @default(false)
   cmd_alu_passee          Boolean  @default(false)
   cmd_pvc_passee          Boolean  @default(false)
   cmd_accessoires_passee  Boolean  @default(false)

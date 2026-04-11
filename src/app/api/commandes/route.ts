@@ -67,12 +67,17 @@ async function ensureColumns() {
   try {
     const cols = [
       "semaine_coupe", "semaine_montage", "semaine_vitrage", "semaine_logistique", "semaine_isula",
+      "aucune_menuiserie",
     ];
     for (const col of cols) {
       await prisma.$executeRawUnsafe(
         `ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "${col}" TEXT`
       ).catch(() => {});
     }
+    // Boolean columns
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "aucune_menuiserie" BOOLEAN DEFAULT false`
+    ).catch(() => {});
     migrationDone = true;
   } catch {
     // Silently continue
