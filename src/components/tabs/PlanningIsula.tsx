@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { calcCheminCritique, C, isWorkday, JOURS_FERIES, fmtDate, CommandeCC, TYPES_MENUISERIE } from "@/lib/sial-data";
+import { calcCheminCritique, C, isWorkday, JOURS_FERIES, fmtDate, CommandeCC, TYPES_MENUISERIE, getWeekNum as getWeekNumUtil, toSemaineId as toSemaineIdUtil } from "@/lib/sial-data";
 import { H, Card, Bdg } from "@/components/ui";
 import { openPrintWindow, fmtDatePrint } from "@/lib/print-utils";
 
@@ -107,14 +107,9 @@ function getMondayOf(s: string): string {
   const d = new Date(s+"T00:00:00"); const day = d.getDay();
   d.setDate(d.getDate()-(day===0?6:day-1)); return localStr(d);
 }
-function getWeekNum(s: string): number {
-  const d = new Date(s+"T00:00:00");
-  const jan4 = new Date(d.getFullYear(),0,4);
-  const w1 = new Date(jan4); w1.setDate(jan4.getDate()-((jan4.getDay()||7)-1));
-  return Math.ceil((d.getTime()-w1.getTime())/(7*86400000))+1;
-}
+const getWeekNum = getWeekNumUtil;
 function semaineId(mondayStr: string): string {
-  return `${new Date(mondayStr+"T00:00:00").getFullYear()}-W${String(getWeekNum(mondayStr)).padStart(2,"0")}`;
+  return toSemaineIdUtil(mondayStr);
 }
 
 function genProposition(weekDays: string[]): WeekPlan {

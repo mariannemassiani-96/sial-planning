@@ -4,6 +4,7 @@ import {
   C, T, TACHES_FABRICATION, EQUIPE, COMPETENCES_DEFAUT,
   fmtDate, CommandeCC, TYPES_MENUISERIE,
   isWorkday, JOURS_FERIES, dateDemarrage, addWorkdays,
+  getWeekNum as getWeekNumUtil,
 } from "@/lib/sial-data";
 import { H, Bdg } from "@/components/ui";
 import PlanningCalendrier from "@/components/tabs/PlanningCalendrier";
@@ -22,12 +23,7 @@ function getMondayOf(d: Date): Date {
   return date;
 }
 
-function getWeekNum(d: Date): number {
-  const jan4 = new Date(d.getFullYear(), 0, 4);
-  const w1 = new Date(jan4);
-  w1.setDate(jan4.getDate() - ((jan4.getDay() || 7) - 1));
-  return Math.ceil((d.getTime() - w1.getTime()) / (7 * 86400000)) + 1;
-}
+const getWeekNum = getWeekNumUtil;
 
 function getWeekDays(monday: Date): Date[] {
   return Array.from({ length: 5 }, (_, i) => {

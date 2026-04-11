@@ -243,7 +243,7 @@ model OperatorAbsence {
   operatorId String
   date       DateTime
   reason     String?
-  operator   Operator @relation(fields: [operatorId], references: [id])
+  operator   Operator @relation(fields: [operatorId], references: [id], onDelete: Cascade)
 }
 
 model WorkPost {
@@ -296,7 +296,7 @@ model FabItem {
   matiere        Matiere
   widthMm        Int?
   heightMm       Int?
-  fabOrder       Order          @relation(fields: [orderId], references: [id])
+  fabOrder       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   tasks          ProductionTask[]
   qcChecks       QCCheck[]
 }
@@ -360,7 +360,7 @@ model ProductionTask {
   isBlocking       Boolean        @default(false)
   assignments      TaskAssignment[]
   qcChecks         QCCheck[]
-  fabItem          FabItem        @relation(fields: [fabItemId], references: [id])
+  fabItem          FabItem        @relation(fields: [fabItemId], references: [id], onDelete: Cascade)
   workPost         WorkPost       @relation(fields: [workPostId], references: [id])
 }
 
@@ -376,8 +376,8 @@ model TaskAssignment {
   id         String         @id @default(cuid())
   taskId     String
   operatorId String
-  task       ProductionTask @relation(fields: [taskId], references: [id])
-  operator   Operator       @relation(fields: [operatorId], references: [id])
+  task       ProductionTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  operator   Operator       @relation(fields: [operatorId], references: [id], onDelete: Cascade)
 }
 
 model QCCheck {
@@ -391,8 +391,8 @@ model QCCheck {
   checkedAt   DateTime?
   checkedBy   String?
   actionTaken String?
-  fabItem     FabItem         @relation(fields: [fabItemId], references: [id])
-  task        ProductionTask? @relation(fields: [taskId], references: [id])
+  fabItem     FabItem         @relation(fields: [fabItemId], references: [id], onDelete: Cascade)
+  task        ProductionTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
 }
 
 enum QCResult {

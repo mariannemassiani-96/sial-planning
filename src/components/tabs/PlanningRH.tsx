@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { C, JOURS_FERIES, isWorkday, EQUIPE } from "@/lib/sial-data";
+import { C, JOURS_FERIES, isWorkday, EQUIPE, getWeekNum as getWeekNumUtil, toSemaineId as toSemaineIdUtil } from "@/lib/sial-data";
 import { H, Card } from "@/components/ui";
 
 // ── Couleurs par opérateur ────────────────────────────────────────────────────
@@ -72,18 +72,12 @@ function getMondayOf(s: string): string {
   d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
   return localStr(d);
 }
-function getWeekNum(s: string): number {
-  const d = new Date(s + "T00:00:00");
-  const jan4 = new Date(d.getFullYear(), 0, 4);
-  const w1 = new Date(jan4);
-  w1.setDate(jan4.getDate() - ((jan4.getDay() || 7) - 1));
-  return Math.ceil((d.getTime() - w1.getTime()) / (7 * 86400000)) + 1;
-}
+const getWeekNum = getWeekNumUtil;
 function hm(min: number): string {
   return `${Math.floor(min / 60)}h${String(min % 60).padStart(2, "0")}`;
 }
 function semaineId(mondayStr: string): string {
-  return `${new Date(mondayStr + "T00:00:00").getFullYear()}-W${String(getWeekNum(mondayStr)).padStart(2, "0")}`;
+  return toSemaineIdUtil(mondayStr);
 }
 
 // ── Résoudre la disponibilité effective d'un membre pour un jour ──────────────

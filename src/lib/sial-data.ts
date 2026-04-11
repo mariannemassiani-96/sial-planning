@@ -307,8 +307,32 @@ export const JOURS_FERIES: Record<string, string> = {
   "2026-12-25": "Noël",
 };
 
+// ── Fonctions dates utilitaires (ISO 8601) ──────────────────────────────────
+
+/** Numéro de semaine ISO 8601 à partir d'une date string "YYYY-MM-DD" ou Date */
+export function getWeekNum(input: string | Date): number {
+  const d = typeof input === "string" ? new Date(input + "T12:00:00") : input;
+  const dt = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = dt.getUTCDay() || 7;
+  dt.setUTCDate(dt.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+  return Math.ceil((((dt.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+
+/** Identifiant semaine "YYYY-Www" à partir d'une date string "YYYY-MM-DD" */
+export function toSemaineId(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  const w = getWeekNum(d);
+  // L'année ISO peut différer de l'année calendaire en fin/début d'année
+  const dt = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = dt.getUTCDay() || 7;
+  dt.setUTCDate(dt.getUTCDate() + 4 - dayNum);
+  const isoYear = dt.getUTCFullYear();
+  return `${isoYear}-W${String(w).padStart(2, "0")}`;
+}
+
 export function isWorkday(dateStr: string): boolean {
-  const d = new Date(dateStr);
+  const d = new Date(dateStr + "T12:00:00");
   const dow = d.getDay();
   return dow !== 0 && dow !== 6 && !JOURS_FERIES[dateStr];
 }
@@ -320,18 +344,19 @@ export function hm(m: number): string {
 
 export function fmtDate(d?: string | null): string {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("fr-FR");
+  return new Date(d + (d.includes("T") ? "" : "T12:00:00")).toLocaleDateString("fr-FR");
 }
 
 export function nextWorkday(dateStr: string): string {
-  const d = new Date(dateStr);
+  const d = new Date(dateStr + "T12:00:00");
   let s = d.toISOString().split("T")[0];
   while (!isWorkday(s)) { d.setDate(d.getDate() + 1); s = d.toISOString().split("T")[0]; }
   return s;
 }
 
 export function addWorkdays(dateStr: string, days: number): string {
-  const d = new Date(nextWorkday(dateStr));
+  const start = nextWorkday(dateStr);
+  const d = new Date(start + "T12:00:00");
   let added = 0;
   while (added < days) {
     d.setDate(d.getDate() + 1);
@@ -347,7 +372,7 @@ export function addWorkMinutes(dateStr: string, minutes: number): string {
 }
 
 export function dateDemarrage(cmd: { date_alu?: string | null; date_pvc?: string | null; date_accessoires?: string | null }): string {
-  const dates = [cmd.date_alu, cmd.date_pvc, cmd.date_accessoires].filter(Boolean).map(d => new Date(d!));
+  const dates = [cmd.date_alu, cmd.date_pvc, cmd.date_accessoires].filter(Boolean).map(d => new Date(d! + "T12:00:00"));
   if (!dates.length) return nextWorkday(new Date().toISOString().split("T")[0]);
   const max = new Date(Math.max(...dates.map(d => d.getTime()))).toISOString().split("T")[0];
   return nextWorkday(max);
@@ -441,7 +466,7 @@ export function calcCheminCritique(cmd: CommandeCC) {
 
   const datesOpt = [cmd.date_panneau_porte, cmd.date_volet_roulant].filter(Boolean) as string[];
   if (datesOpt.length > 0) {
-    const maxOpt = new Date(Math.max(...datesOpt.map(d => new Date(d).getTime()))).toISOString().split("T")[0];
+    const maxOpt = new Date(Math.max(...datesOpt.map(d => new Date(d + "T12:00:00").getTime()))).toISOString().split("T")[0];
     if (maxOpt > cursor) cursor = maxOpt;
     etapes.push({ id:"options", label:"Attente matières optionnelles", debut:finControle, fin:maxOpt, duree_min:0, qui:"—", couleur:"#FFCA28", optionnel:true });
   }
@@ -449,7 +474,7 @@ export function calcCheminCritique(cmd: CommandeCC) {
   const dateLivraisonAuPlusTot = cursor;
   const dateLivraisonSouhaitee = cmd.date_livraison_souhaitee;
   const retardJours = dateLivraisonSouhaitee
-    ? Math.round((new Date(dateLivraisonAuPlusTot).getTime() - new Date(dateLivraisonSouhaitee).getTime()) / 86400000)
+    ? Math.round((new Date(dateLivraisonAuPlusTot + "T12:00:00").getTime() - new Date(dateLivraisonSouhaitee + "T12:00:00").getTime()) / 86400000)
     : 0;
 
   return {

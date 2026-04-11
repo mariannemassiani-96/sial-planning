@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   EQUIPE, calcTempsType, calcCheminCritique, calcLogistique,
   hm, JOURS_FERIES, C, isWorkday, TYPES_MENUISERIE, T,
+  getWeekNum as getWeekNumUtil, toSemaineId as toSemaineIdUtil,
 } from "@/lib/sial-data";
 import type { CommandeCC } from "@/lib/sial-data";
 
@@ -33,19 +34,8 @@ function addWeeks(s: string, n: number): string {
 function getWeekDays(s: string): string[] {
   return [0, 1, 2, 3, 4].map(i => { const d = new Date(s + "T00:00:00"); d.setDate(d.getDate() + i); return localStr(d); });
 }
-function toSemaineId(s: string): string {
-  const d = new Date(s + "T00:00:00");
-  const jan4 = new Date(d.getFullYear(), 0, 4);
-  const mon = new Date(jan4); mon.setDate(jan4.getDate() - (jan4.getDay() || 7) + 1);
-  const w = Math.floor((d.getTime() - mon.getTime()) / (7 * 86400000)) + 1;
-  return `${d.getFullYear()}-W${String(w).padStart(2, "0")}`;
-}
-function getWeekNum(s: string): number {
-  const d = new Date(s + "T00:00:00");
-  const jan4 = new Date(d.getFullYear(), 0, 4);
-  const w1 = new Date(jan4); w1.setDate(jan4.getDate() - ((jan4.getDay() || 7) - 1));
-  return Math.ceil((d.getTime() - w1.getTime()) / (7 * 86400000)) + 1;
-}
+const toSemaineId = toSemaineIdUtil;
+const getWeekNum = getWeekNumUtil;
 function workdaysBetween(start: string, end: string): number {
   let n = 0; const d = new Date(start + "T00:00:00");
   while (localStr(d) <= end) { if (isWorkday(localStr(d))) n++; d.setDate(d.getDate() + 1); }
