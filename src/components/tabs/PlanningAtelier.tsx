@@ -294,7 +294,8 @@ export default function PlanningAtelier({ commandes }: { commandes: CommandeCC[]
                         const barCol = over ? C.red : pct > 80 ? C.orange : pct > 0 ? C.green : C.muted;
                         const nbOps  = dj.ops.length;
 
-                        const avOps   = opsPoste(poste.id).filter(m => !dj.ops.includes(m.id));
+                        const isFriday = new Date(date + "T12:00:00").getDay() === 5;
+                        const avOps   = opsPoste(poste.id).filter(m => !dj.ops.includes(m.id) && !(isFriday && m.vendrediOff));
                         const cellKey = `${poste.id}|${date}|${slot}`;
                         const conflicts = getConflictOps(plan, date, slot);
 
@@ -326,12 +327,13 @@ export default function PlanningAtelier({ commandes }: { commandes: CommandeCC[]
                                 const op = EQUIPE.find(m => m.id === opId);
                                 if (!op) return null;
                                 const conflict = conflicts.has(opId);
+                                const isFridayOff = isFriday && op.vendrediOff;
                                 return (
                                   <span key={opId}
-                                    title={conflict ? `⚠ ${op.nom} est déjà sur un autre poste ce créneau` : `${op.nom} — cliquer pour retirer`}
+                                    title={isFridayOff ? `⚠ ${op.nom} ne travaille pas le vendredi` : conflict ? `⚠ ${op.nom} est déjà sur un autre poste ce créneau` : `${op.nom} — cliquer pour retirer`}
                                     onClick={() => doRemoveOp(poste.id, date, slot, opId)}
-                                    style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: conflict ? C.red + "22" : poste.color + "28", border: `1px solid ${conflict ? C.red : poste.color}66`, color: conflict ? C.red : poste.color, cursor: "pointer", fontWeight: 600, userSelect: "none" }}>
-                                    {conflict ? "⚠ " : ""}{op.nom.split(/[\s-]/)[0]}
+                                    style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: (conflict || isFridayOff) ? C.red + "22" : poste.color + "28", border: `1px solid ${(conflict || isFridayOff) ? C.red : poste.color}66`, color: (conflict || isFridayOff) ? C.red : poste.color, cursor: "pointer", fontWeight: 600, userSelect: "none" }}>
+                                    {(conflict || isFridayOff) ? "⚠ " : ""}{op.nom.split(/[\s-]/)[0]}
                                   </span>
                                 );
                               })}

@@ -95,29 +95,34 @@ export async function PATCH(req: Request) {
   const data = await req.json();
   if (!data.id) return NextResponse.json({ error: "ID manquant" }, { status: 400 });
 
-  // Build SET clauses dynamically
-  const sets: string[] = [];
-  const vals: any[] = [];
-  let idx = 1;
+  // Prepare password hash if changed
+  const hashedPwd = data.password ? await bcrypt.hash(data.password, 10) : null;
+  const permsJson = data.permissions !== undefined ? JSON.stringify(data.permissions) : null;
 
-  if (data.nom !== undefined) { sets.push(`nom = $${idx++}`); vals.push(data.nom); }
-  if (data.email !== undefined) { sets.push(`email = $${idx++}`); vals.push(data.email); }
-  if (data.role !== undefined) { sets.push(`role = $${idx++}`); vals.push(data.role); }
-  if (data.permissions !== undefined) {
-    sets.push(`permissions = $${idx++}::jsonb`);
-    vals.push(JSON.stringify(data.permissions));
+  // Use tagged template (safe from SQL injection) — update only provided fields
+  let rows: UserRow[];
+  if (hashedPwd) {
+    rows = await prisma.$queryRaw<UserRow[]>`
+      UPDATE "User"
+      SET nom = COALESCE(${data.nom ?? null}, nom),
+          email = COALESCE(${data.email ?? null}, email),
+          role = COALESCE(${data.role ?? null}, role),
+          permissions = COALESCE(${permsJson}::jsonb, permissions),
+          password = ${hashedPwd}
+      WHERE id = ${data.id}
+      RETURNING id, email, nom, role, permissions, "createdAt"
+    `;
+  } else {
+    rows = await prisma.$queryRaw<UserRow[]>`
+      UPDATE "User"
+      SET nom = COALESCE(${data.nom ?? null}, nom),
+          email = COALESCE(${data.email ?? null}, email),
+          role = COALESCE(${data.role ?? null}, role),
+          permissions = COALESCE(${permsJson}::jsonb, permissions)
+      WHERE id = ${data.id}
+      RETURNING id, email, nom, role, permissions, "createdAt"
+    `;
   }
-  if (data.password) {
-    const hashed = await bcrypt.hash(data.password, 10);
-    sets.push(`password = $${idx++}`);
-    vals.push(hashed);
-  }
-
-  if (sets.length === 0) return NextResponse.json({ error: "Rien à modifier" }, { status: 400 });
-
-  vals.push(data.id);
-  const query = `UPDATE "User" SET ${sets.join(", ")} WHERE id = $${idx} RETURNING id, email, nom, role, permissions, "createdAt"`;
-  const rows = await prisma.$queryRawUnsafe<UserRow[]>(query, ...vals);
   if (!rows[0]) return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
   return NextResponse.json(rows[0]);
 }
