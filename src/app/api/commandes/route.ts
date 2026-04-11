@@ -65,19 +65,20 @@ let migrationDone = false;
 async function ensureColumns() {
   if (migrationDone) return;
   try {
-    const cols = [
+    const textCols = [
       "semaine_coupe", "semaine_montage", "semaine_vitrage", "semaine_logistique", "semaine_isula",
-      "aucune_menuiserie",
     ];
-    for (const col of cols) {
+    for (const col of textCols) {
       await prisma.$executeRawUnsafe(
         `ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "${col}" TEXT`
       ).catch(() => {});
     }
-    // Boolean columns
-    await prisma.$executeRawUnsafe(
-      `ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "aucune_menuiserie" BOOLEAN DEFAULT false`
-    ).catch(() => {});
+    const boolCols = ["aucune_menuiserie"];
+    for (const col of boolCols) {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "${col}" BOOLEAN DEFAULT false`
+      ).catch(() => {});
+    }
     migrationDone = true;
   } catch {
     // Silently continue
