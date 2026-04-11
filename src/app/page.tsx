@@ -24,6 +24,7 @@ import PlanningAffectations from "@/components/tabs/PlanningAffectations";
 import StatsAdmin from "@/components/tabs/StatsAdmin";
 import AnalyseProduction from "@/components/tabs/AnalyseProduction";
 import CerveauDashboard from "@/components/tabs/CerveauDashboard";
+import AdminUsers from "@/components/tabs/AdminUsers";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
 import TutoAJ from "@/components/TutoAJ";
 
@@ -118,6 +119,7 @@ export default function HomePage() {
       { id: "stocks",       l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
       { id: "import_csv",   l: "📥 Import" },
       { id: "stats_admin",  l: "📊 Stats" },
+      { id: "admin",        l: "⚙ Admin" },
     ] : []),
   ];
 
@@ -303,6 +305,8 @@ export default function HomePage() {
                 {statsSub === "stats" && <StatsAdmin />}
               </>
             )}
+
+            {ong === "admin" && <AdminUsers />}
           </>
         )}
       </div>
