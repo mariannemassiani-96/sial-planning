@@ -1,7 +1,7 @@
 "use client";
 import { useState, useMemo } from "react";
-import { C, TYPES_MENUISERIE, hm, CommandeCC, calcCheminCritique } from "@/lib/sial-data";
-import { getRoutage } from "@/lib/routage-production";
+import { C, CommandeCC, calcCheminCritique } from "@/lib/sial-data";
+// import { getRoutage } from "@/lib/routage-production";
 
 function localStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -56,10 +56,7 @@ export default function PlanningCommandes({ commandes, onPatch }: {
       })
       .map(cmd => {
         const cc = calcCheminCritique(cmd);
-        const tm = (TYPES_MENUISERIE as Record<string, any>)[cmd.type];
-        const routage = getRoutage(cmd.type, cmd.quantite, (cmd as any).hsTemps as Record<string, unknown> | null);
-        const totalMin = routage.reduce((s, e) => s + e.estimatedMin, 0);
-        return { cmd, cc, tm, totalMin };
+        return { cmd, cc };
       })
       .sort((a, b) => {
         const da = (a.cmd as any).date_livraison_souhaitee || "9999";
@@ -118,16 +115,13 @@ export default function PlanningCommandes({ commandes, onPatch }: {
             <tr>
               <th style={{ padding: "6px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec }}>CLIENT</th>
               <th style={{ padding: "6px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec }}>CHANTIER</th>
-              <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 50 }}>TYPE</th>
-              <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 30 }}>QTÉ</th>
-              <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 50 }}>TEMPS</th>
               <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 80 }}>STATUT</th>
               <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.orange, fontWeight: 700, width: 100 }}>SEM. FAB</th>
               <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.green, fontWeight: 700, width: 100 }}>SEM. LIVR.</th>
             </tr>
           </thead>
           <tbody>
-            {cmdList.map(({ cmd, cc, tm, totalMin }) => {
+            {cmdList.map(({ cmd, cc }) => {
               const a = cmd as any;
               const borderColor = cc?.critique ? C.red : cc?.enRetard ? C.orange : C.green;
               const statut = a.statut || "en_attente";
@@ -135,11 +129,6 @@ export default function PlanningCommandes({ commandes, onPatch }: {
                 <tr key={String(cmd.id)} style={{ borderBottom: `1px solid ${C.border}` }}>
                   <td style={{ padding: "5px 8px", borderLeft: `3px solid ${borderColor}`, border: `1px solid ${C.border}`, fontWeight: 700, fontSize: 12 }}>{a.client}</td>
                   <td style={{ padding: "5px 8px", border: `1px solid ${C.border}`, color: C.sec }}>{a.ref_chantier || "—"}</td>
-                  <td style={{ padding: "4px", border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10 }}>{tm?.label || cmd.type}</td>
-                  <td style={{ padding: "4px", border: `1px solid ${C.border}`, textAlign: "center", fontWeight: 700 }}>{cmd.quantite}</td>
-                  <td style={{ padding: "4px", border: `1px solid ${C.border}`, textAlign: "center" }}>
-                    <span className="mono" style={{ fontSize: 10, color: C.muted }}>{totalMin > 0 ? hm(totalMin) : "—"}</span>
-                  </td>
                   <td style={{ padding: "4px", border: `1px solid ${C.border}`, textAlign: "center" }}>
                     <span style={{ fontSize: 10, color: STATUT_COLORS[statut] || C.sec, fontWeight: 600 }}>{STATUT_LABELS[statut] || statut}</span>
                   </td>
