@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import prisma from "@/lib/prisma";
 import {
   BUFFER_THRESHOLDS,
   ISULA_ACTIVE_DAYS,
@@ -7,13 +9,15 @@ import {
   ATTENTE_VITRAGE_SEUIL_JOURS,
 } from "@/lib/planning-constants";
 
-const prisma = new PrismaClient();
-
 function todayStr() {
   return new Date().toISOString().split("T")[0];
 }
 
 export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+
+  try {
   const today = new Date();
   const date = todayStr();
   const dayOfWeek = today.getDay();
@@ -182,4 +186,7 @@ export async function GET() {
       deliveryDate: o.deliveryDate,
     })),
   });
+  } catch {
+    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
+  }
 }

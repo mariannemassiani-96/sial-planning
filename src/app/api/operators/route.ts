@@ -8,15 +8,18 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
 
-  const operators = await prisma.operator.findMany({
-    where: { active: true },
-    orderBy: { name: "asc" },
-    include: {
-      skills: {
-        include: { workPost: { select: { id: true, label: true, atelier: true } } },
+  try {
+    const operators = await prisma.operator.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      include: {
+        skills: {
+          include: { workPost: { select: { id: true, label: true, atelier: true } } },
+        },
       },
-    },
-  });
-
-  return NextResponse.json(operators);
+    });
+    return NextResponse.json(operators);
+  } catch {
+    return NextResponse.json({ error: "Erreur chargement opérateurs" }, { status: 500 });
+  }
 }

@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import prisma from "@/lib/prisma";
 
 export async function PATCH(
   req: Request,
   { params }: { params: { id: string } }
 ) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+
   const { id } = params;
   const body = await req.json();
   const { status, blockedReason, actualMinutes } = body;
@@ -30,11 +33,14 @@ export async function PATCH(
     return NextResponse.json({ error: "status invalide" }, { status: 400 });
   }
 
-  const task = await prisma.productionTask.update({
-    where: { id },
-    data: update,
-    include: { workPost: true, fabItem: { include: { fabOrder: true } } },
-  });
-
-  return NextResponse.json(task);
+  try {
+    const task = await prisma.productionTask.update({
+      where: { id },
+      data: update,
+      include: { workPost: true, fabItem: { include: { fabOrder: true } } },
+    });
+    return NextResponse.json(task);
+  } catch {
+    return NextResponse.json({ error: "Erreur mise à jour tâche" }, { status: 500 });
+  }
 }

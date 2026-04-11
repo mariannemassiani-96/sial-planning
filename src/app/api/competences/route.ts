@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 // Stored as a single PlanningPoste-like row with semaine = "__competences__"
 const KEY = "__competences__";
 
 export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
   try {
     const rec = await prisma.planningPoste.findUnique({ where: { semaine: KEY } });
     return NextResponse.json(rec?.plan ?? {});
@@ -14,6 +18,9 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+
   const data = await req.json();
   try {
     await prisma.planningPoste.upsert({

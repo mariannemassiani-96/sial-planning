@@ -81,6 +81,7 @@ export async function POST(req: Request) {
     )
     RETURNING id, email, nom, role, permissions, "createdAt"
   `;
+  if (!rows[0]) return NextResponse.json({ error: "Erreur création" }, { status: 500 });
   return NextResponse.json(rows[0], { status: 201 });
 }
 
@@ -117,6 +118,7 @@ export async function PATCH(req: Request) {
   vals.push(data.id);
   const query = `UPDATE "User" SET ${sets.join(", ")} WHERE id = $${idx} RETURNING id, email, nom, role, permissions, "createdAt"`;
   const rows = await prisma.$queryRawUnsafe<UserRow[]>(query, ...vals);
+  if (!rows[0]) return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
   return NextResponse.json(rows[0]);
 }
 
