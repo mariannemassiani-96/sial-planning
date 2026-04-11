@@ -567,6 +567,10 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         const pw = postWork[pid];
         if (!pw || pw.totalMin === 0) continue;
 
+        // Nombre de personnes : min de la phase sauf si max 1 (C4, C5, C6)
+        const maxPersPoste = POST_MAX_PERS[pid];
+        const nbPers = maxPersPoste ? Math.min(minPers, maxPersPoste) : minPers;
+
         // Opérateurs compétents
         let competentOps = ops.filter(op => op.competentPosts.includes(pid));
         if (competentOps.length === 0) {
@@ -593,7 +597,6 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               const key = ck(pid, nextSlotJ, demi);
 
               if (!newAff[key]) {
-                // Trouver les opérateurs pour ce créneau
                 const postHabits = habits[pid] || {};
                 const available = competentOps
                   .filter(op => !(nextSlotJ === 4 && op.vendrediOff))
@@ -604,22 +607,17 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                       const p = k.split("|");
                       if (parseInt(p[1]) === nextSlotJ && p[2] === demi && (newAff[k]?.ops || []).includes(op.nom)) load++;
                     }
-                    const habit = postHabits[op.nom] || 0;
-                    const brain = brainScores[op.nom]?.[pid] || 0;
-                    return { op, load, score: brain * 0.5 + habit * 0.5 };
+                    return { op, load, score: (brainScores[op.nom]?.[pid] || 0) * 0.5 + (postHabits[op.nom] || 0) * 0.5 };
                   })
                   .sort((a, b) => a.load !== b.load ? a.load - b.load : b.score - a.score);
 
-                const toAssign = available.slice(0, minPers);
-                if (toAssign.length > 0) {
-                  newAff[key] = { ops: toAssign.map(o => o.op.nom), cmds: [chLabel] };
-                  // Avancer au créneau suivant
-                  nextSlotD++;
-                  if (nextSlotD > 1) { nextSlotD = 0; nextSlotJ++; }
-                  break;
-                }
+                const opsNames = available.slice(0, nbPers).map(o => o.op.nom);
+                newAff[key] = { ops: opsNames, cmds: [chLabel] };
+                nextSlotD++;
+                if (nextSlotD > 1) { nextSlotD = 0; nextSlotJ++; }
+                break;
               }
-              // Créneau déjà pris, avancer
+              // Créneau déjà pris par un autre chantier, avancer
               nextSlotD++;
               if (nextSlotD > 1) { nextSlotD = 0; nextSlotJ++; }
             }
