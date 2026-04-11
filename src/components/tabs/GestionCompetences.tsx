@@ -34,22 +34,13 @@ const POST_GROUPS = [
   { label: "Montage", ids: ["M1","M2","M3","F1","F2","F3","MHS"] },
   { label: "Vitrage", ids: ["V1","V2","V3"] },
   { label: "Logistique", ids: ["L1","L2","L3","L4","L5","L6","L7"] },
-  { label: "ISULA",  ids: ["I1","I2","I3","I4","I5","I6","I7","I8"] },
+  { label: "ISULA", ids: ["IL","IB","I3","I4"] },
+  { label: "Autre", ids: ["AUT"] },
 ];
 const ALL_POST_IDS = POST_GROUPS.flatMap((g) => g.ids);
 
 // ── Familles de produits ──────────────────────────────────────────────────────
 
-const PRODUCT_TYPES = [
-  { key: "OB1_PVC",       label: "Frappe PVC" },
-  { key: "OB1_ALU",       label: "Frappe ALU" },
-  { key: "C2V2R",         label: "Coulissant" },
-  { key: "G2V1R",         label: "Galandage" },
-  { key: "P1_ALU",        label: "Porte ALU" },
-  { key: "FIXE_ALU",      label: "Vit. menuiserie" },
-  { key: "FIXE_PVC",      label: "Vitrage IGU" },
-  { key: "HORS_STANDARD", label: "Grand format / Hors std" },
-] as const;
 
 const JOURS = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
 
@@ -153,7 +144,6 @@ function FicheOperateur({ operator, onClose, onSaved }: FicheProps) {
   };
 
   const postSkills  = operator.skills.filter((s) => s.workPostId !== null);
-  const prodSkills  = operator.skills.filter((s) => s.menuiserieType !== null);
 
   return (
     <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 360, background: C.s1, borderLeft: `1px solid ${C.border}`, zIndex: 5000, overflowY: "auto", display: "flex", flexDirection: "column" }}>
@@ -194,25 +184,8 @@ function FicheOperateur({ operator, onClose, onSaved }: FicheProps) {
           </div>
         )}
 
-        {/* Compétences produits */}
-        {prodSkills.length > 0 && (
-          <div>
-            <div style={{ fontSize: 11, color: C.sec, marginBottom: 6, fontWeight: 700 }}>Compétences produits</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {prodSkills.map((s) => {
-                const pt = PRODUCT_TYPES.find((p) => p.key === s.menuiserieType);
-                return (
-                  <div key={s.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.s2, borderRadius: 4, padding: "4px 8px" }}>
-                    <span style={{ fontSize: 12 }}>{pt?.label ?? s.menuiserieType}</span>
-                    {levelBadge(s.level)}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
-        {postSkills.length === 0 && prodSkills.length === 0 && (
+        {postSkills.length === 0 && (
           <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic" }}>Aucune compétence enregistrée — à configurer via l'étape 0 du guide</div>
         )}
 
@@ -262,7 +235,6 @@ function FicheOperateur({ operator, onClose, onSaved }: FicheProps) {
 export default function GestionCompetences() {
   const [operators, setOperators] = useState<Operator[]>([]);
   const [loading, setLoading]     = useState(true);
-  const [activeTab, setActiveTab] = useState<"postes" | "produits">("postes");
   const [ficheOp, setFicheOp]     = useState<Operator | null>(null);
   const [popup, setPopup]         = useState<{
     operator: Operator;
@@ -393,11 +365,11 @@ export default function GestionCompetences() {
     MHS:"Montage HS",
     V1:"Vitr. Frappe",V2:"Vitr. Coul/Gal",V3:"Emballage",
     L1:"Décharg. fourn.",L2:"Rang. profilés",L3:"Rang. access.",L4:"Prépa acc. fab.",L5:"Prépa acc. livr.",L6:"Réal. palettes",L7:"Charg. palettes",
-    I1:"Réception",I2:"Coupe verre",I3:"Interc.",I4:"Butyle",I5:"Assemblage",I6:"Gaz+scell.",I7:"CQ CEKAL",I8:"Sortie chaîne",
+    IL:"Coupe Lisec",IB:"Coupe Bottero",I3:"Coupe interc.",I4:"Assemblage VI",
+    AUT:"Autre",
   };
   const postKeys = ALL_POST_IDS.map((id) => ({ id, label: POST_LABELS[id] ?? id }));
 
-  const productKeys = PRODUCT_TYPES.map((p) => ({ id: p.key, label: p.label }));
 
   return (
     <div style={{ padding: "0 0 40px" }}>
@@ -428,24 +400,9 @@ export default function GestionCompetences() {
         </div>
       </div>
 
-      {/* Onglets sections */}
-      <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${C.border}`, marginBottom: 16 }}>
-        {([["postes", "Section A — Par poste"], ["produits", "Section B — Par type de produit"]] as const).map(([tab, label]) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{ padding: "8px 16px", background: "none", border: "none", borderBottom: `2px solid ${activeTab === tab ? C.orange : "transparent"}`, color: activeTab === tab ? C.text : C.sec, fontWeight: activeTab === tab ? 700 : 400, fontSize: 13, cursor: "pointer" }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Section A — Matrice postes */}
-      {activeTab === "postes" && (
-        <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: 16, marginBottom: 12 }}>
-          {/* Groupes de postes */}
-          {POST_GROUPS.map((g) => (
+      {/* Matrice compétences par poste */}
+      <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: 16, marginBottom: 12 }}>
+        {POST_GROUPS.map((g) => (
             <div key={g.label} style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.orange, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
                 {g.label}
@@ -454,14 +411,6 @@ export default function GestionCompetences() {
             </div>
           ))}
         </div>
-      )}
-
-      {/* Section B — Matrice produits */}
-      {activeTab === "produits" && (
-        <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: 16 }}>
-          {renderMatrix(productKeys, true)}
-        </div>
-      )}
 
       {/* Popup édition niveau */}
       {popup && (
