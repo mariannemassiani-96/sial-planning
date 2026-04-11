@@ -34,7 +34,7 @@ const OPERATOR_SLOW_THRESHOLD = 1.3;
 const OPERATOR_FAST_THRESHOLD = 0.85;
 
 /** Nombre de semaines analysees pour le trend */
-const TREND_WEEKS = 8;
+const _TREND_WEEKS = 8;
 
 /** Seuil de charge (%) a partir duquel un poste est en alerte capacite */
 const CAPACITY_ALERT_THRESHOLD = 90;
@@ -129,7 +129,7 @@ function getOperatorName(operatorId: string): string {
   return op?.nom ?? operatorId;
 }
 
-function median(values: number[]): number {
+function _median(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
