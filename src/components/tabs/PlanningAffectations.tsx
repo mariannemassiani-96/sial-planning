@@ -567,7 +567,9 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         const pw = postWork[pid];
         if (!pw || pw.totalMin === 0) continue;
 
-        const slotsNeeded = Math.ceil(pw.totalMin / (DEMI_MIN * minPers));
+        // Combien de demi-journées faut-il pour couvrir le travail ?
+        // La palette compte 1 créneau = DEMI_MIN, donc il faut totalMin / DEMI_MIN créneaux
+        const slotsNeeded = Math.ceil(pw.totalMin / DEMI_MIN);
         const cmdLabels = pw.cmds.map(c => c.chantier || c.client);
 
         // Opérateurs compétents
