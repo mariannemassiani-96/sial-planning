@@ -49,40 +49,43 @@ function SubTabs({ tabs, active, onChange }: { tabs: { id: string; l: string }[]
 export default function HomePage() {
   const { data: session, status } = useSession();
 
-  // Restaurer l'état depuis l'URL hash au chargement
-  const getInitial = (key: string, fallback: string) => {
-    if (typeof window === "undefined") return fallback;
-    try { const p = new URLSearchParams(window.location.hash.slice(1)); return p.get(key) || fallback; } catch { return fallback; }
-  };
-
-  const [ong, setOng] = useState(() => getInitial("tab", "planning_fab"));
+  const [ong, setOng] = useState("planning_fab");
   const [commandes, setCommandes] = useState<CommandeCC[]>([]);
   const [cmdEdit, setCmdEdit] = useState<CommandeCC | null>(null);
   const [stocks, setStocks] = useState<Record<string, { actuel: number }>>({});
   const [loading, setLoading] = useState(true);
 
-  const [planningSub, setPlanningSub] = useState<"commandes" | "affectations">(() => getInitial("psub", "commandes") as "commandes" | "affectations");
+  const [planningSub, setPlanningSub] = useState<"commandes" | "affectations">("commandes");
   const [planningWeek, setPlanningWeek] = useState<string>(() => {
-    const saved = getInitial("week", "");
-    if (saved) return saved;
     const d = new Date(); const day = d.getDay();
     const diff = day === 0 ? -6 : 1 - day;
     d.setDate(d.getDate() + diff); d.setHours(0,0,0,0);
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   });
+
+  // Restaurer l'état depuis localStorage au montage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("sial_nav");
+      if (saved) {
+        const s = JSON.parse(saved);
+        if (s.tab) setOng(s.tab);
+        if (s.psub) setPlanningSub(s.psub);
+        if (s.week) setPlanningWeek(s.week);
+      }
+    } catch {}
+  }, []);
   const [dashSub, setDashSub] = useState<"tableau" | "crise">("tableau");
   const [rhSub, setRhSub] = useState<"planning" | "competences">("planning");
   const [isulaSub, setIsulaSub] = useState<"planning" | "besoins">("planning");
   const [refSub, setRefSub] = useState<"nomenclature" | "simulateur">("nomenclature");
   const [statsSub, setStatsSub] = useState<"cerveau" | "analyse" | "stats">("cerveau");
 
-  // Sauvegarder l'état dans l'URL hash pour persister au refresh
+  // Sauvegarder l'état dans localStorage pour persister au refresh
   useEffect(() => {
-    const params = new URLSearchParams();
-    params.set("tab", ong);
-    params.set("psub", planningSub);
-    params.set("week", planningWeek);
-    window.history.replaceState(null, "", `#${params.toString()}`);
+    try {
+      localStorage.setItem("sial_nav", JSON.stringify({ tab: ong, psub: planningSub, week: planningWeek }));
+    } catch {}
   }, [ong, planningSub, planningWeek]);
 
   const fetchAll = useCallback(async () => {
