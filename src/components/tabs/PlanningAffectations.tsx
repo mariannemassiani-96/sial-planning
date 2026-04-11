@@ -626,7 +626,35 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   })
                   .sort((a, b) => a.load !== b.load ? a.load - b.load : b.score - a.score);
 
-                const opsNames = available.slice(0, nbPers).map(o => o.op.nom);
+                let opsToPlace = available.slice(0, nbPers);
+
+                // Vérifier si tous les opérateurs sont débutants (niveau ①)
+                // Si oui, ajouter un superviseur (② ou ③)
+                const allBeginner = opsToPlace.length > 0 && opsToPlace.every(o => {
+                  const level = o.op.skillLevels[pid] || 0;
+                  return level === 1; // ① = débutant
+                });
+                if (allBeginner) {
+                  // Chercher un superviseur (niveau ≥ 2) pas encore dans la liste
+                  const placedNames = opsToPlace.map(o => o.op.nom);
+                  const supervisor = available.find(o =>
+                    !placedNames.includes(o.op.nom) && (o.op.skillLevels[pid] || 0) >= 3
+                  );
+                  if (supervisor) {
+                    opsToPlace = [...opsToPlace, supervisor];
+                  } else {
+                    // Pas de superviseur avec skill cochée, chercher dans EQUIPE par compétence phase
+                    const supFromEquipe = available.find(o => {
+                      if (placedNames.includes(o.op.nom)) return false;
+                      // Considérer les opérateurs expérimentés (plus de tâches sur ce poste dans les habitudes)
+                      const habitScore = (habits[pid] || {})[o.op.nom] || 0;
+                      return habitScore > 5; // a déjà fait ce poste au moins 5 fois
+                    });
+                    if (supFromEquipe) opsToPlace = [...opsToPlace, supFromEquipe];
+                  }
+                }
+
+                const opsNames = opsToPlace.map(o => o.op.nom);
                 newAff[key] = { ops: opsNames, cmds: [chLabel] };
                 nextSlotD++;
                 if (nextSlotD > 1) { nextSlotD = 0; nextSlotJ++; }
@@ -799,11 +827,10 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       const anyLevelSet = opLevels.some(o => o.level > 0);
       if (!anyLevelSet) continue; // pas de niveaux cochés → on ne peut pas vérifier
       const hasExpert = opLevels.some(o => o.level >= 3);
-      const hasAutonome = opLevels.some(o => o.level >= 2);
-      const debutants = opLevels.filter(o => o.level === 1);
-      if (debutants.length > 0 && !hasExpert && !hasAutonome) {
+      const debutants = opLevels.filter(o => o.level <= 2 && o.level > 0);
+      if (debutants.length > 0 && !hasExpert) {
         const p = key.split("|");
-        issues.push(`🟠 ${pid} ${JOURS_N[parseInt(p[1])]} ${p[2] === "am" ? "AM" : "PM"} : ${debutants.map(d => d.nom).join(", ")} débutant${debutants.length > 1 ? "s" : ""} seul${debutants.length > 1 ? "s" : ""} — besoin supervision ② ou ③`);
+        issues.push(`🟠 ${pid} ${JOURS_N[parseInt(p[1])]} ${p[2] === "am" ? "AM" : "PM"} : ${debutants.map(d => d.nom).join(", ")} sans expert ③ — besoin supervision`);
       }
     }
 
