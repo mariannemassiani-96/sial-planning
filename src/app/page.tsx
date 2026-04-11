@@ -121,8 +121,8 @@ export default function HomePage() {
 
   const isAdmin = (session?.user as any)?.role === "ADMIN";
 
-  // ── Navigation — 12 onglets (au lieu de 20) ──────────────────────────────
-  const nav = [
+  // ── Navigation — onglets avec ordre personnalisable ──────────────────────
+  const allNav = [
     { id: "planning_fab",    l: "📅 Planning" },
     { id: "dashboard",       l: `🏠 Suivi${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
     { id: "livraison",       l: "🚚 Livraisons" },
@@ -141,6 +141,31 @@ export default function HomePage() {
       { id: "admin",        l: "⚙ Admin" },
     ] : []),
   ];
+
+  // Ordre personnalisé des onglets (sauvé dans localStorage)
+  const [tabOrder, setTabOrder] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try { const s = localStorage.getItem("sial_tab_order"); return s ? JSON.parse(s) : []; } catch { return []; }
+  });
+  const [dragTab, setDragTab] = useState<string | null>(null);
+
+  // Appliquer l'ordre personnalisé
+  const nav = tabOrder.length > 0
+    ? tabOrder.map(id => allNav.find(n => n.id === id)).filter(Boolean).concat(allNav.filter(n => !tabOrder.includes(n.id))) as typeof allNav
+    : allNav;
+
+  const onDropTab = (targetId: string) => {
+    if (!dragTab || dragTab === targetId) return;
+    const ids = nav.map(n => n.id);
+    const fromIdx = ids.indexOf(dragTab);
+    const toIdx = ids.indexOf(targetId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    ids.splice(fromIdx, 1);
+    ids.splice(toIdx, 0, dragTab);
+    setTabOrder(ids);
+    try { localStorage.setItem("sial_tab_order", JSON.stringify(ids)); } catch {}
+    setDragTab(null);
+  };
 
   const addCommande = async (cmd: CommandeCC) => {
     try {
@@ -223,7 +248,18 @@ export default function HomePage() {
 
       <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, paddingLeft: 16, background: C.s1, overflowX: "auto" }}>
         {nav.map(o => (
-          <button key={o.id} onClick={() => { if (o.id !== "saisie") setCmdEdit(null); setOng(o.id); }} style={{ padding: "10px 14px", background: "none", border: "none", borderBottom: `2px solid ${ong === o.id ? C.orange : "transparent"}`, color: ong === o.id ? C.text : o.alert ? C.red : C.sec, fontSize: 12, fontWeight: ong === o.id ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap" }}>
+          <button key={o.id}
+            draggable
+            onDragStart={() => setDragTab(o.id)}
+            onDragOver={e => e.preventDefault()}
+            onDrop={() => onDropTab(o.id)}
+            onClick={() => { if (o.id !== "saisie") setCmdEdit(null); setOng(o.id); }}
+            style={{
+              padding: "10px 14px", background: dragTab === o.id ? C.orange + "22" : "none",
+              border: "none", borderBottom: `2px solid ${ong === o.id ? C.orange : "transparent"}`,
+              color: ong === o.id ? C.text : o.alert ? C.red : C.sec,
+              fontSize: 12, fontWeight: ong === o.id ? 700 : 400, cursor: "grab", whiteSpace: "nowrap",
+            }}>
             {o.l}
           </button>
         ))}
