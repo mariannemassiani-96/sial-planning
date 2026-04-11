@@ -690,7 +690,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               cellWorkMin = DEMI_MIN;
             }
             // Part de cet opérateur = total / nb opérateurs sur ce créneau
-            affDayMin += Math.round(Math.min(cellWorkMin, DEMI_MIN) / nbOps);
+            affDayMin += Math.min(cellWorkMin, DEMI_MIN); // temps réel du chantier, max 4h
           }
         }
 
@@ -726,7 +726,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         }
         if (cell.extras?.length) { for (const ext of cell.extras) { const m = ext.match(/\((\d+)h(\d+)?\)/); cellWorkMin += m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : DEMI_MIN; } }
         if (cellWorkMin === 0 && (cell.cmds?.length || 0) === 0 && (cell.extras?.length || 0) === 0) cellWorkMin = DEMI_MIN;
-        totalAffMin += Math.round(Math.min(cellWorkMin, DEMI_MIN) / nbOps);
+        totalAffMin += Math.min(cellWorkMin, DEMI_MIN);
       }
       const baseMin = (eq?.h || 39) * 60;
       let absTotal = 0;
@@ -1140,7 +1140,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   }
                   if (cell.extras?.length) { for (const ext of cell.extras) { const m = ext.match(/\((\d+)h(\d+)?\)/); cellWork += m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : DEMI_MIN; } }
                   if (cellWork === 0) cellWork = DEMI_MIN;
-                  affMin += Math.round(Math.min(cellWork, DEMI_MIN) / nbOps);
+                  affMin += Math.min(cellWork, DEMI_MIN);
                 }
                 const restant = Math.max(0, dispoMin - affMin);
                 const full = restant <= 0;
@@ -1331,7 +1331,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             if (pwOcc && cell.cmds?.length) { for (const cl of cell.cmds) { const cm = pwOcc.cmds.find(c2 => (c2.chantier || c2.client) === cl); if (cm) cellW += cm.min; } }
             if (cell.extras?.length) { for (const ext of cell.extras) { const m = ext.match(/\((\d+)h(\d+)?\)/); cellW += m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : DEMI_MIN; } }
             if (cellW === 0) cellW = DEMI_MIN;
-            affMin += Math.round(Math.min(cellW, DEMI_MIN) / nbOpsOcc);
+            affMin += Math.min(cellW, DEMI_MIN);
           }
           opStats.push({ nom: op.nom, key: op.key, affMin, dispoMin, pct: dispoMin > 0 ? Math.round(affMin / dispoMin * 100) : 0, absentDays });
         }
