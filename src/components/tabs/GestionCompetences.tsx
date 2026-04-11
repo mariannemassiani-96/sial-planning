@@ -35,7 +35,7 @@ const POST_GROUPS = [
   { label: "Vitrage", ids: ["V1","V2","V3"] },
   { label: "Logistique", ids: ["L1","L2","L3","L4","L5","L6","L7"] },
   { label: "ISULA", ids: ["IL","IB","I3","I4"] },
-  { label: "Autre", ids: ["AUT"] },
+  { label: "Autre", ids: ["LIVR","CHRG","DECH","RANG","NETT","MAINT","FORM","SUPERV"] },
 ];
 const ALL_POST_IDS = POST_GROUPS.flatMap((g) => g.ids);
 
@@ -366,7 +366,8 @@ export default function GestionCompetences() {
     V1:"Vitr. Frappe",V2:"Vitr. Coul/Gal",V3:"Emballage",
     L1:"Décharg. fourn.",L2:"Rang. profilés",L3:"Rang. access.",L4:"Prépa acc. fab.",L5:"Prépa acc. livr.",L6:"Réal. palettes",L7:"Charg. palettes",
     IL:"Coupe Lisec",IB:"Coupe Bottero",I3:"Coupe interc.",I4:"Assemblage VI",
-    AUT:"Autre",
+    LIVR:"Livraison",CHRG:"Chargement",DECH:"Déchargement",RANG:"Rangement",
+    NETT:"Nettoyage",MAINT:"Maintenance",FORM:"Formation",SUPERV:"Supervision",
   };
   const postKeys = ALL_POST_IDS.map((id) => ({ id, label: POST_LABELS[id] ?? id }));
 
