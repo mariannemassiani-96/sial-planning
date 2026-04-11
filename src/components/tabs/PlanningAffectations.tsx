@@ -567,11 +567,6 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         const pw = postWork[pid];
         if (!pw || pw.totalMin === 0) continue;
 
-        // Combien de demi-journées faut-il pour couvrir le travail ?
-        // La palette compte 1 créneau = DEMI_MIN, donc il faut totalMin / DEMI_MIN créneaux
-        const slotsNeeded = Math.ceil(pw.totalMin / DEMI_MIN);
-        const cmdLabels = pw.cmds.map(c => c.chantier || c.client);
-
         // Opérateurs compétents
         let competentOps = ops.filter(op => op.competentPosts.includes(pid));
         if (competentOps.length === 0) {
@@ -583,40 +578,50 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         }
         if (competentOps.length === 0) continue;
 
-        // Remplir TOUS les jours nécessaires
-        let slotsPlaced = 0;
-        for (let j = 0; j < 5 && slotsPlaced < slotsNeeded; j++) {
-          for (const d of ["am", "pm"] as const) {
-            if (slotsPlaced >= slotsNeeded) break;
-            const key = ck(pid, j, d);
-            if (newAff[key]) continue; // déjà rempli
+        // Placer chaque chantier un par un, le finir avant de passer au suivant
+        let nextSlotJ = 0;
+        let nextSlotD = 0; // 0=am, 1=pm
 
-            // Trouver les opérateurs disponibles ce créneau
-            const postHabits = habits[pid] || {};
-            const available = competentOps
-              .filter(op => !(j === 4 && op.vendrediOff))
-              .filter(op => !(j === 4 && d === "pm" && op.id === "jp"))
-              .map(op => {
-                // Compter combien de postes cet opérateur a déjà sur ce créneau
-                let load = 0;
-                for (const k of Object.keys(newAff)) {
-                  const p = k.split("|");
-                  if (parseInt(p[1]) === j && p[2] === d && (newAff[k]?.ops || []).includes(op.nom)) load++;
+        for (const cmd of pw.cmds) {
+          const chLabel = cmd.chantier || cmd.client;
+          const slotsForCmd = Math.max(1, Math.ceil(cmd.min / DEMI_MIN));
+
+          for (let placed = 0; placed < slotsForCmd; placed++) {
+            // Trouver le prochain créneau libre
+            while (nextSlotJ < 5) {
+              const demi = nextSlotD === 0 ? "am" : "pm";
+              const key = ck(pid, nextSlotJ, demi);
+
+              if (!newAff[key]) {
+                // Trouver les opérateurs pour ce créneau
+                const postHabits = habits[pid] || {};
+                const available = competentOps
+                  .filter(op => !(nextSlotJ === 4 && op.vendrediOff))
+                  .filter(op => !(nextSlotJ === 4 && demi === "pm" && op.id === "jp"))
+                  .map(op => {
+                    let load = 0;
+                    for (const k of Object.keys(newAff)) {
+                      const p = k.split("|");
+                      if (parseInt(p[1]) === nextSlotJ && p[2] === demi && (newAff[k]?.ops || []).includes(op.nom)) load++;
+                    }
+                    const habit = postHabits[op.nom] || 0;
+                    const brain = brainScores[op.nom]?.[pid] || 0;
+                    return { op, load, score: brain * 0.5 + habit * 0.5 };
+                  })
+                  .sort((a, b) => a.load !== b.load ? a.load - b.load : b.score - a.score);
+
+                const toAssign = available.slice(0, minPers);
+                if (toAssign.length > 0) {
+                  newAff[key] = { ops: toAssign.map(o => o.op.nom), cmds: [chLabel] };
+                  // Avancer au créneau suivant
+                  nextSlotD++;
+                  if (nextSlotD > 1) { nextSlotD = 0; nextSlotJ++; }
+                  break;
                 }
-                const habit = postHabits[op.nom] || 0;
-                const brain = brainScores[op.nom]?.[pid] || 0;
-                return { op, load, score: brain * 0.5 + habit * 0.5 };
-              })
-              .sort((a, b) => {
-                if (a.load !== b.load) return a.load - b.load;
-                return b.score - a.score;
-              });
-
-            // Prendre les N meilleurs
-            const toAssign = available.slice(0, minPers);
-            if (toAssign.length > 0) {
-              newAff[key] = { ops: toAssign.map(o => o.op.nom), cmds: cmdLabels };
-              slotsPlaced++;
+              }
+              // Créneau déjà pris, avancer
+              nextSlotD++;
+              if (nextSlotD > 1) { nextSlotD = 0; nextSlotJ++; }
             }
           }
         }
