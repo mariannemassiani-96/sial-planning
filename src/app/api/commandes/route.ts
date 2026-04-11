@@ -73,12 +73,17 @@ async function ensureColumns() {
         `ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "${col}" TEXT`
       ).catch(() => {});
     }
-    const boolCols = ["aucune_menuiserie"];
-    for (const col of boolCols) {
-      await prisma.$executeRawUnsafe(
-        `ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "${col}" BOOLEAN DEFAULT false`
-      ).catch(() => {});
-    }
+    // Fix : si aucune_menuiserie existe en TEXT, la dropper et recréer en BOOLEAN
+    await prisma.$executeRawUnsafe(
+      `DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='Commande' AND column_name='aucune_menuiserie' AND data_type='text') THEN
+          ALTER TABLE "Commande" DROP COLUMN "aucune_menuiserie";
+        END IF;
+      END $$`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "aucune_menuiserie" BOOLEAN DEFAULT false`
+    ).catch(() => {});
     migrationDone = true;
   } catch {
     // Silently continue
