@@ -24,6 +24,7 @@ import PlanningSemaine from "@/components/tabs/PlanningSemaine";
 import DetailCommande from "@/components/tabs/DetailCommande";
 import StatsAdmin from "@/components/tabs/StatsAdmin";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
+import AdminUsers from "@/components/tabs/AdminUsers";
 import TutoAJ from "@/components/TutoAJ";
 
 // ── Sub-tab selector ────────────────────────────────────────────────────────
@@ -83,8 +84,24 @@ export default function HomePage() {
 
   const isAdmin = (session?.user as any)?.role === "ADMIN";
 
-  // ── Navigation — 12 onglets (au lieu de 20) ──────────────────────────────
-  const nav = [
+  // ── Permissions utilisateur ────────────────────────────────────────────────
+  const [userPerms, setUserPerms] = useState<{ tabs?: string[]; droits?: string[] } | null>(null);
+  useEffect(() => {
+    if (!isAdmin && status === "authenticated") {
+      fetch("/api/admin/users/me").then(r => r.ok ? r.json() : null).then(d => {
+        if (d?.permissions) setUserPerms(d.permissions);
+      }).catch(() => {});
+    }
+  }, [isAdmin, status]);
+
+  const canSeeTab = (tabId: string) => {
+    if (isAdmin) return true;
+    if (!userPerms?.tabs) return true; // pas de restriction = tout visible
+    return userPerms.tabs.includes(tabId);
+  };
+
+  // ── Navigation — onglets filtrés par permissions ──────────────────────────
+  const allNav = [
     { id: "dashboard_matin", l: "🌅 Matin" },
     { id: "planning_fab",    l: "📅 Planning" },
     { id: "dashboard",       l: `🏠 Suivi${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
@@ -95,14 +112,14 @@ export default function HomePage() {
     { id: "pointage",        l: "✅ Pointage" },
     { id: "affichage_atelier", l: "📺 Atelier" },
     { id: "isula",           l: "🔷 ISULA" },
-    ...(isAdmin ? [
-      { id: "qualite",      l: "✅ Qualité" },
-      { id: "stocks",       l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
-      { id: "referentiel",  l: "📐 Référentiel" },
-      { id: "import_csv",   l: "📥 Import" },
-      { id: "stats_admin",  l: "📊 Stats" },
-    ] : []),
+    { id: "qualite",         l: "✅ Qualité" },
+    { id: "stocks",          l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
+    { id: "referentiel",     l: "📐 Référentiel" },
+    { id: "import_csv",      l: "📥 Import" },
+    { id: "stats_admin",     l: "📊 Stats" },
+    ...(isAdmin ? [{ id: "admin_users", l: "⚙ Admin" }] : []),
   ];
+  const nav = allNav.filter(o => o.id === "admin_users" || canSeeTab(o.id));
 
   const addCommande = async (cmd: CommandeCC) => {
     try {
@@ -271,6 +288,7 @@ export default function HomePage() {
 
             {ong === "import_csv" && <ImportCSV onRefresh={fetchAll} />}
             {ong === "stats_admin" && <StatsAdmin />}
+            {ong === "admin_users" && isAdmin && <AdminUsers />}
           </>
         )}
       </div>

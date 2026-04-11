@@ -19,6 +19,8 @@ export async function GET(request: Request) {
   const period = searchParams.get("period") ?? "30";
   const since  = periodFilter(period);
 
+  try {
+
   // Agrégats par fabItem spécial : temps estimé total vs réel total
   type SpecialRow = {
     fabitemid: string;
@@ -151,4 +153,7 @@ export async function GET(request: Request) {
     : { estTotal: 0, actualTotal: 0, nbSpeciaux: 0, nbDoneComplete: 0 };
 
   return NextResponse.json({ period, speciaux, summary: globalSummary });
+  } catch {
+    return NextResponse.json({ period, speciaux: [], summary: { estTotal: 0, actualTotal: 0, nbSpeciaux: 0, nbDoneComplete: 0 } });
+  }
 }

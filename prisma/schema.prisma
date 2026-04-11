@@ -13,6 +13,7 @@ model User {
   password  String
   nom       String
   role      String   @default("OPERATEUR")
+  // permissions: Json column managed via auto-migration (ALTER TABLE)
   createdAt DateTime @default(now())
 }
 

@@ -19,6 +19,8 @@ export async function GET(request: Request) {
   const period = searchParams.get("period") ?? "30";
   const since  = periodFilter(period);
 
+  try {
+
   // Requête brute pour les agrégats (Prisma ORM ne supporte pas FILTER WHERE)
   type PosteRow = {
     workpostid: string;
@@ -125,4 +127,7 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({ period, postes, detailByPost });
+  } catch {
+    return NextResponse.json({ period, postes: [], detailByPost: {} });
+  }
 }
