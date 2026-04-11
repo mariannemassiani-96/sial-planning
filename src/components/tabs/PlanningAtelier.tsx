@@ -91,7 +91,187 @@ const PRIO: Record<string, number> = { chantier_bloque: 0, urgente: 1, normale: 
 function activeCmds(cmds: CommandeCC[]) {
   return cmds
     .filter(c => { const s = (c as any).statut; return s !== "terminee" && s !== "livre"; })
-    .sort((a, b) => (PRIO[(a as any).priorite] ?? 2) - (PRIO[(b as any).priorite] ?? 2));
+    .sort((a, b) => {
+      const pa = PRIO[(a as any).priorite] ?? 2;
+      const pb = PRIO[(b as any).priorite] ?? 2;
+      if (pa !== pb) return pa - pb;
+      // Secondaire : deadline la plus proche en premier
+      const da = (a as any).date_livraison_souhaitee || "9999";
+      const db = (b as any).date_livraison_souhaitee || "9999";
+      return da.localeCompare(db);
+    });
+}
+
+// ── Routage simplifié : type → postes nécessaires dans l'ordre ────────────
+function getRouteForType(typeId: string): PosteId[] {
+  const tm = TYPES_MENUISERIE[typeId];
+  if (!tm) return [];
+  if (tm.famille === "intervention") return ["frappes"];
+  if (tm.famille === "hors_standard") return ["coupe", "frappes", "vitrage_ov"];
+  if (tm.famille === "coulissant" || tm.famille === "glandage") {
+    const steps: PosteId[] = ["coupe", "coulissant"];
+    if (tm.ouvrants > 0) steps.push("vitrage_ov");
+    return steps;
+  }
+  // frappes / portes
+  const steps: PosteId[] = ["coupe"];
+  if (tm.ouvrants > 0 || tm.dormant > 0) steps.push("frappes");
+  return steps;
+}
+
+// ── Vérification dépendances d'une commande dans le plan ──────────────────
+function checkCmdDeps(cmdId: string, typeId: string, plan: PlanPoste, days: string[]): string[] {
+  const route = getRouteForType(typeId);
+  if (route.length < 2) return [];
+  const errors: string[] = [];
+
+  // Pour chaque poste dans la route, trouver le premier jour/slot où la commande est placée
+  const findFirstSlot = (poste: string): { day: string; slotIdx: number } | null => {
+    for (const day of days) {
+      for (let si = 0; si < 2; si++) {
+        const slot = si === 0 ? "am" as const : "pm" as const;
+        const cell = plan[poste]?.[day];
+        const dj = cell ? cell[slot] : undefined;
+        if (dj?.cmds?.some((c: AssignedCmd) => c.commandeId === cmdId)) {
+          return { day, slotIdx: si };
+        }
+      }
+    }
+    return null;
+  };
+
+  for (let i = 1; i < route.length; i++) {
+    const prevPoste = route[i - 1];
+    const currPoste = route[i];
+    const prevSlot = findFirstSlot(prevPoste);
+    const currSlot = findFirstSlot(currPoste);
+    if (prevSlot && currSlot) {
+      const prevIdx = days.indexOf(prevSlot.day) * 2 + prevSlot.slotIdx;
+      const currIdx = days.indexOf(currSlot.day) * 2 + currSlot.slotIdx;
+      if (currIdx <= prevIdx) {
+        errors.push(`${POSTES.find(p => p.id === currPoste)?.label ?? currPoste} planifié avant ${POSTES.find(p => p.id === prevPoste)?.label ?? prevPoste}`);
+      }
+    }
+  }
+  return errors;
+}
+
+// ── Proposition automatique ──────────────────────────────────────────────
+function generateAutoProposal(
+  cmds: CommandeCC[],
+  days: string[],
+  existingPlan: PlanPoste,
+): PlanPoste {
+  const plan: PlanPoste = JSON.parse(JSON.stringify(existingPlan));
+
+  // Initialiser les cellules manquantes
+  POSTES.forEach(p => {
+    if (!plan[p.id]) plan[p.id] = {};
+    days.forEach(d => {
+      if (!plan[p.id][d]) plan[p.id][d] = emptyCell();
+      if (!plan[p.id][d].am) plan[p.id][d].am = emptyDJ();
+      if (!plan[p.id][d].pm) plan[p.id][d].pm = emptyDJ();
+    });
+  });
+
+  // Commandes actives triées par priorité puis deadline
+  const sorted = activeCmds(cmds);
+
+  // Tracker la charge par poste/jour/slot
+  const getLoad = (poste: PosteId, day: string, slot: "am" | "pm"): number => {
+    const dj = plan[poste]?.[day]?.[slot];
+    if (!dj) return 0;
+    return dj.cmds.reduce((sum, ac) => {
+      const cmd = cmds.find(c => String(c.id) === ac.commandeId);
+      if (!cmd) return sum;
+      const t = calcTempsType(cmd.type, ac.quantite || cmd.quantite, (cmd as any).hsTemps ?? null);
+      return sum + (t?.par_poste[poste] ?? 0);
+    }, 0);
+  };
+
+  // Commandes déjà placées
+  const placedCmds = new Set<string>();
+  POSTES.forEach(p => {
+    days.forEach(d => {
+      (["am", "pm"] as const).forEach(s => {
+        (plan[p.id]?.[d]?.[s]?.cmds ?? []).forEach(c => placedCmds.add(`${c.commandeId}|${p.id}`));
+      });
+    });
+  });
+
+  const DEMI_CAP = 240; // 4h par demi-journée
+
+  for (const cmd of sorted) {
+    const cmdId = String(cmd.id);
+    const route = getRouteForType(cmd.type);
+    if (!route.length) continue;
+
+    // Pour chaque étape de la route, trouver le meilleur créneau
+    let minSlotIdx = 0; // index global (jour*2+slot) — assure l'ordre des étapes
+
+    for (const poste of route) {
+      if (placedCmds.has(`${cmdId}|${poste}`)) {
+        // Déjà placée — trouver son index pour les dépendances
+        for (let di = 0; di < days.length; di++) {
+          for (let si = 0; si < 2; si++) {
+            const slot = si === 0 ? "am" as const : "pm" as const;
+            const cell = plan[poste]?.[days[di]];
+            if (cell?.[slot]?.cmds?.some((c: AssignedCmd) => c.commandeId === cmdId)) {
+              minSlotIdx = Math.max(minSlotIdx, di * 2 + si + 1);
+            }
+          }
+        }
+        continue;
+      }
+
+      const t = calcTempsType(cmd.type, cmd.quantite, (cmd as any).hsTemps ?? null);
+      const tPoste = t?.par_poste[poste as PosteId] ?? 0;
+      if (tPoste === 0) continue;
+
+      // Trouver le premier créneau avec de la capacité
+      let placed = false;
+      for (let globalIdx = minSlotIdx; globalIdx < days.length * 2; globalIdx++) {
+        const di = Math.floor(globalIdx / 2);
+        const si = globalIdx % 2;
+        const day = days[di];
+        const slot = si === 0 ? "am" : "pm";
+
+        if (!isWorkday(day)) continue;
+
+        const currentLoad = getLoad(poste as PosteId, day, slot);
+        if (currentLoad + tPoste <= DEMI_CAP * 1.1) { // tolérance 10%
+          plan[poste][day][slot].cmds.push({ commandeId: cmdId, quantite: cmd.quantite });
+          placedCmds.add(`${cmdId}|${poste}`);
+          minSlotIdx = globalIdx + 1; // étape suivante au moins après celle-ci
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        // Pas de place cette semaine — skip cette commande pour ce poste
+        break;
+      }
+    }
+  }
+
+  // Auto-affecter les opérateurs principaux si cellule vide
+  POSTES.forEach(poste => {
+    const defaultOps = opsPoste(poste.id).filter(m => m.poste === poste.id);
+    days.forEach(day => {
+      if (!isWorkday(day)) return;
+      const isFriday = new Date(day + "T12:00:00").getDay() === 5;
+      (["am", "pm"] as const).forEach(slot => {
+        const dj = plan[poste.id]?.[day]?.[slot];
+        if (dj && dj.cmds.length > 0 && dj.ops.length === 0) {
+          dj.ops = defaultOps
+            .filter(m => !(isFriday && m.vendrediOff))
+            .map(m => m.id);
+        }
+      });
+    });
+  });
+
+  return plan;
 }
 function calcTempsDJ(posteId: string, dj: DemiJ, cmds: CommandeCC[]) {
   const total = dj.cmds.reduce((sum, ac) => {
@@ -111,6 +291,7 @@ export default function PlanningAtelier({ commandes }: { commandes: CommandeCC[]
   const [saving, setSaving]   = useState(false);
   const [addOpKey,  setAddOpKey]  = useState<string | null>(null);
   const [addCmdKey, setAddCmdKey] = useState<string | null>(null);
+  const [depErrors, setDepErrors] = useState<Record<string, string[]>>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const semaine = toSemaineId(monday);
@@ -198,6 +379,34 @@ export default function PlanningAtelier({ commandes }: { commandes: CommandeCC[]
     const dj = getDJ(p, d, s); setDJ(p, d, s, { ...dj, cmds: dj.cmds.filter(c => c.commandeId !== cid) });
   };
 
+  // ── Vérification des dépendances à chaque changement de plan ──
+  useEffect(() => {
+    const errs: Record<string, string[]> = {};
+    // Collecter toutes les commandes placées dans le plan
+    const allCmdIds = new Set<string>();
+    POSTES.forEach(p => {
+      days.forEach(d => {
+        (["am", "pm"] as const).forEach(s => {
+          (plan[p.id]?.[d]?.[s]?.cmds ?? []).forEach(c => allCmdIds.add(c.commandeId));
+        });
+      });
+    });
+    allCmdIds.forEach(cid => {
+      const cmd = commandes.find(c => String(c.id) === cid);
+      if (!cmd) return;
+      const problems = checkCmdDeps(cid, cmd.type, plan, days);
+      if (problems.length > 0) errs[cid] = problems;
+    });
+    setDepErrors(errs);
+  }, [plan, days, commandes]);
+
+  // ── Proposition automatique ──
+  const doAutoProposal = () => {
+    const proposed = generateAutoProposal(commandes, days, plan);
+    setPlan(proposed);
+    save(proposed);
+  };
+
   const navLabel = `Sem. ${getWeekNum(monday)} — ${new Date(monday + "T00:00:00").toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })} → ${new Date(friday + "T00:00:00").toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })}`;
 
   // ── Rendu ─────────────────────────────────────────────────────────────────
@@ -215,6 +424,9 @@ export default function PlanningAtelier({ commandes }: { commandes: CommandeCC[]
           <button onClick={() => setMonday(m => addWeeks(m, -1))} style={btn}>‹ Sem. préc.</button>
           <button onClick={() => setMonday(getMondayStr())}       style={btn}>Auj.</button>
           <button onClick={() => setMonday(m => addWeeks(m, 1))}  style={btn}>Sem. suiv. ›</button>
+          <button onClick={doAutoProposal} style={{ ...btn, background: C.green + "22", borderColor: C.green, color: C.green, fontWeight: 700 }}>
+            Proposition auto
+          </button>
         </div>
       </div>
 
@@ -245,6 +457,24 @@ export default function PlanningAtelier({ commandes }: { commandes: CommandeCC[]
           );
         })}
       </div>
+
+      {/* ── Alertes dépendances ── */}
+      {Object.keys(depErrors).length > 0 && (
+        <div style={{ marginBottom: 10, padding: "8px 12px", background: C.red + "15", border: `1px solid ${C.red}44`, borderRadius: 6 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.red, marginBottom: 4 }}>
+            ⚠ Dépendances non respectées ({Object.keys(depErrors).length} commande{Object.keys(depErrors).length > 1 ? "s" : ""})
+          </div>
+          {Object.entries(depErrors).map(([cid, errs]) => {
+            const cmd = commandes.find(c => String(c.id) === cid);
+            const label = cmd ? `${(cmd as any).num_commande || ""} ${(cmd as any).client || ""}`.trim() : cid;
+            return (
+              <div key={cid} style={{ fontSize: 10, color: C.red, marginLeft: 8 }}>
+                <b>{label}</b> : {errs.join(" · ")}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── Grille manuelle ── */}
       <div style={{ overflowX: "auto" }}>
@@ -363,11 +593,12 @@ export default function PlanningAtelier({ commandes }: { commandes: CommandeCC[]
                                 const tE = nbOps > 1 ? Math.round(tP / nbOps) : tP;
                                 const num = (cmd as any).num_commande ?? String(cmd.id);
                                 const cli = (cmd as any).client ?? "";
+                                const hasDep = depErrors[ac.commandeId]?.length > 0;
                                 return (
                                   <span key={ac.commandeId}
-                                    title={`${cli} — ${num} | ${hm(tP)}${nbOps > 1 ? ` ÷${nbOps}=${hm(tE)}` : ""} · Cliquer pour retirer`}
+                                    title={hasDep ? `⚠ ${depErrors[ac.commandeId].join(" · ")}` : `${cli} — ${num} | ${hm(tP)}${nbOps > 1 ? ` ÷${nbOps}=${hm(tE)}` : ""} · Cliquer pour retirer`}
                                     onClick={() => doRemoveCmd(poste.id, date, slot, ac.commandeId)}
-                                    style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: C.s2, border: `1px solid ${C.bLight}`, color: C.text, cursor: "pointer", maxWidth: 118, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", userSelect: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>
+                                    style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: hasDep ? C.red + "22" : C.s2, border: `1px solid ${hasDep ? C.red : C.bLight}`, color: hasDep ? C.red : C.text, cursor: "pointer", maxWidth: 118, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", userSelect: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>
                                     <span>{num}</span>
                                     {tE > 0 && <span style={{ color: C.teal, fontFamily: "monospace" }}>·{hm(tE)}</span>}
                                   </span>
