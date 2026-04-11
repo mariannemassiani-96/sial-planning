@@ -26,7 +26,7 @@ import AnalyseProduction from "@/components/tabs/AnalyseProduction";
 import CerveauDashboard from "@/components/tabs/CerveauDashboard";
 import AdminUsers from "@/components/tabs/AdminUsers";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
-import TutoAJ from "@/components/TutoAJ";
+import ChatAssistant from "@/components/ChatAssistant";
 
 // ── Sub-tab selector ────────────────────────────────────────────────────────
 function SubTabs({ tabs, active, onChange }: { tabs: { id: string; l: string }[]; active: string; onChange: (id: string) => void }) {
@@ -310,7 +310,7 @@ export default function HomePage() {
           </>
         )}
       </div>
-      <TutoAJ onGoToDashboard={() => setOng("planning_fab")} />
+      <ChatAssistant commandes={commandes} />
     </div>
   );
 }
