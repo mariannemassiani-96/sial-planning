@@ -60,8 +60,7 @@ export default function AnalyseProduction() {
     const posteStats: Record<string, { count: number; totalReal: number }> = {};
 
     for (const day of data) {
-      const dayDate = new Date(day.date + "T00:00:00");
-      const isVen = dayDate.getDay() === 5;
+      // const dayDate = new Date(day.date + "T00:00:00");
 
       for (const [key, entry] of Object.entries(day.entries)) {
         if (!entry) continue;

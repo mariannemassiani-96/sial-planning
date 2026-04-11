@@ -261,7 +261,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           if (Object.keys(migrated).length > 0) setAff(migrated);
         })
         .catch(() => {});
-    }, 10000);
+    }, 30000);
     return () => clearInterval(interval);
   }, [viewWeek, saving]);
 

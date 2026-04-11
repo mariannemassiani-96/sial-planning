@@ -90,7 +90,7 @@ export default function HomePage() {
     const interval = setInterval(() => {
       fetch("/api/commandes").then(r => r.ok ? r.json() : null).then(data => { if (data) setCommandes(data); }).catch(() => {});
       fetch("/api/stocks").then(r => r.ok ? r.json() : null).then(data => { if (data) setStocks(data); }).catch(() => {});
-    }, 10000);
+    }, 30000);
     return () => clearInterval(interval);
   }, [status]);
 
@@ -310,7 +310,7 @@ export default function HomePage() {
           </>
         )}
       </div>
-      <TutoAJ onGoToDashboard={() => setOng("dashboard_matin")} />
+      <TutoAJ onGoToDashboard={() => setOng("planning_fab")} />
     </div>
   );
 }

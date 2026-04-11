@@ -2,13 +2,15 @@
 import { useState, useEffect } from "react";
 import { C, hm } from "@/lib/sial-data";
 
-const RAISON_LABELS: Record<string, string> = {
+// Utilisé dans les alertes pour afficher les raisons en clair
+const _RAISON_LABELS: Record<string, string> = {
   manque_temps: "⏰ Manque de temps", manque_accessoire: "🔩 Manque accessoire",
   manque_profil: "📦 Manque profilé", manque_vitrage: "🪟 Manque vitrage",
   manque_dossier: "📋 Manque dossier", manque_info: "❓ Manque info",
   panne_machine: "⚙ Panne machine", probleme_qualite: "⚠ Problème qualité",
   absence: "👤 Absence", priorite_changee: "🔄 Priorité changée", autre: "📝 Autre",
 };
+void _RAISON_LABELS; // sera utilisé quand les alertes afficheront les raisons
 
 const SEVERITY_COLORS = { info: C.blue, warning: C.orange, critical: C.red };
 

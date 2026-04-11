@@ -63,7 +63,7 @@ const POST_COLORS: Record<string, string> = {
   AUT:"#78909C",L4:"#CE93D8",L6:"#CE93D8",L7:"#CE93D8",
 };
 
-export default function PointageJour({ commandes, onPatch }: {
+export default function PointageJour({ commandes: _commandes, onPatch: _onPatch }: {
   commandes: CommandeCC[];
   onPatch: (id: string, updates: Record<string, unknown>) => void;
 }) {

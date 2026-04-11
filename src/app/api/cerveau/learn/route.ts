@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { buildHistorique, analyserTemps, analyserOperateurs, detecterAlertes } from "@/lib/cerveau";
 
@@ -16,7 +18,11 @@ const BRAIN_KEY = "__cerveau_state__";
  *
  * Le cerveau accumule les connaissances même si personne ne touche au code.
  */
-export async function POST() {
+export async function POST(req: NextRequest) {
+  // Auth : session OU cron Vercel (header x-vercel-cron)
+  const session = await getServerSession(authOptions);
+  const isCron = req.headers.get("x-vercel-cron") === "1" || req.headers.get("authorization") === `Bearer ${process.env.CRON_SECRET || ""}`;
+  if (!session && !isCron) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
   try {
     const startTime = Date.now();
 
@@ -118,6 +124,6 @@ export async function POST() {
 }
 
 // GET pour pouvoir aussi déclencher manuellement
-export async function GET() {
-  return POST();
+export async function GET(req: NextRequest) {
+  return POST(req);
 }
