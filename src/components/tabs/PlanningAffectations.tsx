@@ -674,7 +674,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             hasAnySlot = true;
             const pid = p[0];
             const pw = postWork[pid];
-            const nbOps = cell.ops.length;
+
             // Heures réelles = somme des tâches (chantiers) dans cette cellule / nb opérateurs
             let cellWorkMin = 0;
             if (pw && cell.cmds?.length) {
@@ -716,7 +716,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         if (!cell?.ops?.includes(op.nom)) continue;
         const pid = key.split("|")[0];
         const pw = postWork[pid];
-        const nbOps = cell.ops.length;
+
         let cellWorkMin = 0;
         if (pw && cell.cmds?.length) {
           for (const cmdLabel of cell.cmds) {
@@ -1133,7 +1133,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   if (!cell?.ops?.includes(op.nom)) continue;
                   const pid = key.split("|")[0];
                   const pw2 = postWork[pid];
-                  const nbOps = cell.ops.length;
+
                   let cellWork = 0;
                   if (pw2 && cell.cmds?.length) {
                     for (const cl of cell.cmds) { const cm = pw2.cmds.find(c2 => (c2.chantier || c2.client) === cl); if (cm) cellWork += cm.min; }
@@ -1326,7 +1326,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             if (!cell?.ops?.includes(op.nom)) continue;
             const pidOcc = key.split("|")[0];
             const pwOcc = postWork[pidOcc];
-            const nbOpsOcc = cell.ops.length;
+
             let cellW = 0;
             if (pwOcc && cell.cmds?.length) { for (const cl of cell.cmds) { const cm = pwOcc.cmds.find(c2 => (c2.chantier || c2.client) === cl); if (cm) cellW += cm.min; } }
             if (cell.extras?.length) { for (const ext of cell.extras) { const m = ext.match(/\((\d+)h(\d+)?\)/); cellW += m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : DEMI_MIN; } }
