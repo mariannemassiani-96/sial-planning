@@ -567,9 +567,24 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         const pw = postWork[pid];
         if (!pw || pw.totalMin === 0) continue;
 
-        // Nombre de personnes : min de la phase sauf si max 1 (C4, C5, C6)
+        // Nombre de personnes selon le poste et la charge
         const maxPersPoste = POST_MAX_PERS[pid];
-        const nbPers = maxPersPoste ? Math.min(minPers, maxPersPoste) : minPers;
+        let nbPers = maxPersPoste ? Math.min(minPers, maxPersPoste) : minPers;
+
+        // C3 : adapter selon la charge (barres)
+        // 1 pers = 50 barres/8h, 2 pers = 80 barres/8h, 3 pers = 120 barres/8h
+        // Si plus de 16h de travail (> 4 demi-journées) → 3 personnes pour finir dans la semaine
+        // Si 8-16h → 2 personnes
+        // Si < 8h → 2 personnes (minimum coupe)
+        if (pid === "C3") {
+          const slotsDispoSemaine = 10; // 5 jours × 2 demi-journées
+          const slotsAvec2 = Math.ceil(pw.totalMin / DEMI_MIN);
+          if (slotsAvec2 > slotsDispoSemaine * 0.6) {
+            nbPers = 3; // charge lourde : 3 personnes pour tenir dans la semaine
+          } else {
+            nbPers = 2;
+          }
+        }
 
         // Opérateurs compétents
         let competentOps = ops.filter(op => op.competentPosts.includes(pid));
