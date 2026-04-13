@@ -26,7 +26,6 @@ import AnalyseProduction from "@/components/tabs/AnalyseProduction";
 import CerveauDashboard from "@/components/tabs/CerveauDashboard";
 import AdminUsers from "@/components/tabs/AdminUsers";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
-import AdminUsers from "@/components/tabs/AdminUsers";
 import TutoAJ from "@/components/TutoAJ";
 import AssistantIA from "@/components/AssistantIA";
 
@@ -158,7 +157,7 @@ export default function HomePage() {
     { id: "stats_admin",     l: "📊 Stats" },
     ...(isAdmin ? [{ id: "admin_users", l: "⚙ Admin" }] : []),
   ];
-  const nav = allNav.filter(o => o.id === "admin_users" || canSeeTab(o.id));
+  const filteredNav = allNav.filter(o => o.id === "admin_users" || canSeeTab(o.id));
 
   // Ordre personnalisé des onglets (sauvé dans localStorage)
   const [tabOrder, setTabOrder] = useState<string[]>(() => {
@@ -167,10 +166,10 @@ export default function HomePage() {
   });
   const [dragTab, setDragTab] = useState<string | null>(null);
 
-  // Appliquer l'ordre personnalisé
+  // Appliquer l'ordre personnalisé + filtrage permissions
   const nav = tabOrder.length > 0
-    ? tabOrder.map(id => allNav.find(n => n.id === id)).filter(Boolean).concat(allNav.filter(n => !tabOrder.includes(n.id))) as typeof allNav
-    : allNav;
+    ? tabOrder.map(id => filteredNav.find(n => n.id === id)).filter(Boolean).concat(filteredNav.filter(n => !tabOrder.includes(n.id))) as typeof filteredNav
+    : filteredNav;
 
   const onDropTab = (targetId: string) => {
     if (!dragTab || dragTab === targetId) return;

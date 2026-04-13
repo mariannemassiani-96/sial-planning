@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { TYPES_MENUISERIE, C, CMAT, hm } from "@/lib/sial-data";
-import { getRoutage } from "@/lib/routage-production";
+import { TYPES_MENUISERIE, C, CMAT, hm, calcTempsType } from "@/lib/sial-data";
+import { getRoute } from "@/lib/routage-production";
 import { H, Bdg } from "@/components/ui";
 
 const POST_GROUPS = [
@@ -157,10 +157,14 @@ export default function Nomenclature() {
               </thead>
               <tbody>
                 {types.map(([id, tm]) => {
-                  const routage = getRoutage(id, qte);
-                  if (routage.length === 0) return null;
+                  const route = getRoute(id);
+                  const temps = calcTempsType(id, qte);
+                  if (!route || !temps) return null;
                   const parPoste: Record<string, number> = {};
-                  for (const e of routage) parPoste[e.postId] = (parPoste[e.postId] || 0) + e.estimatedMin;
+                  for (const s of route.steps) {
+                    const t = temps.par_poste[s.poste as keyof typeof temps.par_poste] ?? 0;
+                    if (t > 0) parPoste[s.poste] = (parPoste[s.poste] || 0) + t;
+                  }
 
                   // Appliquer les overrides
                   let total = 0;

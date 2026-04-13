@@ -431,3 +431,63 @@ export function describeRoute(typeId: string): string {
 
   return `${label} :\n${steps}`;
 }
+
+// ── Compatibilité ancienne API ──────────────────────────────────────
+
+export interface EtapeRoutage {
+  postId: string;
+  label: string;
+  phase: string;
+  estimatedMin: number;
+  order?: number;
+}
+
+/**
+ * Ancienne API compatible : retourne un tableau d'étapes avec temps estimés.
+ * Utilisé par SaisieCommande, PlanningCharge, PlanningAffectations, Nomenclature.
+ */
+export function getRoutage(
+  typeId: string,
+  quantite: number = 1,
+  hsTemps?: Record<string, unknown> | null,
+): EtapeRoutage[] {
+  const route = ensureCache(typeId);
+  if (!route) return [];
+
+  const { calcTempsType: calcTT } = require("@/lib/sial-data");
+  const temps = calcTT(typeId, quantite, hsTemps);
+  if (!temps) return [];
+
+  const phaseMap: Record<string, string> = {
+    coupe: "coupe",
+    frappes: "montage",
+    coulissant: "montage",
+    vitrage_ov: "vitrage",
+  };
+
+  return route.steps
+    .map(s => {
+      const min = temps.par_poste[s.poste as keyof typeof temps.par_poste] ?? 0;
+      if (min === 0) return null;
+      return {
+        postId: s.poste,
+        label: s.poste.charAt(0).toUpperCase() + s.poste.slice(1),
+        phase: phaseMap[s.poste] ?? s.poste,
+        estimatedMin: min,
+      };
+    })
+    .filter(Boolean) as EtapeRoutage[];
+}
+
+/**
+ * Matrice complète de tous les types avec leurs routages.
+ */
+export function getMatriceRoutage() {
+  const { TYPES_MENUISERIE: TM, calcTempsType: calcTT } = require("@/lib/sial-data");
+  return Object.keys(TM).map(id => ({
+    typeId: id,
+    label: TM[id].label,
+    etapes: getRoutage(id, 1),
+    totalMin: getRoutage(id, 1).reduce((s: number, e: EtapeRoutage) => s + e.estimatedMin, 0),
+  }));
+}
