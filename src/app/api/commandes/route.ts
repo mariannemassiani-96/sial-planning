@@ -97,8 +97,10 @@ export async function GET() {
     await ensureColumns();
     const commandes = await prisma.commande.findMany({ orderBy: { createdAt: "desc" } });
     return NextResponse.json(commandes);
-  } catch {
-    return NextResponse.json({ error: "Erreur chargement commandes" }, { status: 500 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Erreur inconnue";
+    console.error("GET /api/commandes error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
 

@@ -87,15 +87,25 @@ export default function HomePage() {
     } catch {}
   }, [ong, planningSub, planningWeek]);
 
+  const [apiError, setApiError] = useState<string | null>(null);
+
   const fetchAll = useCallback(async () => {
     try {
       const [cmdsRes, stsRes] = await Promise.all([
         fetch("/api/commandes"),
         fetch("/api/stocks"),
       ]);
-      if (cmdsRes.ok) setCommandes(await cmdsRes.json());
-      if (stsRes.ok)  setStocks(await stsRes.json());
-    } catch {}
+      if (cmdsRes.ok) {
+        setCommandes(await cmdsRes.json());
+        setApiError(null);
+      } else {
+        const err = await cmdsRes.json().catch(() => ({}));
+        setApiError(`Commandes: ${err.error || cmdsRes.status}`);
+      }
+      if (stsRes.ok) setStocks(await stsRes.json());
+    } catch (e: unknown) {
+      setApiError(`Erreur réseau: ${e instanceof Error ? e.message : "inconnue"}`);
+    }
     setLoading(false);
   }, []);
 
@@ -317,6 +327,12 @@ export default function HomePage() {
           </div>
         ) : (
           <>
+            {apiError && (
+              <div style={{ marginBottom: 12, padding: "10px 14px", background: "#EF535022", border: `1px solid ${C.red}44`, borderRadius: 8, fontSize: 12, color: C.red }}>
+                <b>Erreur API :</b> {apiError}
+                <button onClick={fetchAll} style={{ marginLeft: 12, padding: "4px 10px", background: C.red, border: "none", borderRadius: 4, color: "#fff", cursor: "pointer", fontSize: 11 }}>Recharger</button>
+              </div>
+            )}
             {ong === "planning_fab" && (
               <>
                 <SubTabs
