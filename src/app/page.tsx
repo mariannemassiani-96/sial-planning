@@ -71,6 +71,7 @@ export default function HomePage() {
   const [cmdEdit, setCmdEdit] = useState<CommandeCC | null>(null);
   const [stocks, setStocks] = useState<Record<string, { actuel: number }>>({});
   const [loading, setLoading] = useState(true);
+  const [carnetFilters, setCarnetFilters] = useState<Record<string, unknown>>({});
 
   const [planningSub, setPlanningSub] = useState<"commandes" | "affectations">((initNav.psub as "commandes" | "affectations") || "commandes");
   const [planningWeek, setPlanningWeek] = useState(initNav.week || defaultWeek);
@@ -359,7 +360,7 @@ export default function HomePage() {
             )}
 
             {ong === "saisie" && <SaisieCommande key={String(cmdEdit?.id || "new")} onAjouter={addCommande} commande={cmdEdit} onModifier={modifCommande} />}
-            {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} onEdit={editCommande} onPatch={patchCommande} />}
+            {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} onEdit={editCommande} onPatch={patchCommande} savedFiltersState={carnetFilters} onFiltersChange={setCarnetFilters} />}
             {ong === "livraison" && <PlanningLivraison commandes={commandes} onPatch={patchCommande} onEdit={editCommande} />}
 
             {/* Équipe SIAL + Compétences fusionnés */}

@@ -142,24 +142,35 @@ function hasEtapeInWeek(c: CommandeCC, wMon: string): boolean {
 }
 
 // ── Composant ─────────────────────────────────────────────────────────────────
-export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
+export default function Carnet({ commandes, onDelete, onEdit, onPatch, savedFiltersState, onFiltersChange }: {
   commandes: CommandeCC[];
   onDelete: (id: any) => void;
   onEdit: (cmd: CommandeCC) => void;
   onPatch: (id: string, updates: Record<string, unknown>) => void;
+  savedFiltersState?: Record<string, unknown>;
+  onFiltersChange?: (f: Record<string, unknown>) => void;
 }) {
   const todayMonday = getMondayOf(localStr(new Date()));
 
-  const [search,           setSearch]           = useState("");
-  const [filterZone,       setFilterZone]       = useState("");
-  const [filterAtelier,    setFilterAtelier]    = useState("");
-  const [filterPoste,      setFilterPoste]      = useState("");
-  const [filterStatut,     setFilterStatut]     = useState("");
-  const [filterTypeCmd,    setFilterTypeCmd]    = useState("");
-  const [filterWeekFab,    setFilterWeekFab]    = useState<string | null>(null);
-  const [filterWeekLiv,    setFilterWeekLiv]    = useState<string | null>(null);
+  // Restaurer les filtres depuis le state parent (persistant entre onglets)
+  const sf = savedFiltersState || {};
+  const [search,           setSearch]           = useState((sf.search as string) || "");
+  const [filterZone,       setFilterZone]       = useState((sf.filterZone as string) || "");
+  const [filterAtelier,    setFilterAtelier]    = useState((sf.filterAtelier as string) || "");
+  const [filterPoste,      setFilterPoste]      = useState((sf.filterPoste as string) || "");
+  const [filterStatut,     setFilterStatut]     = useState((sf.filterStatut as string) || "");
+  const [filterTypeCmd,    setFilterTypeCmd]    = useState((sf.filterTypeCmd as string) || "");
+  const [filterWeekFab,    setFilterWeekFab]    = useState<string | null>((sf.filterWeekFab as string | null) ?? null);
+  const [filterWeekLiv,    setFilterWeekLiv]    = useState<string | null>((sf.filterWeekLiv as string | null) ?? null);
   const [openComments,     setOpenComments]     = useState<string | null>(null);
-  const [sortBy,           setSortBy]           = useState<"livraison" | "client">("livraison");
+  const [sortBy,           setSortBy]           = useState<"livraison" | "client">((sf.sortBy as "livraison" | "client") || "livraison");
+
+  // Sauvegarder les filtres dans le state parent à chaque changement
+  useEffect(() => {
+    if (onFiltersChange) {
+      onFiltersChange({ search, filterZone, filterAtelier, filterPoste, filterStatut, filterTypeCmd, filterWeekFab, filterWeekLiv, sortBy });
+    }
+  }, [search, filterZone, filterAtelier, filterPoste, filterStatut, filterTypeCmd, filterWeekFab, filterWeekLiv, sortBy, onFiltersChange]);
 
   // ── Filtres favoris (localStorage par utilisateur) ──────────────────────
   interface SavedFilter {
