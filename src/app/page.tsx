@@ -138,7 +138,6 @@ export default function HomePage() {
 
   // ── Navigation — onglets filtrés par permissions ──────────────────────────
   const allNav = [
-    { id: "dashboard_matin", l: "🌅 Matin" },
     { id: "planning_fab",    l: "📅 Planning" },
     { id: "dashboard",       l: `🏠 Suivi${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
     { id: "livraison",       l: "🚚 Livraisons" },
@@ -368,7 +367,7 @@ export default function HomePage() {
           </>
         )}
       </div>
-      <TutoAJ onGoToDashboard={() => setOng("dashboard_matin")} />
+      <TutoAJ onGoToDashboard={() => setOng("planning_fab")} />
       <AssistantIA />
     </div>
   );
