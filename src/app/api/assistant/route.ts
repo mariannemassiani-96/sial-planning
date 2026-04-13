@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { TYPES_MENUISERIE, EQUIPE, hm, calcTempsType, calcChargeSemaine } from "@/lib/sial-data";
+import { EQUIPE, hm, calcChargeSemaine } from "@/lib/sial-data";
 
 // ── Auto-migration MemoAction ───────────────────────────────────────────────
 let migDone = false;

@@ -22,8 +22,6 @@ import AffichageAtelier from "@/components/tabs/AffichageAtelier";
 import PlanningCommandes from "@/components/tabs/PlanningCommandes";
 import PlanningAffectations from "@/components/tabs/PlanningAffectations";
 import StatsAdmin from "@/components/tabs/StatsAdmin";
-import AnalyseProduction from "@/components/tabs/AnalyseProduction";
-import CerveauDashboard from "@/components/tabs/CerveauDashboard";
 import AdminUsers from "@/components/tabs/AdminUsers";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
 import TutoAJ from "@/components/TutoAJ";
@@ -79,7 +77,7 @@ export default function HomePage() {
   const [rhSub, setRhSub] = useState<"planning" | "competences">("planning");
   const [isulaSub, setIsulaSub] = useState<"planning" | "besoins">("planning");
   const [refSub, setRefSub] = useState<"nomenclature" | "simulateur">("nomenclature");
-  const [statsSub, setStatsSub] = useState<"cerveau" | "analyse" | "stats">("cerveau");
+  const [_statsSub, _setStatsSub] = useState<"cerveau" | "analyse" | "stats">("cerveau");
 
   // Sauvegarder l'état dans localStorage pour persister au refresh
   useEffect(() => {

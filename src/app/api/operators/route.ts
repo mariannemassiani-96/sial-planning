@@ -76,6 +76,7 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
 
   try {
+    await ensureWorkPosts();
     const operators = await prisma.operator.findMany({
       where: { active: true },
       orderBy: { name: "asc" },

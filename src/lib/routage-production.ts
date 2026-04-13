@@ -3,7 +3,7 @@
 // Utilise par : validation dependances, auto-planning, scheduling optimal
 // ═══════════════════════════════════════════════════════════════════════
 
-import { TYPES_MENUISERIE, TAMPON_MIN } from "@/lib/sial-data";
+import { TYPES_MENUISERIE, TAMPON_MIN, calcTempsType } from "@/lib/sial-data";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -454,8 +454,7 @@ export function getRoutage(
   const route = ensureCache(typeId);
   if (!route) return [];
 
-  const { calcTempsType: calcTT } = require("@/lib/sial-data");
-  const temps = calcTT(typeId, quantite, hsTemps);
+  const temps = calcTempsType(typeId, quantite, hsTemps as any);
   if (!temps) return [];
 
   const phaseMap: Record<string, string> = {
@@ -483,10 +482,9 @@ export function getRoutage(
  * Matrice complète de tous les types avec leurs routages.
  */
 export function getMatriceRoutage() {
-  const { TYPES_MENUISERIE: TM, calcTempsType: calcTT } = require("@/lib/sial-data");
-  return Object.keys(TM).map(id => ({
+  return Object.keys(TYPES_MENUISERIE).map(id => ({
     typeId: id,
-    label: TM[id].label,
+    label: TYPES_MENUISERIE[id].label,
     etapes: getRoutage(id, 1),
     totalMin: getRoutage(id, 1).reduce((s: number, e: EtapeRoutage) => s + e.estimatedMin, 0),
   }));
