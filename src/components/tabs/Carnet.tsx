@@ -161,6 +161,54 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
   const [openComments,     setOpenComments]     = useState<string | null>(null);
   const [sortBy,           setSortBy]           = useState<"livraison" | "client">("livraison");
 
+  // ── Filtres favoris (localStorage par utilisateur) ──────────────────────
+  interface SavedFilter {
+    name: string;
+    search: string;
+    zone: string;
+    atelier: string;
+    poste: string;
+    statut: string;
+    typeCmd: string;
+    weekFab: string | null;
+    weekLiv: string | null;
+  }
+  const FAVS_KEY = "sial_filter_favs";
+  const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(() => {
+    if (typeof window === "undefined") return [];
+    try { const s = localStorage.getItem(FAVS_KEY); return s ? JSON.parse(s) : []; } catch { return []; }
+  });
+  const [showSaveName, setShowSaveName] = useState(false);
+  const [saveName, setSaveName] = useState("");
+
+  const persistFilters = (filters: SavedFilter[]) => {
+    setSavedFilters(filters);
+    try { localStorage.setItem(FAVS_KEY, JSON.stringify(filters)); } catch {}
+  };
+
+  const saveCurrentFilter = () => {
+    if (!saveName.trim()) return;
+    const newFilter: SavedFilter = {
+      name: saveName.trim(),
+      search, zone: filterZone, atelier: filterAtelier, poste: filterPoste,
+      statut: filterStatut, typeCmd: filterTypeCmd,
+      weekFab: filterWeekFab, weekLiv: filterWeekLiv,
+    };
+    persistFilters([...savedFilters.filter(f => f.name !== newFilter.name), newFilter]);
+    setSaveName("");
+    setShowSaveName(false);
+  };
+
+  const loadFilter = (f: SavedFilter) => {
+    setSearch(f.search); setFilterZone(f.zone); setFilterAtelier(f.atelier);
+    setFilterPoste(f.poste); setFilterStatut(f.statut); setFilterTypeCmd(f.typeCmd);
+    setFilterWeekFab(f.weekFab); setFilterWeekLiv(f.weekLiv);
+  };
+
+  const deleteFilter = (name: string) => {
+    persistFilters(savedFilters.filter(f => f.name !== name));
+  };
+
   const sorted = useMemo(() => {
     const arr = [...commandes];
     if (sortBy === "client") {
@@ -234,9 +282,46 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
             </button>
           )}
           <button onClick={exportJson} style={{ padding:"5px 12px", background:C.teal+"22", border:`1px solid ${C.teal}44`, borderRadius:4, color:C.teal, fontSize:11, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
-            💾 Export JSON
+            Export
           </button>
+          {/* Sauvegarder le filtre actuel */}
+          {hasFilters && (
+            showSaveName ? (
+              <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+                <input value={saveName} onChange={e => setSaveName(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") saveCurrentFilter(); }}
+                  placeholder="Nom du filtre"
+                  autoFocus
+                  style={{ padding:"4px 8px", background:C.bg, border:`1px solid ${C.orange}`, borderRadius:4, color:C.text, fontSize:11, width:120, outline:"none" }} />
+                <button onClick={saveCurrentFilter} style={{ padding:"4px 8px", background:C.orange, border:"none", borderRadius:4, color:"#000", fontSize:10, fontWeight:700, cursor:"pointer" }}>OK</button>
+                <button onClick={() => setShowSaveName(false)} style={{ padding:"4px 6px", background:"none", border:`1px solid ${C.border}`, borderRadius:4, color:C.sec, fontSize:10, cursor:"pointer" }}>×</button>
+              </div>
+            ) : (
+              <button onClick={() => setShowSaveName(true)} style={{ padding:"5px 10px", background:C.orange+"22", border:`1px solid ${C.orange}44`, borderRadius:4, color:C.orange, fontSize:11, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
+                ★ Sauver filtre
+              </button>
+            )
+          )}
         </div>
+
+        {/* Filtres favoris */}
+        {savedFilters.length > 0 && (
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8, alignItems:"center" }}>
+            <span style={{ fontSize:9, color:C.muted, fontWeight:700, marginRight:4 }}>FAVORIS</span>
+            {savedFilters.map(f => (
+              <div key={f.name} style={{ display:"flex", alignItems:"center", gap:0 }}>
+                <button onClick={() => loadFilter(f)}
+                  style={{ padding:"4px 10px", background:C.orange+"18", border:`1px solid ${C.orange}44`, borderRadius:"4px 0 0 4px", color:C.orange, fontSize:10, fontWeight:600, cursor:"pointer" }}>
+                  ★ {f.name}
+                </button>
+                <button onClick={() => deleteFilter(f.name)}
+                  style={{ padding:"4px 6px", background:C.bg, border:`1px solid ${C.border}`, borderLeft:"none", borderRadius:"0 4px 4px 0", color:C.muted, fontSize:9, cursor:"pointer" }}>
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Ligne 2 : zone + statut + type commande + poste */}
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:8 }}>
