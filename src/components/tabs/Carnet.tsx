@@ -490,19 +490,61 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch, savedFilt
                     })}
                   </div>
                 )}
-                {/* Semaines fab + livraison */}
-                <div style={{ fontSize: 10, display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 3 }}>
+                {/* Semaines fab + livraison — éditables inline */}
+                <div style={{ fontSize: 10, display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 3, alignItems: "center" }}>
+                  {/* Semaine fabrication */}
                   {(() => {
+                    const semCoupe = cmd.semaine_coupe || "";
                     const dd = dateDemarrage(c);
-                    if (dd) {
-                      const mon = getMondayOf(dd);
-                      return <span style={{ padding: "1px 6px", borderRadius: 3, background: C.purple + "18", border: `1px solid ${C.purple}44`, color: C.purple, fontWeight: 700 }}>Fab S{getWeekNum(mon)}</span>;
-                    }
-                    return null;
+                    const autoWeek = dd ? getWeekNum(getMondayOf(dd)) : null;
+                    const displayWeek = semCoupe ? getWeekNum(semCoupe) : autoWeek;
+                    const currentMon = semCoupe || (dd ? getMondayOf(dd) : null);
+
+                    const changeFabWeek = (delta: number) => {
+                      const base = currentMon || getMondayOf(localStr(new Date()));
+                      const newMon = addDays(base, delta * 7);
+                      onPatch(String(c.id), { semaine_coupe: newMon });
+                    };
+
+                    return (
+                      <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+                        <button onClick={(e) => { e.stopPropagation(); changeFabWeek(-1); }}
+                          style={{ padding: "2px 5px", background: C.purple + "18", border: `1px solid ${C.purple}44`, borderRadius: "3px 0 0 3px", color: C.purple, cursor: "pointer", fontSize: 9, lineHeight: 1 }}>‹</button>
+                        <span style={{ padding: "2px 8px", background: C.purple + "18", border: `1px solid ${C.purple}44`, borderLeft: "none", borderRight: "none", color: C.purple, fontWeight: 700, fontSize: 10, minWidth: 50, textAlign: "center" }}>
+                          Fab {displayWeek ? `S${displayWeek}` : "—"}
+                        </span>
+                        <button onClick={(e) => { e.stopPropagation(); changeFabWeek(1); }}
+                          style={{ padding: "2px 5px", background: C.purple + "18", border: `1px solid ${C.purple}44`, borderRadius: "0 3px 3px 0", color: C.purple, cursor: "pointer", fontSize: 9, lineHeight: 1 }}>›</button>
+                      </div>
+                    );
                   })()}
-                  {cmd.date_livraison_souhaitee && (
-                    <span style={{ padding: "1px 6px", borderRadius: 3, background: C.green + "18", border: `1px solid ${C.green}44`, color: C.green, fontWeight: 700 }}>Liv S{getWeekNum(cmd.date_livraison_souhaitee)}</span>
-                  )}
+
+                  {/* Semaine livraison */}
+                  {(() => {
+                    const livDate = cmd.date_livraison_souhaitee || "";
+                    const displayWeek = livDate ? getWeekNum(livDate) : null;
+                    const currentMon = livDate ? getMondayOf(livDate) : null;
+
+                    const changeLivWeek = (delta: number) => {
+                      const base = currentMon || getMondayOf(localStr(new Date()));
+                      const newMon = addDays(base, delta * 7);
+                      // Livraison = vendredi de la semaine
+                      const newFri = addDays(newMon, 4);
+                      onPatch(String(c.id), { date_livraison_souhaitee: newFri });
+                    };
+
+                    return (
+                      <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+                        <button onClick={(e) => { e.stopPropagation(); changeLivWeek(-1); }}
+                          style={{ padding: "2px 5px", background: C.green + "18", border: `1px solid ${C.green}44`, borderRadius: "3px 0 0 3px", color: C.green, cursor: "pointer", fontSize: 9, lineHeight: 1 }}>‹</button>
+                        <span style={{ padding: "2px 8px", background: C.green + "18", border: `1px solid ${C.green}44`, borderLeft: "none", borderRight: "none", color: C.green, fontWeight: 700, fontSize: 10, minWidth: 50, textAlign: "center" }}>
+                          Liv {displayWeek ? `S${displayWeek}` : "—"}
+                        </span>
+                        <button onClick={(e) => { e.stopPropagation(); changeLivWeek(1); }}
+                          style={{ padding: "2px 5px", background: C.green + "18", border: `1px solid ${C.green}44`, borderRadius: "0 3px 3px 0", color: C.green, cursor: "pointer", fontSize: 9, lineHeight: 1 }}>›</button>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div style={{ fontSize: 10, color: C.sec, display: "flex", gap: 10, flexWrap: "wrap" }} className="mono">
                   <span>{c.quantite} pcs</span>
