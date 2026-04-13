@@ -9,8 +9,12 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const semaine = searchParams.get("semaine");
   if (!semaine) return NextResponse.json({ error: "Paramètre semaine manquant" }, { status: 400 });
-  const rec = await (prisma as any).planningPoste.findUnique({ where: { semaine } });
-  return NextResponse.json(rec?.plan ?? {});
+  try {
+    const rec = await (prisma as any).planningPoste.findUnique({ where: { semaine } });
+    return NextResponse.json(rec?.plan ?? {});
+  } catch {
+    return NextResponse.json({ error: "Erreur chargement planning" }, { status: 500 });
+  }
 }
 
 export async function PUT(req: Request) {
@@ -19,11 +23,15 @@ export async function PUT(req: Request) {
   const { searchParams } = new URL(req.url);
   const semaine = searchParams.get("semaine");
   if (!semaine) return NextResponse.json({ error: "Paramètre semaine manquant" }, { status: 400 });
-  const plan = await req.json();
-  const result = await (prisma as any).planningPoste.upsert({
-    where: { semaine },
-    update: { plan, updatedAt: new Date() },
-    create: { semaine, plan },
-  });
-  return NextResponse.json(result);
+  try {
+    const plan = await req.json();
+    const result = await (prisma as any).planningPoste.upsert({
+      where: { semaine },
+      update: { plan, updatedAt: new Date() },
+      create: { semaine, plan },
+    });
+    return NextResponse.json(result);
+  } catch {
+    return NextResponse.json({ error: "Erreur sauvegarde planning" }, { status: 500 });
+  }
 }

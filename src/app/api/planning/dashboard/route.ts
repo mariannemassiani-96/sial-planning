@@ -16,6 +16,8 @@ function todayStr() {
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+
+  try {
   const today = new Date();
   const date = todayStr();
   const dayOfWeek = today.getDay();
@@ -184,4 +186,7 @@ export async function GET() {
       deliveryDate: o.deliveryDate,
     })),
   });
+  } catch {
+    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
+  }
 }

@@ -10,6 +10,7 @@ function todayStr() {
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+
   const date = todayStr();
   const config = await prisma.dayConfig.findUnique({ where: { date } });
   return NextResponse.json({ date, mode: config?.mode ?? "FRAPPES" });
@@ -18,6 +19,7 @@ export async function GET() {
 export async function PUT(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+
   const { mode } = await req.json();
   if (mode !== "COULISSANTS" && mode !== "FRAPPES") {
     return NextResponse.json({ error: "mode invalide" }, { status: 400 });

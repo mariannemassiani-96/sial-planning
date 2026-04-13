@@ -19,6 +19,7 @@ export async function GET() {
 export async function PUT(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+
   const data = await req.json();
   try {
     await prisma.planningPoste.upsert({

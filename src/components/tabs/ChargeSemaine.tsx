@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
-import { calcCheminCritique, calcLogistique, T, C, hm, CommandeCC, TYPES_MENUISERIE, isWorkday, JOURS_FERIES } from "@/lib/sial-data";
+import { calcCheminCritique, calcLogistique, T, C, hm, CommandeCC, TYPES_MENUISERIE, isWorkday, JOURS_FERIES, getWeekNum as getWeekNumUtil } from "@/lib/sial-data";
 import { H, Bdg, Bar, Card } from "@/components/ui";
 import { openPrintWindow, fmtDatePrint, hmPrint, pctColor } from "@/lib/print-utils";
 
@@ -37,12 +37,7 @@ function workdaysBetween(start: string, end: string): number {
   while (localStr(d) <= end) { if (isWorkday(localStr(d))) count++; d.setDate(d.getDate()+1); }
   return Math.max(1, count);
 }
-function getWeekNum(s: string): number {
-  const d = new Date(s+"T00:00:00");
-  const jan4 = new Date(d.getFullYear(), 0, 4);
-  const w1start = new Date(jan4); w1start.setDate(jan4.getDate()-((jan4.getDay()||7)-1));
-  return Math.ceil((d.getTime()-w1start.getTime())/(7*86400000))+1;
-}
+const getWeekNum = getWeekNumUtil;
 
 function calcChargePoste(commandes: CommandeCC[], pStart: string, pEnd: string): Record<PosteKey,number> {
   const r: Record<PosteKey,number> = { coupe:0, frappes:0, coulissant:0, vitrage_ov:0, palette:0 };

@@ -64,7 +64,7 @@ export async function GET(request: Request) {
       const chargePercent =
         post.capacityMinDay > 0
           ? Math.round((minutesPlanified / post.capacityMinDay) * 100)
-          : 0;
+          : minutesPlanified > 0 ? 999 : 0; // 999% signals misconfigured capacity
       const hasBlockingSpecial = postTasks.some((t) => t.fabItem.isSpecial && t.isBlocking);
 
       return {

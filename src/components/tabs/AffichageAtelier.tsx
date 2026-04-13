@@ -9,6 +9,7 @@ import {
   CommandeCC,
   fmtDate,
   hm,
+  getWeekNum as getWeekNumUtil,
 } from "@/lib/sial-data";
 import { H, Bdg, Card } from "@/components/ui";
 
@@ -33,13 +34,7 @@ function getSundayOf(d: Date): Date {
   return sunday;
 }
 
-function getWeekNum(d: Date): number {
-  const jan4 = new Date(d.getFullYear(), 0, 4);
-  const w1 = new Date(jan4);
-  w1.setDate(jan4.getDate() - ((jan4.getDay() || 7) - 1));
-  const diff = d.getTime() - w1.getTime();
-  return Math.ceil(diff / (7 * 86400000)) + 1;
-}
+const getWeekNum = getWeekNumUtil;
 
 function fmtJJ_MM(dateStr: string): string {
   const d = new Date(dateStr + "T00:00:00");

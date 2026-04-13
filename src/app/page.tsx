@@ -26,7 +26,9 @@ import AnalyseProduction from "@/components/tabs/AnalyseProduction";
 import CerveauDashboard from "@/components/tabs/CerveauDashboard";
 import AdminUsers from "@/components/tabs/AdminUsers";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
-import ChatAssistant from "@/components/ChatAssistant";
+import AdminUsers from "@/components/tabs/AdminUsers";
+import TutoAJ from "@/components/TutoAJ";
+import AssistantIA from "@/components/AssistantIA";
 
 // ── Sub-tab selector ────────────────────────────────────────────────────────
 function SubTabs({ tabs, active, onChange }: { tabs: { id: string; l: string }[]; active: string; onChange: (id: string) => void }) {
@@ -121,8 +123,25 @@ export default function HomePage() {
 
   const isAdmin = (session?.user as any)?.role === "ADMIN";
 
-  // ── Navigation — onglets avec ordre personnalisable ──────────────────────
+  // ── Permissions utilisateur ────────────────────────────────────────────────
+  const [userPerms, setUserPerms] = useState<{ tabs?: string[]; droits?: string[] } | null>(null);
+  useEffect(() => {
+    if (!isAdmin && status === "authenticated") {
+      fetch("/api/admin/users/me").then(r => r.ok ? r.json() : null).then(d => {
+        if (d?.permissions) setUserPerms(d.permissions);
+      }).catch(() => {});
+    }
+  }, [isAdmin, status]);
+
+  const canSeeTab = (tabId: string) => {
+    if (isAdmin) return true;
+    if (!userPerms?.tabs) return true; // pas de restriction = tout visible
+    return userPerms.tabs.includes(tabId);
+  };
+
+  // ── Navigation — onglets filtrés par permissions ──────────────────────────
   const allNav = [
+    { id: "dashboard_matin", l: "🌅 Matin" },
     { id: "planning_fab",    l: "📅 Planning" },
     { id: "dashboard",       l: `🏠 Suivi${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
     { id: "livraison",       l: "🚚 Livraisons" },
@@ -132,15 +151,14 @@ export default function HomePage() {
     { id: "pointage",        l: "✅ Pointage" },
     { id: "affichage_atelier", l: "📺 Atelier" },
     { id: "isula",           l: "🔷 ISULA" },
+    { id: "qualite",         l: "✅ Qualité" },
+    { id: "stocks",          l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
     { id: "referentiel",     l: "📐 Référentiel" },
-    ...(isAdmin ? [
-      { id: "qualite",      l: "✅ Qualité" },
-      { id: "stocks",       l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
-      { id: "import_csv",   l: "📥 Import" },
-      { id: "stats_admin",  l: "📊 Stats" },
-      { id: "admin",        l: "⚙ Admin" },
-    ] : []),
+    { id: "import_csv",      l: "📥 Import" },
+    { id: "stats_admin",     l: "📊 Stats" },
+    ...(isAdmin ? [{ id: "admin_users", l: "⚙ Admin" }] : []),
   ];
+  const nav = allNav.filter(o => o.id === "admin_users" || canSeeTab(o.id));
 
   // Ordre personnalisé des onglets (sauvé dans localStorage)
   const [tabOrder, setTabOrder] = useState<string[]>(() => {
@@ -348,24 +366,13 @@ export default function HomePage() {
             )}
 
             {ong === "import_csv" && <ImportCSV onRefresh={fetchAll} />}
-            {ong === "stats_admin" && (
-              <>
-                <SubTabs
-                  tabs={[{ id: "cerveau", l: "🧠 Cerveau" }, { id: "analyse", l: "Analyse Production" }, { id: "stats", l: "Statistiques" }]}
-                  active={statsSub}
-                  onChange={(id) => setStatsSub(id as "cerveau" | "analyse" | "stats")}
-                />
-                {statsSub === "cerveau" && <CerveauDashboard />}
-                {statsSub === "analyse" && <AnalyseProduction />}
-                {statsSub === "stats" && <StatsAdmin />}
-              </>
-            )}
-
-            {ong === "admin" && <AdminUsers />}
+            {ong === "stats_admin" && <StatsAdmin />}
+            {ong === "admin_users" && isAdmin && <AdminUsers />}
           </>
         )}
       </div>
-      <ChatAssistant commandes={commandes} />
+      <TutoAJ onGoToDashboard={() => setOng("dashboard_matin")} />
+      <AssistantIA />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { EQUIPE, calcTempsType, hm, JOURS_FERIES, C, isWorkday } from "@/lib/sial-data";
+import { EQUIPE, calcTempsType, hm, JOURS_FERIES, C, isWorkday, toSemaineId as toSemaineIdUtil } from "@/lib/sial-data";
 import type { CommandeCC } from "@/lib/sial-data";
 
 // ── Postes ────────────────────────────────────────────────────────────────────
@@ -49,14 +49,7 @@ function getWeekDays(mondayStr: string): string[] {
   });
 }
 
-function toSemaineId(mondayStr: string): string {
-  const d = new Date(mondayStr);
-  const jan4 = new Date(d.getFullYear(), 0, 4);
-  const mon = new Date(jan4);
-  mon.setDate(jan4.getDate() - (jan4.getDay() || 7) + 1);
-  const w = Math.floor((d.getTime() - mon.getTime()) / (7 * 86400000)) + 1;
-  return `${d.getFullYear()}-W${String(w).padStart(2, "0")}`;
-}
+const toSemaineId = toSemaineIdUtil;
 
 const JOURS_COURTS = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
 function fmtDateCourt(dateStr: string): string {

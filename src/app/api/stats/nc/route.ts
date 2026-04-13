@@ -19,6 +19,8 @@ export async function GET(request: Request) {
   const period = searchParams.get("period") ?? "30";
   const since  = periodFilter(period);
 
+  try {
+
   type NcRow = {
     menuiserietype: string;
     severity: string;
@@ -91,4 +93,7 @@ export async function GET(request: Request) {
   }));
 
   return NextResponse.json({ period, nc, totaux: totauxMapped });
+  } catch {
+    return NextResponse.json({ period, nc: [], totaux: [] });
+  }
 }

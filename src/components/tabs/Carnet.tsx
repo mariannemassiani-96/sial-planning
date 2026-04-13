@@ -1,7 +1,6 @@
 "use client";
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { TYPES_MENUISERIE, ZONES, C, CFAM, calcTempsType, calcCheminCritique, dateDemarrage, hm, fmtDate, CommandeCC } from "@/lib/sial-data";
-import { getRoutage } from "@/lib/routage-production";
+import { TYPES_MENUISERIE, ZONES, C, CFAM, calcTempsType, calcCheminCritique, dateDemarrage, hm, fmtDate, CommandeCC, getWeekNum as getWeekNumUtil } from "@/lib/sial-data";
 import { H, Bdg, Card } from "@/components/ui";
 
 // ── Commentaires ──────────────────────────────────────────────────────────────
@@ -112,12 +111,7 @@ function getMondayOf(s: string): string {
   const d = new Date(s+"T00:00:00"); const day = d.getDay();
   d.setDate(d.getDate()-(day===0?6:day-1)); return localStr(d);
 }
-function getWeekNum(s: string): number {
-  const d = new Date(s+"T00:00:00");
-  const jan4 = new Date(d.getFullYear(),0,4);
-  const w1 = new Date(jan4); w1.setDate(jan4.getDate()-((jan4.getDay()||7)-1));
-  return Math.ceil((d.getTime()-w1.getTime())/(7*86400000))+1;
-}
+const getWeekNum = getWeekNumUtil;
 function weekLabel(mon: string): string {
   const fri = addDays(mon, 4);
   const fmt = (s: string) => new Date(s+"T00:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"short"});

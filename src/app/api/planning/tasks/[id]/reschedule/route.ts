@@ -57,7 +57,7 @@ export async function PATCH(
   const chargePercent   =
     task.workPost.capacityMinDay > 0
       ? Math.round((minutesAfter / task.workPost.capacityMinDay) * 100)
-      : 0;
+      : minutesAfter > 0 ? 999 : 0;
 
   const updated = await prisma.productionTask.update({
     where: { id: params.id },

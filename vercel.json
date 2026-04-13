@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cerveau/learn",
-      "schedule": "0 3 * * *"
+      "schedule": "0 3 * * 0"
     }
   ]
 }

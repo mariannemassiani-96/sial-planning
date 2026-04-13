@@ -13,6 +13,7 @@ model User {
   password  String
   nom       String
   role      String   @default("OPERATEUR")
+  // permissions: Json column managed via auto-migration (ALTER TABLE)
   createdAt DateTime @default(now())
 }
 
@@ -248,7 +249,7 @@ model OperatorAbsence {
   operatorId String
   date       DateTime
   reason     String?
-  operator   Operator @relation(fields: [operatorId], references: [id])
+  operator   Operator @relation(fields: [operatorId], references: [id], onDelete: Cascade)
 }
 
 model WorkPost {
@@ -301,7 +302,7 @@ model FabItem {
   matiere        Matiere
   widthMm        Int?
   heightMm       Int?
-  fabOrder       Order          @relation(fields: [orderId], references: [id])
+  fabOrder       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   tasks          ProductionTask[]
   qcChecks       QCCheck[]
 }
@@ -365,7 +366,7 @@ model ProductionTask {
   isBlocking       Boolean        @default(false)
   assignments      TaskAssignment[]
   qcChecks         QCCheck[]
-  fabItem          FabItem        @relation(fields: [fabItemId], references: [id])
+  fabItem          FabItem        @relation(fields: [fabItemId], references: [id], onDelete: Cascade)
   workPost         WorkPost       @relation(fields: [workPostId], references: [id])
 }
 
@@ -381,8 +382,8 @@ model TaskAssignment {
   id         String         @id @default(cuid())
   taskId     String
   operatorId String
-  task       ProductionTask @relation(fields: [taskId], references: [id])
-  operator   Operator       @relation(fields: [operatorId], references: [id])
+  task       ProductionTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  operator   Operator       @relation(fields: [operatorId], references: [id], onDelete: Cascade)
 }
 
 model QCCheck {
@@ -396,8 +397,8 @@ model QCCheck {
   checkedAt   DateTime?
   checkedBy   String?
   actionTaken String?
-  fabItem     FabItem         @relation(fields: [fabItemId], references: [id])
-  task        ProductionTask? @relation(fields: [taskId], references: [id])
+  fabItem     FabItem         @relation(fields: [fabItemId], references: [id], onDelete: Cascade)
+  task        ProductionTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
 }
 
 enum QCResult {
@@ -457,4 +458,22 @@ model DayConfig {
   date      String   @id
   mode      String   @default("FRAPPES")
   updatedAt DateTime @updatedAt
+}
+
+// ── Assistant IA — Mémos, tâches, rappels créés par dictée/texte ──────────
+
+model MemoAction {
+  id          String   @id @default(cuid())
+  auteur      String
+  texte       String
+  type        String   @default("memo")    // memo | tache | rappel | planning
+  priorite    String   @default("normale") // normale | urgente | critique
+  statut      String   @default("ouvert")  // ouvert | en_cours | fait | annule
+  echeance    String?                       // date YYYY-MM-DD optionnelle
+  assigneA    String?                       // opérateur assigné
+  commandeId  String?                       // lien commande si applicable
+  poste       String?                       // poste concerné si applicable
+  metadata    Json?                         // données structurées supplémentaires
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

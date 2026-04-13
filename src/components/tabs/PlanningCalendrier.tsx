@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
-import { C, JOURS_FERIES, calcCheminCritique, CommandeCC, TYPES_MENUISERIE } from "@/lib/sial-data";
+import { C, JOURS_FERIES, calcCheminCritique, CommandeCC, TYPES_MENUISERIE, getWeekNum } from "@/lib/sial-data";
 import { H } from "@/components/ui";
 
 // ── Date helpers ────────────────────────────────────────────────────────────
@@ -18,13 +18,7 @@ function getMondayOf(s: string): string {
   d.setDate(d.getDate()-(day===0?6:day-1));
   return localStr(d);
 }
-function getWeekNum(s: string): number {
-  const d = new Date(s+"T00:00:00");
-  const jan4 = new Date(d.getFullYear(),0,4);
-  const w1 = new Date(jan4);
-  w1.setDate(jan4.getDate()-((jan4.getDay()||7)-1));
-  return Math.ceil((d.getTime()-w1.getTime())/(7*86400000))+1;
-}
+// getWeekNum imported from sial-data
 
 // ── Postes config ────────────────────────────────────────────────────────────
 const POSTES = [

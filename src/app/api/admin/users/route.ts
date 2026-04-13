@@ -1,39 +1,147 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 
-async function checkAdmin() {
+// Auto-migration: add permissions column if missing
+let migDone = false;
+async function ensurePermissionsCol() {
+  if (migDone) return;
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "permissions" JSONB`
+    );
+    migDone = true;
+  } catch {}
+}
+
+async function requireAdmin() {
   const session = await getServerSession(authOptions);
   if (!session) return null;
   if ((session.user as any)?.role !== "ADMIN") return null;
   return session;
 }
 
-// GET /api/admin/users — Liste tous les utilisateurs
+interface UserRow {
+  id: string;
+  email: string;
+  nom: string;
+  role: string;
+  permissions: any;
+  createdAt: Date;
+}
+
+// GET — list all users (admin only)
 export async function GET() {
-  if (!(await checkAdmin())) return NextResponse.json({ error: "Admin requis" }, { status: 403 });
-  const users = await prisma.user.findMany({
-    select: { id: true, email: true, nom: true, role: true, createdAt: true },
-    orderBy: { createdAt: "asc" },
-  });
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
+
+  await ensurePermissionsCol();
+
+  const users = await prisma.$queryRaw<UserRow[]>`
+    SELECT id, email, nom, role, permissions, "createdAt"
+    FROM "User"
+    ORDER BY "createdAt" ASC
+  `;
   return NextResponse.json(users);
 }
 
-// POST /api/admin/users — Créer un utilisateur
-export async function POST(req: NextRequest) {
-  if (!(await checkAdmin())) return NextResponse.json({ error: "Admin requis" }, { status: 403 });
-  const { email, nom, role, password } = await req.json();
-  if (!email || !password) return NextResponse.json({ error: "email et password requis" }, { status: 400 });
+// POST — create user (admin only)
+export async function POST(req: Request) {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
 
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) return NextResponse.json({ error: "Email déjà utilisé" }, { status: 409 });
+  await ensurePermissionsCol();
 
-  const hash = await bcrypt.hash(password, 10);
-  const user = await prisma.user.create({
-    data: { email, nom: nom || email.split("@")[0], role: role || "OPERATEUR", password: hash },
-    select: { id: true, email: true, nom: true, role: true, createdAt: true },
-  });
-  return NextResponse.json(user, { status: 201 });
+  const data = await req.json();
+  if (!data.email || !data.password || !data.nom) {
+    return NextResponse.json({ error: "Champs obligatoires manquants" }, { status: 400 });
+  }
+
+  // Check for duplicate email
+  const existing = await prisma.user.findUnique({ where: { email: data.email } });
+  if (existing) {
+    return NextResponse.json({ error: "Cet email existe déjà" }, { status: 409 });
+  }
+
+  const hashed = await bcrypt.hash(data.password, 10);
+  const permsJson = data.permissions ? JSON.stringify(data.permissions) : null;
+
+  const rows = await prisma.$queryRaw<UserRow[]>`
+    INSERT INTO "User" (id, email, password, nom, role, permissions, "createdAt")
+    VALUES (
+      gen_random_uuid()::text,
+      ${data.email},
+      ${hashed},
+      ${data.nom},
+      ${data.role || "OPERATEUR"},
+      ${permsJson}::jsonb,
+      NOW()
+    )
+    RETURNING id, email, nom, role, permissions, "createdAt"
+  `;
+  if (!rows[0]) return NextResponse.json({ error: "Erreur création" }, { status: 500 });
+  return NextResponse.json(rows[0], { status: 201 });
+}
+
+// PATCH — update user (admin only)
+export async function PATCH(req: Request) {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
+
+  await ensurePermissionsCol();
+
+  const data = await req.json();
+  if (!data.id) return NextResponse.json({ error: "ID manquant" }, { status: 400 });
+
+  // Prepare password hash if changed
+  const hashedPwd = data.password ? await bcrypt.hash(data.password, 10) : null;
+  const permsJson = data.permissions !== undefined ? JSON.stringify(data.permissions) : null;
+
+  // Use tagged template (safe from SQL injection) — update only provided fields
+  let rows: UserRow[];
+  if (hashedPwd) {
+    rows = await prisma.$queryRaw<UserRow[]>`
+      UPDATE "User"
+      SET nom = COALESCE(${data.nom ?? null}, nom),
+          email = COALESCE(${data.email ?? null}, email),
+          role = COALESCE(${data.role ?? null}, role),
+          permissions = COALESCE(${permsJson}::jsonb, permissions),
+          password = ${hashedPwd}
+      WHERE id = ${data.id}
+      RETURNING id, email, nom, role, permissions, "createdAt"
+    `;
+  } else {
+    rows = await prisma.$queryRaw<UserRow[]>`
+      UPDATE "User"
+      SET nom = COALESCE(${data.nom ?? null}, nom),
+          email = COALESCE(${data.email ?? null}, email),
+          role = COALESCE(${data.role ?? null}, role),
+          permissions = COALESCE(${permsJson}::jsonb, permissions)
+      WHERE id = ${data.id}
+      RETURNING id, email, nom, role, permissions, "createdAt"
+    `;
+  }
+  if (!rows[0]) return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
+  return NextResponse.json(rows[0]);
+}
+
+// DELETE — delete user (admin only)
+export async function DELETE(req: Request) {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
+
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "ID manquant" }, { status: 400 });
+
+  // Prevent deleting yourself
+  const currentUser = await prisma.user.findUnique({ where: { email: (session.user as any).email } });
+  if (currentUser?.id === id) {
+    return NextResponse.json({ error: "Vous ne pouvez pas supprimer votre propre compte" }, { status: 400 });
+  }
+
+  await prisma.user.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
 }

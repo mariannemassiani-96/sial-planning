@@ -93,15 +93,22 @@ async function ensureColumns() {
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-  await ensureColumns();
-  const commandes = await prisma.commande.findMany({ orderBy: { createdAt: "desc" } });
-  return NextResponse.json(commandes);
+  try {
+    const commandes = await prisma.commande.findMany({ orderBy: { createdAt: "desc" } });
+    return NextResponse.json(commandes);
+  } catch {
+    return NextResponse.json({ error: "Erreur chargement commandes" }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-  const data = await req.json();
-  const cmd = await prisma.commande.create({ data: mapToDb(data) });
-  return NextResponse.json(cmd, { status: 201 });
+  try {
+    const data = await req.json();
+    const cmd = await prisma.commande.create({ data: mapToDb(data) });
+    return NextResponse.json(cmd, { status: 201 });
+  } catch {
+    return NextResponse.json({ error: "Erreur création commande" }, { status: 500 });
+  }
 }

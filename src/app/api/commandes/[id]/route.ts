@@ -6,9 +6,13 @@ import prisma from "@/lib/prisma";
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-  const cmd = await prisma.commande.findUnique({ where: { id: params.id } });
-  if (!cmd) return NextResponse.json({ error: "Non trouvé" }, { status: 404 });
-  return NextResponse.json(cmd);
+  try {
+    const cmd = await prisma.commande.findUnique({ where: { id: params.id } });
+    if (!cmd) return NextResponse.json({ error: "Non trouvé" }, { status: 404 });
+    return NextResponse.json(cmd);
+  } catch {
+    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
+  }
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -47,13 +51,21 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
   }
 
-  const cmd = await prisma.commande.update({ where: { id: params.id }, data: partial });
-  return NextResponse.json(cmd);
+  try {
+    const cmd = await prisma.commande.update({ where: { id: params.id }, data: partial });
+    return NextResponse.json(cmd);
+  } catch {
+    return NextResponse.json({ error: "Erreur mise à jour" }, { status: 500 });
+  }
 }
 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-  await prisma.commande.delete({ where: { id: params.id } });
-  return NextResponse.json({ ok: true });
+  try {
+    await prisma.commande.delete({ where: { id: params.id } });
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ error: "Erreur suppression" }, { status: 500 });
+  }
 }
