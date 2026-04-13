@@ -114,13 +114,12 @@ export default function HomePage() {
     if (status === "authenticated") fetchAll();
   }, [status, fetchAll]);
 
-  // Rafraîchissement auto toutes les 10s
+  // Rafraîchissement auto des commandes (120s)
   useEffect(() => {
     if (status !== "authenticated") return;
     const interval = setInterval(() => {
       fetch("/api/commandes").then(r => r.ok ? r.json() : null).then(data => { if (data) setCommandes(data); }).catch(() => {});
-      fetch("/api/stocks").then(r => r.ok ? r.json() : null).then(data => { if (data) setStocks(data); }).catch(() => {});
-    }, 60000);
+    }, 120000);
     return () => clearInterval(interval);
   }, [status]);
 
