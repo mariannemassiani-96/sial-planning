@@ -120,7 +120,7 @@ export default function HomePage() {
     const interval = setInterval(() => {
       fetch("/api/commandes").then(r => r.ok ? r.json() : null).then(data => { if (data) setCommandes(data); }).catch(() => {});
       fetch("/api/stocks").then(r => r.ok ? r.json() : null).then(data => { if (data) setStocks(data); }).catch(() => {});
-    }, 30000);
+    }, 60000);
     return () => clearInterval(interval);
   }, [status]);
 
