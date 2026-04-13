@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { signOut } from "next-auth/react";
 import { C, STOCKS_DEF, calcCheminCritique, CommandeCC } from "@/lib/sial-data";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { Bdg } from "@/components/ui";
 import Nomenclature from "@/components/tabs/Nomenclature";
 import Simulateur from "@/components/tabs/Simulateur";
@@ -119,6 +120,8 @@ export default function HomePage() {
   const critiques = commandes.some(c => calcCheminCritique(c)?.critique);
 
   const isAdmin = (session?.user as any)?.role === "ADMIN";
+  const mobile = useIsMobile();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // ── Permissions utilisateur ────────────────────────────────────────────────
   const [userPerms, setUserPerms] = useState<{ tabs?: string[]; droits?: string[] } | null>(null);
@@ -234,52 +237,79 @@ export default function HomePage() {
     } catch {}
   };
 
+  // ── Onglets prioritaires pour la bottom nav mobile ──
+  const mobileMainTabs = ["planning_fab", "carnet", "pointage", "rh", "isula"];
+  const mobileMainNav = nav.filter(o => mobileMainTabs.includes(o.id));
+  const mobileMoreNav = nav.filter(o => !mobileMainTabs.includes(o.id));
+
+  // Icônes courtes pour mobile bottom nav
+  const mobileIcons: Record<string, string> = {
+    planning_fab: "📅", carnet: "📂", pointage: "✅", rh: "👥", isula: "🔷",
+    dashboard: "🏠", livraison: "🚚", saisie: "➕", affichage_atelier: "📺",
+    qualite: "✓", stocks: "📦", referentiel: "📐", import_csv: "📥",
+    stats_admin: "📊", admin_users: "⚙",
+  };
+
   return (
-    <div style={{ minHeight: "100vh", background: C.bg }}>
-      <div style={{ background: C.s1, borderBottom: `1px solid ${C.border}`, padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 800 }}>
-            <span style={{ color: C.orange }}>SIAL</span>
-            <span style={{ color: C.sec, margin: "0 6px", fontWeight: 300 }}>+</span>
-            <span style={{ color: C.teal }}>ISULA</span>
-            <span style={{ color: C.sec, margin: "0 6px", fontWeight: 300 }}>|</span>
-            <span>Planning Industriel</span>
-            <span style={{ fontSize: 11, color: C.muted, marginLeft: 6 }}>v9.0</span>
-          </div>
+    <div style={{ minHeight: "100vh", background: C.bg, paddingBottom: mobile ? 64 : 0 }}>
+
+      {/* ══ HEADER ══════════════════════════════════════════════════════════ */}
+      <div style={{
+        background: C.s1, borderBottom: `1px solid ${C.border}`,
+        padding: mobile ? "8px 12px" : "12px 20px",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+      }}>
+        <div style={{ fontSize: mobile ? 13 : 16, fontWeight: 800 }}>
+          <span style={{ color: C.orange }}>SIAL</span>
+          <span style={{ color: C.sec, margin: "0 4px", fontWeight: 300 }}>+</span>
+          <span style={{ color: C.teal }}>ISULA</span>
+          {!mobile && (
+            <>
+              <span style={{ color: C.sec, margin: "0 6px", fontWeight: 300 }}>|</span>
+              <span>Planning Industriel</span>
+              <span style={{ fontSize: 11, color: C.muted, marginLeft: 6 }}>v9.0</span>
+            </>
+          )}
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-          <Bdg t={`${commandes.length} cmd`} c={C.blue} />
-          {ruptures > 0 && <Bdg t={`⚠ ${ruptures} rupture(s)`} c={C.red} />}
-          {retards > 0 && <Bdg t={`⚠ ${retards} retard(s)`} c={C.red} />}
+        <div style={{ display: "flex", gap: mobile ? 4 : 6, flexWrap: "wrap", alignItems: "center" }}>
+          {!mobile && <Bdg t={`${commandes.length} cmd`} c={C.blue} />}
+          {ruptures > 0 && <Bdg t={`⚠${ruptures}`} c={C.red} />}
+          {retards > 0 && <Bdg t={`⚠${retards}`} c={C.red} />}
           {session?.user && (
-            <span style={{ fontSize: 11, color: C.sec, marginLeft: 8 }}>
-              {session.user.name}
-              <button onClick={() => signOut()} style={{ marginLeft: 8, padding: "2px 8px", background: "none", border: `1px solid ${C.border}`, borderRadius: 3, color: C.sec, cursor: "pointer", fontSize: 10 }}>Déconnexion</button>
+            <span style={{ fontSize: mobile ? 10 : 11, color: C.sec, marginLeft: mobile ? 4 : 8 }}>
+              {mobile ? (session.user.name?.split(" ")[0] ?? "") : session.user.name}
+              <button onClick={() => signOut()} style={{ marginLeft: 6, padding: "2px 6px", background: "none", border: `1px solid ${C.border}`, borderRadius: 3, color: C.sec, cursor: "pointer", fontSize: 10 }}>
+                {mobile ? "×" : "Déconnexion"}
+              </button>
             </span>
           )}
         </div>
       </div>
 
-      <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, paddingLeft: 16, background: C.s1, overflowX: "auto" }}>
-        {nav.map(o => (
-          <button key={o.id}
-            draggable
-            onDragStart={() => setDragTab(o.id)}
-            onDragOver={e => e.preventDefault()}
-            onDrop={() => onDropTab(o.id)}
-            onClick={() => { if (o.id !== "saisie") setCmdEdit(null); setOng(o.id); }}
-            style={{
-              padding: "10px 14px", background: dragTab === o.id ? C.orange + "22" : "none",
-              border: "none", borderBottom: `2px solid ${ong === o.id ? C.orange : "transparent"}`,
-              color: ong === o.id ? C.text : o.alert ? C.red : C.sec,
-              fontSize: 12, fontWeight: ong === o.id ? 700 : 400, cursor: "grab", whiteSpace: "nowrap",
-            }}>
-            {o.l}
-          </button>
-        ))}
-      </div>
+      {/* ══ DESKTOP NAV (top tabs) ═════════════════════════════════════════ */}
+      {!mobile && (
+        <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, paddingLeft: 16, background: C.s1, overflowX: "auto" }}>
+          {nav.map(o => (
+            <button key={o.id}
+              draggable
+              onDragStart={() => setDragTab(o.id)}
+              onDragOver={e => e.preventDefault()}
+              onDrop={() => onDropTab(o.id)}
+              onClick={() => { if (o.id !== "saisie") setCmdEdit(null); setOng(o.id); }}
+              style={{
+                padding: "10px 14px", background: dragTab === o.id ? C.orange + "22" : "none",
+                border: "none", borderBottom: `2px solid ${ong === o.id ? C.orange : "transparent"}`,
+                color: ong === o.id ? C.text : o.alert ? C.red : C.sec,
+                fontSize: 12, fontWeight: ong === o.id ? 700 : 400, cursor: "grab", whiteSpace: "nowrap",
+              }}>
+              {o.l}
+            </button>
+          ))}
+        </div>
+      )}
 
-      <div style={{ padding: "20px 16px" }}>
+      {/* ══ CONTENU ════════════════════════════════════════════════════════ */}
+      <div style={{ padding: mobile ? "12px 8px" : "20px 16px" }}>
         {loading ? (
           <div style={{ textAlign: "center", padding: 60, color: C.sec }}>
             <div style={{ fontSize: 24, marginBottom: 10 }}>⏳</div>
@@ -367,8 +397,93 @@ export default function HomePage() {
           </>
         )}
       </div>
-      <TutoAJ onGoToDashboard={() => setOng("planning_fab")} />
+      {!mobile && <TutoAJ onGoToDashboard={() => setOng("planning_fab")} />}
       <AssistantIA />
+
+      {/* ══ MOBILE BOTTOM NAV ═══════════════════════════════════════════ */}
+      {mobile && (
+        <>
+          {/* Menu "plus" overlay */}
+          {mobileMenuOpen && (
+            <div
+              style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 998 }}
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <div
+                style={{
+                  position: "absolute", bottom: 64, left: 0, right: 0,
+                  background: C.s1, borderTop: `1px solid ${C.border}`,
+                  borderRadius: "16px 16px 0 0", padding: "16px 12px",
+                  maxHeight: "50vh", overflowY: "auto",
+                }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.sec, marginBottom: 8, letterSpacing: 1 }}>AUTRES ONGLETS</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                  {mobileMoreNav.map(o => (
+                    <button
+                      key={o.id}
+                      onClick={() => { setOng(o.id); setMobileMenuOpen(false); }}
+                      style={{
+                        padding: "10px 8px", background: ong === o.id ? C.orange + "22" : C.bg,
+                        border: `1px solid ${ong === o.id ? C.orange : C.border}`,
+                        borderRadius: 8, cursor: "pointer",
+                        display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                      }}
+                    >
+                      <span style={{ fontSize: 18 }}>{mobileIcons[o.id] ?? "📋"}</span>
+                      <span style={{ fontSize: 10, color: ong === o.id ? C.orange : C.sec, fontWeight: ong === o.id ? 700 : 400 }}>
+                        {o.l.replace(/[^\w\sÀ-ÿ()]/g, "").trim().split(" ").slice(0, 2).join(" ")}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bottom bar */}
+          <div style={{
+            position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 997,
+            background: C.s1, borderTop: `1px solid ${C.border}`,
+            display: "flex", justifyContent: "space-around", alignItems: "stretch",
+            height: 60, paddingBottom: "env(safe-area-inset-bottom, 0px)",
+          }}>
+            {mobileMainNav.map(o => {
+              const active = ong === o.id;
+              return (
+                <button key={o.id}
+                  onClick={() => { setOng(o.id); setMobileMenuOpen(false); }}
+                  style={{
+                    flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+                    justifyContent: "center", gap: 2,
+                    background: "none", border: "none", cursor: "pointer",
+                    borderTop: `2px solid ${active ? C.orange : "transparent"}`,
+                  }}
+                >
+                  <span style={{ fontSize: 20 }}>{mobileIcons[o.id] ?? "📋"}</span>
+                  <span style={{ fontSize: 9, color: active ? C.orange : C.sec, fontWeight: active ? 700 : 400 }}>
+                    {o.l.replace(/[^\w\sÀ-ÿ]/g, "").trim().split(" ")[0]}
+                  </span>
+                </button>
+              );
+            })}
+            {/* Bouton "Plus" */}
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              style={{
+                flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+                justifyContent: "center", gap: 2,
+                background: "none", border: "none", cursor: "pointer",
+                borderTop: `2px solid ${mobileMenuOpen ? C.orange : "transparent"}`,
+              }}
+            >
+              <span style={{ fontSize: 20 }}>•••</span>
+              <span style={{ fontSize: 9, color: mobileMenuOpen ? C.orange : C.sec, fontWeight: mobileMenuOpen ? 700 : 400 }}>Plus</span>
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

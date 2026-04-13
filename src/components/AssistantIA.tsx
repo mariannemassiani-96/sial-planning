@@ -2,6 +2,7 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { C } from "@/lib/sial-data";
+import { useIsMobile } from "@/lib/useIsMobile";
 
 interface Message {
   id: string;
@@ -61,6 +62,7 @@ function useSpeechRecognition() {
 // ── Composant principal ─────────────────────────────────────────────────────
 
 export default function AssistantIA() {
+  const mobile = useIsMobile();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -165,8 +167,8 @@ export default function AssistantIA() {
       <button
         onClick={() => setOpen(true)}
         style={{
-          position: "fixed", bottom: 20, right: 20, zIndex: 9999,
-          width: 56, height: 56, borderRadius: "50%",
+          position: "fixed", bottom: mobile ? 74 : 20, right: mobile ? 12 : 20, zIndex: 9999,
+          width: mobile ? 48 : 56, height: mobile ? 48 : 56, borderRadius: "50%",
           background: `linear-gradient(135deg, ${C.orange}, ${C.red})`,
           border: "none", cursor: "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
@@ -185,11 +187,14 @@ export default function AssistantIA() {
 
   return (
     <div style={{
-      position: "fixed", bottom: 20, right: 20, zIndex: 9999,
-      width: 380, height: 520, borderRadius: 16,
-      background: C.s1, border: `1px solid ${C.border}`,
+      position: "fixed", zIndex: 9999,
+      bottom: mobile ? 64 : 20, right: mobile ? 0 : 20,
+      width: mobile ? "100%" : 380,
+      height: mobile ? "calc(100vh - 64px)" : 520,
+      borderRadius: mobile ? 0 : 16,
+      background: C.s1, border: mobile ? "none" : `1px solid ${C.border}`,
       display: "flex", flexDirection: "column",
-      boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
+      boxShadow: mobile ? "none" : "0 8px 40px rgba(0,0,0,0.5)",
       overflow: "hidden",
     }}>
       {/* Header */}

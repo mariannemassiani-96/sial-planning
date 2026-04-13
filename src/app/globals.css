@@ -28,3 +28,60 @@ input, select, textarea, button {
 input:focus, select:focus, textarea:focus {
   outline: 1px solid #42A5F5;
 }
+
+/* ══ MOBILE RESPONSIVE ══════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  /* Tableaux scrollables horizontalement */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+
+  /* Empêcher le zoom sur les inputs iOS */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
+  /* Réduire les paddings des cellules */
+  th, td {
+    padding: 6px 8px !important;
+    font-size: 11px !important;
+  }
+
+  /* Grille planning : première colonne sticky */
+  table td:first-child,
+  table th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: #0F1A2E;
+  }
+
+  /* SubTabs scrollables */
+  [style*="borderBottom"][style*="marginBottom"] {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+  }
+
+  /* Modales plein écran mobile */
+  [style*="position: fixed"][style*="borderRadius: 12"] {
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    inset: 0 !important;
+  }
+
+  /* Assistant IA plus grand sur mobile */
+  [style*="width: 380px"][style*="height: 520px"] {
+    width: 100% !important;
+    height: calc(100vh - 64px) !important;
+    bottom: 64px !important;
+    right: 0 !important;
+    border-radius: 0 !important;
+  }
+}
