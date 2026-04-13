@@ -25,6 +25,17 @@ input, select, textarea, button {
   font-family: 'Barlow', sans-serif;
 }
 
+/* Fix liste déroulante : texte lisible sur fond blanc système */
+select option {
+  background: #1a2a3a;
+  color: #DCE8F5;
+}
+
+/* Fallback pour navigateurs qui forcent le fond blanc */
+select {
+  color-scheme: dark;
+}
+
 input:focus, select:focus, textarea:focus {
   outline: 1px solid #42A5F5;
 }
