@@ -178,7 +178,7 @@ export default function AssistantIA() {
         onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}
         title="Assistant IA"
       >
-        🎙
+        🤖
       </button>
     );
   }
@@ -200,7 +200,7 @@ export default function AssistantIA() {
         display: "flex", justifyContent: "space-between", alignItems: "center",
       }}>
         <div>
-          <span style={{ fontSize: 14, fontWeight: 700 }}>🎙 Assistant IA</span>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>🤖 Assistant IA</span>
           <span style={{ fontSize: 10, color: C.sec, marginLeft: 8 }}>Dictez ou tapez</span>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -268,7 +268,7 @@ export default function AssistantIA() {
       }}>
         {messages.length === 0 && (
           <div style={{ textAlign: "center", padding: "40px 16px", color: C.sec }}>
-            <div style={{ fontSize: 28, marginBottom: 12 }}>🎙</div>
+            <div style={{ fontSize: 28, marginBottom: 12 }}>🤖</div>
             <div style={{ fontSize: 12, marginBottom: 16 }}>
               Dites ou tapez ce dont vous avez besoin
             </div>
