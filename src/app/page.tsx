@@ -26,6 +26,7 @@ import StatsAdmin from "@/components/tabs/StatsAdmin";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
 import AdminUsers from "@/components/tabs/AdminUsers";
 import TutoAJ from "@/components/TutoAJ";
+import AssistantIA from "@/components/AssistantIA";
 
 // ── Sub-tab selector ────────────────────────────────────────────────────────
 function SubTabs({ tabs, active, onChange }: { tabs: { id: string; l: string }[]; active: string; onChange: (id: string) => void }) {
@@ -293,6 +294,7 @@ export default function HomePage() {
         )}
       </div>
       <TutoAJ onGoToDashboard={() => setOng("dashboard_matin")} />
+      <AssistantIA />
     </div>
   );
 }

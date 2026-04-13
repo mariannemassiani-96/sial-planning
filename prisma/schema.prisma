@@ -453,3 +453,21 @@ model DayConfig {
   mode      String   @default("FRAPPES")
   updatedAt DateTime @updatedAt
 }
+
+// ── Assistant IA — Mémos, tâches, rappels créés par dictée/texte ──────────
+
+model MemoAction {
+  id          String   @id @default(cuid())
+  auteur      String
+  texte       String
+  type        String   @default("memo")    // memo | tache | rappel | planning
+  priorite    String   @default("normale") // normale | urgente | critique
+  statut      String   @default("ouvert")  // ouvert | en_cours | fait | annule
+  echeance    String?                       // date YYYY-MM-DD optionnelle
+  assigneA    String?                       // opérateur assigné
+  commandeId  String?                       // lien commande si applicable
+  poste       String?                       // poste concerné si applicable
+  metadata    Json?                         // données structurées supplémentaires
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
