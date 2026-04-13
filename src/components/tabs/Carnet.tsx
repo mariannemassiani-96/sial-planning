@@ -394,11 +394,26 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch }: {
                     })}
                   </div>
                 )}
+                {/* Semaines fab + livraison */}
+                <div style={{ fontSize: 10, display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 3 }}>
+                  {(() => {
+                    const dd = dateDemarrage(c);
+                    if (dd) {
+                      const mon = getMondayOf(dd);
+                      return <span style={{ padding: "1px 6px", borderRadius: 3, background: C.purple + "18", border: `1px solid ${C.purple}44`, color: C.purple, fontWeight: 700 }}>Fab S{getWeekNum(mon)}</span>;
+                    }
+                    return null;
+                  })()}
+                  {cmd.date_livraison_souhaitee && (
+                    <span style={{ padding: "1px 6px", borderRadius: 3, background: C.green + "18", border: `1px solid ${C.green}44`, color: C.green, fontWeight: 700 }}>Liv S{getWeekNum(cmd.date_livraison_souhaitee)}</span>
+                  )}
+                </div>
                 <div style={{ fontSize: 10, color: C.sec, display: "flex", gap: 10, flexWrap: "wrap" }} className="mono">
                   <span>{c.quantite} pcs</span>
                   {t && <span>{hm(t.tTotal)} fab.</span>}
-                  <span>Démarrage:{fmtDate(dateDemarrage(c))}</span>
-                  {cc && <span style={{ color: retardColor }}>Au+tôt:{fmtDate(cc.dateLivraisonAuPlusTot)}</span>}
+                  <span>Dem:{fmtDate(dateDemarrage(c))}</span>
+                  {cmd.date_livraison_souhaitee && <span>Liv:{fmtDate(cmd.date_livraison_souhaitee)}</span>}
+                  {cc && <span style={{ color: retardColor }}>Au+tot:{fmtDate(cc.dateLivraisonAuPlusTot)}</span>}
                   {cc?.dateCmdVitrage && <span style={{ color: C.cyan }}>ISULA:{fmtDate(cc.dateCmdVitrage)}</span>}
                   {cmd.aucun_vitrage && <span style={{ color: C.orange }}>Sans vitrage</span>}
                   {cmd.vitrages?.length > 0 && !cmd.aucun_vitrage && <span style={{ color: C.teal }}>{Math.round(cmd.vitrages.reduce((s: number, v: any) => s + (parseFloat(v.surface_m2) || 0), 0) * 100) / 100}m² vit.</span>}
