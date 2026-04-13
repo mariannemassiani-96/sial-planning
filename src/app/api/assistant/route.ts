@@ -48,9 +48,18 @@ const INTENT_PATTERNS = {
   modifier_planning: [
     /(?:met[s]?|place|ajoute|d[eé]place|bouge)\s+(?:la\s+)?(?:commande|cmd)/i,
     /(?:met[s]?|place|ajoute)\s+.*(?:en\s+coupe|en\s+montage|en\s+vitrage|au\s+coulissant|aux?\s+frappes)/i,
+    /(?:planifie|programme|d[eé]cale|repousse|avance)\s+/i,
+    /(?:change|modifie)\s+(?:le\s+)?planning/i,
   ],
   salutation: [
     /^(?:bonjour|salut|hello|coucou|hey|bonsoir)/i,
+  ],
+  hors_scope: [
+    /(?:envoie|envoyer|mail|email|appel|appeler|t[eé]l[eé]phone|sms|message)\s+/i,
+    /(?:facture|devis|comptabilit[eé]|paie|salaire|cong[eé])/i,
+    /(?:imprime|imprimer|pdf|export)\s+/i,
+    /(?:supprime|supprimer|efface|effacer)\s+(?:la\s+)?commande/i,
+    /(?:cr[eé]e|ajoute)\s+(?:une?\s+)?(?:commande|client)/i,
   ],
 };
 
@@ -147,14 +156,30 @@ function detectTypeTache(texte: string): string {
 
 // ── Interprétation et exécution ─────────────────────────────────────────────
 
-function detectIntent(texte: string): "creer_tache" | "question_planning" | "modifier_planning" | "salutation" | "inconnu" {
-  for (const [intent, patterns] of Object.entries(INTENT_PATTERNS)) {
-    if (patterns.some(p => p.test(texte))) {
-      return intent as any;
-    }
+function detectIntent(texte: string): "creer_tache" | "question_planning" | "modifier_planning" | "salutation" | "hors_scope" | "inconnu" {
+  // Vérifier salutation en premier (prioritaire)
+  if (INTENT_PATTERNS.salutation.some(p => p.test(texte))) return "salutation";
+
+  // Vérifier hors_scope avant les tâches (pour ne pas créer des tâches par erreur)
+  if (INTENT_PATTERNS.hors_scope.some(p => p.test(texte))) return "hors_scope";
+
+  // Vérifier modifier_planning
+  if (INTENT_PATTERNS.modifier_planning.some(p => p.test(texte))) return "modifier_planning";
+
+  // Vérifier question planning
+  if (INTENT_PATTERNS.question_planning.some(p => p.test(texte))) return "question_planning";
+
+  // Vérifier création de tâche (mots-clés explicites)
+  if (INTENT_PATTERNS.creer_tache.some(p => p.test(texte))) return "creer_tache";
+
+  // Texte court sans mot-clé clair → inconnu (demander clarification)
+  if (texte.length < 10) return "inconnu";
+
+  // Texte moyen avec verbe d'action → probablement une tâche
+  if (/(?:faut|changer|v[eé]rifier|commander|pr[eé]parer|nettoyer|r[eé]parer|faire|ranger|pr[eé]venir)/i.test(texte)) {
+    return "creer_tache";
   }
-  // Par défaut si le texte est court et impératif, c'est une tâche
-  if (texte.length > 5 && texte.length < 200) return "creer_tache";
+
   return "inconnu";
 }
 
@@ -255,6 +280,41 @@ async function handleQuestionPlanning(texte: string): Promise<{ message: string;
   }
 }
 
+async function handleNonDisponible(
+  texte: string,
+  auteur: string,
+  actionDemandee: string | null,
+): Promise<{ message: string; action: string; data?: any }> {
+  await ensureMemoTable();
+
+  const description = actionDemandee
+    ? `Je ne sais pas encore ${actionDemandee}. Voulez-vous que je transmette cette demande a Marianne ?`
+    : `Desole, je ne suis pas sur de comprendre ce que vous me demandez. Voulez-vous que je cree un memo pour Marianne avec votre message ?`;
+
+  // Créer automatiquement un mémo pour Marianne
+  const rows = await prisma.$queryRaw`
+    INSERT INTO "MemoAction" ("id", "auteur", "texte", "type", "priorite", "statut", "assigneA", "updatedAt")
+    VALUES (
+      gen_random_uuid()::text,
+      ${auteur},
+      ${`[Demande assistant] ${texte}`},
+      'memo',
+      'normale',
+      'ouvert',
+      'Marianne',
+      NOW()
+    )
+    RETURNING *
+  `;
+  const memo = (rows as any[])[0];
+
+  return {
+    message: `${description}\n\n**Memo cree pour Marianne** :\n"${texte}"\n\nElle sera informee de votre demande.`,
+    action: "memo_marianne",
+    data: memo,
+  };
+}
+
 function handleSalutation(auteur: string): { message: string; action: string } {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Bonjour" : hour < 18 ? "Bon apres-midi" : "Bonsoir";
@@ -293,13 +353,15 @@ export async function POST(req: Request) {
         result = await handleQuestionPlanning(texte);
         break;
       case "modifier_planning":
-        result = {
-          message: "La modification du planning par commande vocale sera bientot disponible. Pour l'instant, utilisez l'onglet Planning.",
-          action: "non_disponible",
-        };
+        result = await handleNonDisponible(texte, auteur, "modifier le planning directement");
+        break;
+      case "hors_scope":
+        result = await handleNonDisponible(texte, auteur, "faire ca");
+        break;
+      case "inconnu":
+        result = await handleNonDisponible(texte, auteur, null);
         break;
       default:
-        // Par défaut, on crée une tâche
         result = await handleCreerTache(texte, auteur);
         break;
     }
