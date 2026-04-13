@@ -360,10 +360,18 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         if (!grp) continue;
         // Vérifier si la commande est planifiée pour cette semaine sur cette phase
         const phaseField = PHASE_FIELD[grp.phase];
-        const cmdSemaine = (cmd as any)[phaseField]
+        const rawSemaine = (cmd as any)[phaseField]
+          || (cmd as any).semaine_coupe
           || (cmd as any).semaine_theorique
-          || (cmd as any).semaine_atteignable;
-        if (cmdSemaine !== viewWeek) continue;
+          || (cmd as any).semaine_atteignable
+          || "";
+        // Convertir le format "SXX" ou "SXX-YYYY" en comparant le numéro de semaine
+        const viewWeekNum = weekId(viewWeek); // "S16"
+        const matchesWeek = rawSemaine === viewWeek
+          || rawSemaine === viewWeekNum
+          || rawSemaine.toUpperCase().replace(/\s/g, "").startsWith(viewWeekNum)
+          || rawSemaine.toUpperCase().includes(viewWeekNum);
+        if (!matchesWeek) continue;
         if (!work[pid]) work[pid] = { totalMin: 0, cmds: [] };
         work[pid].totalMin += data.min;
         if (!work[pid].cmds.some(c => c.client === client && c.chantier === chantier)) {
