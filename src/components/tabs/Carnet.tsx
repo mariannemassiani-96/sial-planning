@@ -545,6 +545,27 @@ export default function Carnet({ commandes, onDelete, onEdit, onPatch, savedFilt
                       </div>
                     );
                   })()}
+
+                  {/* Transporteur — éditable inline */}
+                  <select
+                    value={cmd.transporteur || ""}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => { e.stopPropagation(); onPatch(String(c.id), { transporteur: e.target.value || null }); }}
+                    style={{
+                      padding: "2px 6px", fontSize: 10, fontWeight: 600,
+                      background: cmd.transporteur ? C.blue + "18" : C.bg,
+                      border: `1px solid ${cmd.transporteur ? C.blue + "44" : C.border}`,
+                      borderRadius: 3, color: cmd.transporteur ? C.blue : C.muted,
+                      cursor: "pointer", outline: "none",
+                    }}
+                  >
+                    <option value="">Transporteur</option>
+                    <option value="nous">Nous</option>
+                    <option value="setec">Setec</option>
+                    <option value="express">Express</option>
+                    <option value="poseur">Poseur</option>
+                    <option value="depot">Depot</option>
+                  </select>
                 </div>
                 <div style={{ fontSize: 10, color: C.sec, display: "flex", gap: 10, flexWrap: "wrap" }} className="mono">
                   <span>{c.quantite} pcs</span>
