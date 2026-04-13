@@ -444,38 +444,78 @@ export interface EtapeRoutage {
 
 /**
  * Ancienne API compatible : retourne un tableau d'étapes avec temps estimés.
- * Utilisé par SaisieCommande, PlanningCharge, PlanningAffectations, Nomenclature.
+ * Retourne les postIds spécifiques (C3, F1, M1, V1, etc.) attendus par PlanningAffectations.
  */
 export function getRoutage(
   typeId: string,
   quantite: number = 1,
   hsTemps?: Record<string, unknown> | null,
 ): EtapeRoutage[] {
-  const route = ensureCache(typeId);
-  if (!route) return [];
+  const tm = TYPES_MENUISERIE[typeId];
+  if (!tm) return [];
 
   const temps = calcTempsType(typeId, quantite, hsTemps as any);
   if (!temps) return [];
 
-  const phaseMap: Record<string, string> = {
-    coupe: "coupe",
-    frappes: "montage",
-    coulissant: "montage",
-    vitrage_ov: "vitrage",
-  };
+  const etapes: EtapeRoutage[] = [];
+  const isPVC = tm.mat === "PVC";
+  const isFrappe = tm.famille === "frappe" || tm.famille === "porte";
+  const isCoul = tm.famille === "coulissant";
+  const isGland = tm.famille === "glandage";
+  const isHS = tm.famille === "hors_standard";
 
-  return route.steps
-    .map(s => {
-      const min = temps.par_poste[s.poste as keyof typeof temps.par_poste] ?? 0;
-      if (min === 0) return null;
-      return {
-        postId: s.poste,
-        label: s.poste.charAt(0).toUpperCase() + s.poste.slice(1),
-        phase: phaseMap[s.poste] ?? s.poste,
-        estimatedMin: min,
-      };
-    })
-    .filter(Boolean) as EtapeRoutage[];
+  // ── Coupe ──
+  if (temps.par_poste.coupe > 0) {
+    // Décomposer la coupe en sous-postes
+    const lmt = (tm.lmt || 0) * 1 * quantite; // T.coupe_profil = 1 min/pièce
+    const dt = (tm.dt || 0) * 1.5 * quantite;
+    const renfort = (tm.renfort || 0) * 2 * quantite;
+    const nbCadres = 1 + tm.ouvrants;
+    const soudure = isPVC && isFrappe ? 5 * nbCadres * quantite : 0;
+    const poincon = !isPVC && isFrappe ? 10 * nbCadres * quantite : 0;
+
+    if (lmt > 0) etapes.push({ postId: "C3", label: "Coupe LMT", phase: "coupe", estimatedMin: Math.round(lmt) });
+    if (dt > 0)  etapes.push({ postId: "C4", label: "Coupe 2 têtes", phase: "coupe", estimatedMin: Math.round(dt) });
+    if (renfort > 0) etapes.push({ postId: "C5", label: "Renfort acier", phase: "coupe", estimatedMin: Math.round(renfort) });
+    if (soudure > 0) etapes.push({ postId: "C6", label: "Soudure PVC", phase: "coupe", estimatedMin: Math.round(soudure) });
+    if (poincon > 0) etapes.push({ postId: "C6", label: "Poinçon ALU", phase: "coupe", estimatedMin: Math.round(poincon) });
+
+    // Si HS, tout en C3
+    if (isHS && etapes.length === 0) {
+      etapes.push({ postId: "C3", label: "Coupe HS", phase: "coupe", estimatedMin: temps.par_poste.coupe });
+    }
+  }
+
+  // ── Montage ──
+  if (temps.par_poste.coulissant > 0) {
+    const pid = isGland ? "M2" : "M1";
+    etapes.push({ postId: pid, label: isGland ? "Dorm. galandage" : "Dorm. coulissant", phase: "montage", estimatedMin: temps.par_poste.coulissant });
+  }
+  if (temps.par_poste.frappes > 0) {
+    if (isHS) {
+      etapes.push({ postId: "MHS", label: "Montage HS", phase: "montage", estimatedMin: temps.par_poste.frappes });
+    } else if (tm.famille === "porte") {
+      etapes.push({ postId: "M3", label: "Portes ALU", phase: "montage", estimatedMin: temps.par_poste.frappes });
+    } else {
+      // Frappes : répartir entre F1 (dormant), F2 (ouvrants+ferrage), F3 (mise en bois+contrôle)
+      const ferrage = 10 * tm.ouvrants * quantite;
+      const prep = 5 * quantite;
+      const meb = 5 * quantite;
+      const vitFrappe = 10 * tm.ouvrants * quantite;
+      const controle = (2 + 5) * quantite; // contrôle + palette
+      etapes.push({ postId: "F1", label: "Dorm. frappe", phase: "montage", estimatedMin: Math.round(prep) });
+      etapes.push({ postId: "F2", label: "Ouv.+ferrage", phase: "montage", estimatedMin: Math.round(ferrage + vitFrappe) });
+      etapes.push({ postId: "F3", label: "Mise bois+CQ", phase: "montage", estimatedMin: Math.round(meb + controle) });
+    }
+  }
+
+  // ── Vitrage ──
+  if (temps.par_poste.vitrage_ov > 0) {
+    const pid = (isCoul || isGland) ? "V2" : isHS ? "V1" : "V1";
+    etapes.push({ postId: pid, label: (isCoul || isGland) ? "Vitr. Coul/Gal" : "Vitr. Frappe", phase: "vitrage", estimatedMin: temps.par_poste.vitrage_ov });
+  }
+
+  return etapes.filter(e => e.estimatedMin > 0);
 }
 
 /**
