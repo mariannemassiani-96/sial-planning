@@ -60,41 +60,10 @@ function mapToDb(data: any) {
   };
 }
 
-// Auto-migration : ajouter les colonnes manquantes
-let migrationDone = false;
-async function ensureColumns() {
-  if (migrationDone) return;
-  try {
-    const textCols = [
-      "semaine_coupe", "semaine_montage", "semaine_vitrage", "semaine_logistique", "semaine_isula",
-    ];
-    for (const col of textCols) {
-      await prisma.$executeRawUnsafe(
-        `ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "${col}" TEXT`
-      ).catch(() => {});
-    }
-    // Fix : si aucune_menuiserie existe en TEXT, la dropper et recréer en BOOLEAN
-    await prisma.$executeRawUnsafe(
-      `DO $$ BEGIN
-        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='Commande' AND column_name='aucune_menuiserie' AND data_type='text') THEN
-          ALTER TABLE "Commande" DROP COLUMN "aucune_menuiserie";
-        END IF;
-      END $$`
-    ).catch(() => {});
-    await prisma.$executeRawUnsafe(
-      `ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "aucune_menuiserie" BOOLEAN DEFAULT false`
-    ).catch(() => {});
-    migrationDone = true;
-  } catch {
-    // Silently continue
-  }
-}
-
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   try {
-    await ensureColumns();
     const commandes = await prisma.commande.findMany({ orderBy: { createdAt: "desc" } });
     return NextResponse.json(commandes);
   } catch (e: unknown) {

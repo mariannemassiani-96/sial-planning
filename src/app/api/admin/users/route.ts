@@ -4,18 +4,6 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 
-// Auto-migration: add permissions column if missing
-let migDone = false;
-async function ensurePermissionsCol() {
-  if (migDone) return;
-  try {
-    await prisma.$executeRawUnsafe(
-      `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "permissions" JSONB`
-    );
-    migDone = true;
-  } catch {}
-}
-
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
   if (!session) return null;
@@ -37,7 +25,7 @@ export async function GET() {
   const session = await requireAdmin();
   if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
 
-  await ensurePermissionsCol();
+
 
   const users = await prisma.$queryRaw<UserRow[]>`
     SELECT id, email, nom, role, permissions, "createdAt"
@@ -52,7 +40,7 @@ export async function POST(req: Request) {
   const session = await requireAdmin();
   if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
 
-  await ensurePermissionsCol();
+
 
   const data = await req.json();
   if (!data.email || !data.password || !data.nom) {
@@ -90,7 +78,7 @@ export async function PATCH(req: Request) {
   const session = await requireAdmin();
   if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
 
-  await ensurePermissionsCol();
+
 
   const data = await req.json();
   if (!data.id) return NextResponse.json({ error: "ID manquant" }, { status: 400 });
