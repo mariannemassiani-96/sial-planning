@@ -358,7 +358,12 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       for (const [pid, data] of Object.entries(cmdPostTotals)) {
         const grp = POST_GROUPS.find(g => g.ids.includes(pid));
         if (!grp) continue;
-        if ((cmd as any)[PHASE_FIELD[grp.phase]] !== viewWeek) continue;
+        // Vérifier si la commande est planifiée pour cette semaine sur cette phase
+        const phaseField = PHASE_FIELD[grp.phase];
+        const cmdSemaine = (cmd as any)[phaseField]
+          || (cmd as any).semaine_theorique
+          || (cmd as any).semaine_atteignable;
+        if (cmdSemaine !== viewWeek) continue;
         if (!work[pid]) work[pid] = { totalMin: 0, cmds: [] };
         work[pid].totalMin += data.min;
         if (!work[pid].cmds.some(c => c.client === client && c.chantier === chantier)) {
