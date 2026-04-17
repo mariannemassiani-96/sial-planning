@@ -13,8 +13,14 @@ export async function GET(req: NextRequest) {
   const semaine = req.nextUrl.searchParams.get("semaine");
   if (!semaine) return NextResponse.json({ error: "semaine requis" }, { status: 400 });
 
-  const rec = await prisma.planningPoste.findUnique({ where: { semaine: affKey(semaine) } });
-  return NextResponse.json(rec?.plan ?? {});
+  try {
+    const rec = await prisma.planningPoste.findUnique({ where: { semaine: affKey(semaine) } });
+    return NextResponse.json(rec?.plan ?? {});
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "erreur inconnue";
+    console.error("GET /api/planning/affectations error:", msg, "semaine:", semaine);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
 
 // PUT /api/planning/affectations
@@ -26,11 +32,16 @@ export async function PUT(req: NextRequest) {
   const { semaine, affectations } = await req.json();
   if (!semaine) return NextResponse.json({ error: "semaine requis" }, { status: 400 });
 
-  await prisma.planningPoste.upsert({
-    where: { semaine: affKey(semaine) },
-    update: { plan: affectations },
-    create: { semaine: affKey(semaine), plan: affectations },
-  });
-
-  return NextResponse.json({ ok: true });
+  try {
+    await prisma.planningPoste.upsert({
+      where: { semaine: affKey(semaine) },
+      update: { plan: affectations },
+      create: { semaine: affKey(semaine), plan: affectations },
+    });
+    return NextResponse.json({ ok: true });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "erreur inconnue";
+    console.error("PUT /api/planning/affectations error:", msg, "semaine:", semaine);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }

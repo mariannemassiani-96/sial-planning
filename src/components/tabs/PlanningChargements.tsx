@@ -233,7 +233,10 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
     try {
       // 1) Charger l'affectation actuelle de la semaine
       const res = await fetch(`/api/planning/affectations?semaine=${weekMon}`);
-      if (!res.ok) throw new Error(`GET affectations ${res.status}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(`GET affectations ${res.status}: ${(err as any).error || ""}`);
+      }
       const currentAff: Record<string, any> = (await res.json().catch(() => ({}))) || {};
 
       // 2) Stocker les livreurs dans une clé spéciale de l'affectation (pas besoin d'API séparée)
