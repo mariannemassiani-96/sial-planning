@@ -142,6 +142,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   }, [detailCmd?.cmdId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [dragOp, setDragOp] = useState<string | null>(null);
   const [quickAssignOp, setQuickAssignOp] = useState<{ id: string; nom: string } | null>(null);
+  const [quickAssignCmd, setQuickAssignCmd] = useState<{ pid: string; chantier: string; color: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState<string | null>(null);
@@ -1264,7 +1265,9 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                             {(items as Array<{ ch: string; affected: number; needed: number }>).map(({ ch, affected, needed }) => (
                               <div key={`${pid}_${ch}`} draggable
                                 onDragStart={(e) => { setDragOp(null); e.dataTransfer.setData("text/plain", `cmd:${ch}`); e.dataTransfer.effectAllowed = "copy"; }}
-                                style={{ padding: "2px 6px", borderRadius: 3, cursor: "grab", userSelect: "none", background: grp.color + "22", border: `1px solid ${grp.color}44`, color: grp.color, fontSize: 9, fontWeight: 600 }}>
+                                onClick={() => !locked && setQuickAssignCmd({ pid, chantier: ch, color: grp.color })}
+                                title="Clic : placement rapide · Glisser : drag&drop"
+                                style={{ padding: "2px 6px", borderRadius: 3, cursor: "pointer", userSelect: "none", background: grp.color + "22", border: `1px solid ${grp.color}44`, color: grp.color, fontSize: 9, fontWeight: 600 }}>
                                 {ch} <span style={{ fontSize: 8, opacity: 0.7 }}>{hm(affected)}/{hm(needed)}</span>
                               </div>
                             ))}
@@ -2234,6 +2237,113 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                     ])}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Popup placement rapide chantier ── */}
+      {quickAssignCmd && (() => {
+        const { pid, chantier, color } = quickAssignCmd;
+        const isChecked = (j: number, demi: string) => {
+          const cell = aff[ck(pid, j, demi)];
+          return !!cell?.cmds?.includes(chantier);
+        };
+        const toggleSlot = (j: number, demi: string) => {
+          const key = ck(pid, j, demi);
+          const cell = aff[key] || { ops: [], cmds: [], extras: [] };
+          const has = cell.cmds.includes(chantier);
+          const newCmds = has ? cell.cmds.filter(c => c !== chantier) : [...cell.cmds, chantier];
+          saveAff({ ...aff, [key]: { ...cell, cmds: newCmds } });
+        };
+        const toggleAll = () => {
+          let hasAny = false;
+          for (let j = 0; j < 5; j++) for (const demi of ["am", "pm"]) if (isChecked(j, demi)) { hasAny = true; break; }
+          const newAff = { ...aff };
+          for (let j = 0; j < 5; j++) {
+            for (const demi of ["am", "pm"]) {
+              const key = ck(pid, j, demi);
+              const cell = newAff[key] || { ops: [], cmds: [], extras: [] };
+              const has = cell.cmds.includes(chantier);
+              if (hasAny && has) newAff[key] = { ...cell, cmds: cell.cmds.filter(c => c !== chantier) };
+              else if (!hasAny && !has) newAff[key] = { ...cell, cmds: [...cell.cmds, chantier] };
+            }
+          }
+          saveAff(newAff);
+        };
+
+        let countHalfDays = 0;
+        for (let j = 0; j < 5; j++) for (const demi of ["am", "pm"]) if (isChecked(j, demi)) countHalfDays++;
+
+        const postLabel = POST_LABELS[pid] || pid;
+        const pw = postWork[pid];
+        const cmdInfo = pw?.cmds.find(c => (c.chantier || c.client) === chantier);
+        const needed = cmdInfo?.min || 0;
+        const affected = countHalfDays * DEMI_MIN;
+
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+               onClick={() => setQuickAssignCmd(null)}>
+            <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 20, maxWidth: 600, width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}
+                 onClick={e => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color }}>{chantier}</div>
+                  <div style={{ fontSize: 11, color: C.sec, marginTop: 2 }}>
+                    Poste <b style={{ color }}>{pid}</b> — {postLabel}
+                    {" · "}
+                    <span style={{ color: affected >= needed ? C.green : C.orange }}>
+                      {hm(affected)} / {hm(needed)}
+                    </span>
+                  </div>
+                </div>
+                <button onClick={() => setQuickAssignCmd(null)} style={{ padding: "6px 14px", background: C.orange, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                  Fermer
+                </button>
+              </div>
+              <div style={{ fontSize: 10, color: C.muted, marginBottom: 10 }}>
+                Cochez les demi-journées où placer ce chantier sur ce poste. Ajustez ensuite avec le drag & drop dans la grille.
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "80px repeat(10, 1fr)", gap: 4, alignItems: "center" }}>
+                <button onClick={toggleAll} style={{ padding: "4px 6px", background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, fontSize: 9, fontWeight: 700, cursor: "pointer" }}>
+                  Tout / rien
+                </button>
+                {JOURS.map((j, jIdx) => ["AM", "PM"].map(demi => (
+                  <div key={`${j}${demi}`} style={{ textAlign: "center", fontSize: 10, color: C.sec, fontWeight: 700 }}>
+                    {j}<br /><span style={{ fontSize: 9 }}>{demi}</span>
+                  </div>
+                )))}
+                <div style={{ fontSize: 10, color: C.sec, fontWeight: 700 }}>Placer :</div>
+                {JOURS.map((j, jIdx) => ["am", "pm"].map(demi => {
+                  const checked = isChecked(jIdx, demi);
+                  return (
+                    <div key={`${jIdx}-${demi}`}
+                      onClick={() => toggleSlot(jIdx, demi)}
+                      style={{
+                        height: 44, border: `1px solid ${C.border}`, borderRadius: 4, cursor: "pointer",
+                        background: checked ? color + "44" : "transparent",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        transition: "background 0.1s",
+                      }}>
+                      {checked ? (
+                        <span style={{ color, fontSize: 20, fontWeight: 700 }}>✓</span>
+                      ) : (
+                        <span style={{ color: C.muted, fontSize: 14 }}>·</span>
+                      )}
+                    </div>
+                  );
+                }))}
+              </div>
+              <div style={{ marginTop: 12, fontSize: 11, color: C.sec, textAlign: "center" }}>
+                {countHalfDays} demi-journée{countHalfDays > 1 ? "s" : ""} cochée{countHalfDays > 1 ? "s" : ""} = {hm(countHalfDays * DEMI_MIN)}
+                {needed > 0 && countHalfDays * DEMI_MIN < needed && (
+                  <span style={{ color: C.orange, marginLeft: 8 }}>(manque {hm(needed - countHalfDays * DEMI_MIN)})</span>
+                )}
+                {needed > 0 && countHalfDays * DEMI_MIN >= needed && (
+                  <span style={{ color: C.green, marginLeft: 8 }}>✓ couvert</span>
+                )}
               </div>
             </div>
           </div>
