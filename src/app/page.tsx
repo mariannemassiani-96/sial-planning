@@ -69,6 +69,7 @@ export default function HomePage() {
   const [ong, setOng] = useState(initNav.tab || "planning_fab");
   const [commandes, setCommandes] = useState<CommandeCC[]>([]);
   const [cmdEdit, setCmdEdit] = useState<CommandeCC | null>(null);
+  const [editReturnTab, setEditReturnTab] = useState<string>("carnet");
   const [stocks, setStocks] = useState<Record<string, { actuel: number }>>({});
   const [loading, setLoading] = useState(true);
   const [carnetFilters, setCarnetFilters] = useState<Record<string, unknown>>({});
@@ -222,7 +223,7 @@ export default function HomePage() {
     try { await fetch(`/api/commandes/${id}`, { method: "DELETE" }); } catch {}
   };
 
-  const editCommande = (cmd: CommandeCC) => { setCmdEdit(cmd); setOng("saisie"); };
+  const editCommande = (cmd: CommandeCC) => { setEditReturnTab(ong); setCmdEdit(cmd); setOng("saisie"); };
 
   const modifCommande = async (cmd: CommandeCC) => {
     try {
@@ -235,7 +236,7 @@ export default function HomePage() {
         setCommandes(p => p.map(x => x.id === saved.id ? saved : x));
         setApiError(null);
         setCmdEdit(null);
-        setOng("carnet");
+        setOng(editReturnTab || "carnet");
       } else {
         const err = await res.json().catch(() => ({}));
         setApiError(`Modification échouée: ${err.error || res.status}`);
