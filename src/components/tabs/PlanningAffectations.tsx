@@ -1069,6 +1069,16 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         merged[task.key] = { ...cell, extras: [...extras, task.label] };
       }
     }
+    // Injecter les livreurs (livreursByZone) dans les ops généraux de la cellule
+    for (const key of Object.keys(merged)) {
+      const cell = merged[key];
+      if (!cell?.livreursByZone) continue;
+      const existingOps = new Set(cell.ops || []);
+      for (const ops of Object.values(cell.livreursByZone)) {
+        for (const op of ops) existingOps.add(op);
+      }
+      merged[key] = { ...cell, ops: Array.from(existingOps) };
+    }
     return merged;
   }, [aff, autoDeliveryTasks]);
 
