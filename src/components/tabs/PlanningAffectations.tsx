@@ -1709,6 +1709,22 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                     </td>
                     <td style={{ padding: "4px", border: `1px solid ${overCapacity ? C.red : C.border}`, textAlign: "center", verticalAlign: "top" }}>
                       <div className="mono" style={{ fontWeight: 700, color: overCapacity ? C.red : grp.color }}>{hm(pw.totalMin)}</div>
+                      {/* Afficher les overrides de barres saisis (C3/C4/C5) */}
+                      {pid === "C3" && pw.cmds.length > 0 && (() => {
+                        const barresInfo = pw.cmds.map(c => {
+                          const cmdObj = commandes.find(cc => ((cc as any).ref_chantier || (cc as any).client) === (c.chantier || c.client));
+                          if (!cmdObj) return null;
+                          const ov = allCmdOverrides[String(cmdObj.id)] || {};
+                          const nb = ov["_nb_barres_lmt"];
+                          if (!nb) return null;
+                          return `${c.chantier || c.client}: ${nb}b`;
+                        }).filter(Boolean);
+                        return barresInfo.length > 0 ? (
+                          <div style={{ fontSize: 7, color: C.cyan, marginTop: 1 }} title={barresInfo.join(" · ")}>
+                            📏 {barresInfo.length} saisi
+                          </div>
+                        ) : null;
+                      })()}
                       {maxPers && <div style={{ fontSize: 8, color: C.muted }}>max {maxPers} pers.</div>}
                       {overCapacity && <div style={{ fontSize: 8, color: C.red, fontWeight: 700 }}>SURCHARGE</div>}
                       <div style={{ fontSize: 9, color: grp.color, fontWeight: 700 }}>{persNeeded}p.</div>
@@ -1721,6 +1737,15 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                       const cell = affWithAuto[key] || { ops: [], cmds: [] };
                       const hasContent = cell.ops.length > 0 || cell.cmds.length > 0;
                       const isTarget = dropTarget === key;
+                      // Calculer le temps total des chantiers de la cellule
+                      let cellCmdMin = 0;
+                      for (const ch of cell.cmds) {
+                        const cInfo = pw.cmds.find(c2 => (c2.chantier || c2.client) === ch);
+                        if (cInfo) cellCmdMin += cInfo.min;
+                      }
+                      const nbOps = cell.ops.length;
+                      const capacityCell = Math.max(1, nbOps) * DEMI_MIN;
+                      const cellOverload = cellCmdMin > capacityCell;
                       return (
                         <td key={`${j}_${demi}`}
                           onDragOver={(e) => { e.preventDefault(); setDropTarget(key); }}
@@ -1728,8 +1753,9 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                           onDrop={(ev) => onDrop(key, ev)}
                           style={{
                             padding: "3px 3px",
-                            border: `1px solid ${isTarget ? C.orange : jIdx === todayIdx ? C.orange + "44" : C.border}`,
-                            background: isTarget ? grp.color + "18" : hasContent ? grp.color + "08" : C.bg,
+                            border: `1px solid ${isTarget ? C.orange : cellOverload ? C.red : jIdx === todayIdx ? C.orange + "44" : C.border}`,
+                            borderWidth: cellOverload ? 2 : 1,
+                            background: isTarget ? grp.color + "18" : cellOverload ? C.red + "15" : hasContent ? grp.color + "08" : C.bg,
                             verticalAlign: "top",
                           }}
                         >
