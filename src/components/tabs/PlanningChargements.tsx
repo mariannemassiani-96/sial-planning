@@ -200,31 +200,38 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
 
   // ── Sauvegarder la liste des livreurs pour un chargement ──
   // + Synchroniser avec l'affectation du planning (poste LIVR sur le jour)
+  const [syncStatus, setSyncStatus] = useState<{ msg: string; ok: boolean } | null>(null);
+
   const saveLivreurs = async (date: string, zone: string, opIds: string[]) => {
     const k = livreursKey(date, zone);
     setLivreurs(prev => ({ ...prev, [k]: opIds }));
+    setSyncStatus({ msg: "Synchro en cours...", ok: true });
     try {
-      await fetch(`/api/planning-poste?semaine=${encodeURIComponent(k)}`, {
+      const r1 = await fetch(`/api/planning-poste?semaine=${encodeURIComponent(k)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ops: opIds }),
       });
+      if (!r1.ok) throw new Error(`livreurs save failed: ${r1.status}`);
+
       // ── Synchroniser avec le planning des affectations ──
-      // 1) Trouver la semaine (lundi) de la date
       const d = new Date(date + "T12:00:00");
       const weekMon = localStr(getMondayOf(d));
-      // 2) Calculer le jIdx (0=lundi ... 4=vendredi). Si weekend, skip.
       const dow = d.getDay();
       const jIdx = dow === 0 ? -1 : dow === 6 ? -1 : dow - 1;
-      if (jIdx < 0 || jIdx > 4) return;
-      // 3) Récupérer l'affectation de la semaine
+      if (jIdx < 0 || jIdx > 4) {
+        setSyncStatus({ msg: "✓ Livreurs enregistrés (weekend non synchro)", ok: true });
+        setTimeout(() => setSyncStatus(null), 3000);
+        return;
+      }
+
       const opNames = opIds.map(id => EQUIPE.find(m => m.id === id)?.nom).filter(Boolean) as string[];
       const res = await fetch(`/api/planning/affectations?semaine=${weekMon}`);
-      const currentAff: Record<string, any> = res.ok ? await res.json().catch(() => ({})) : {};
-      // 4) Pour chaque créneau LIVR|jIdx|am et LIVR|jIdx|pm, remplacer les ops
-      // Récupérer tous les livreurs de CE jour toutes zones confondues (plusieurs chargements possibles)
+      if (!res.ok) throw new Error(`get affectations failed: ${res.status}`);
+      const currentAff: Record<string, any> = await res.json().catch(() => ({})) || {};
+
+      // Aggréger tous les livreurs du jour (toutes zones)
       const allLivreursForDay = new Set<string>(opNames);
-      // Scanner les autres clés livreurs pour la même date mais autres zones
       for (const [lk, lops] of Object.entries(livreurs)) {
         if (lk === k) continue;
         if (!lk.startsWith(`livreurs_${date}_`)) continue;
@@ -233,21 +240,33 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
           if (nm) allLivreursForDay.add(nm);
         }
       }
+
+      // Migrer le format si nécessaire (Array → Object)
       for (const slot of ["am", "pm"]) {
         const cellKey = `LIVR|${jIdx}|${slot}`;
-        const existing = currentAff[cellKey] || { ops: [], cmds: [], extras: [] };
+        const raw = currentAff[cellKey];
+        const existing = Array.isArray(raw) ? { ops: raw, cmds: [], extras: [] } : raw || { ops: [], cmds: [], extras: [] };
         currentAff[cellKey] = {
           ...existing,
           ops: Array.from(allLivreursForDay),
         };
       }
-      // 5) Sauvegarder
-      await fetch("/api/planning/affectations", {
+
+      const r2 = await fetch("/api/planning/affectations", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ semaine: weekMon, affectations: currentAff }),
       });
-    } catch {}
+      if (!r2.ok) throw new Error(`save affectations failed: ${r2.status}`);
+
+      setSyncStatus({ msg: `✓ Synchronisé : ${opNames.join(", ") || "(vide)"} → LIVR ${["Lun","Mar","Mer","Jeu","Ven"][jIdx]} (S${getWeekNum(weekMon)})`, ok: true });
+      setTimeout(() => setSyncStatus(null), 4000);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "erreur inconnue";
+      console.error("saveLivreurs:", msg);
+      setSyncStatus({ msg: `✕ Erreur synchro : ${msg}`, ok: false });
+      setTimeout(() => setSyncStatus(null), 6000);
+    }
   };
 
   const toggleLivreur = (date: string, zone: string, opId: string) => {
@@ -454,6 +473,19 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
   return (
     <div>
       <H c={C.orange}>📦 Chargements par transporteur</H>
+
+      {/* Feedback sync livreurs */}
+      {syncStatus && (
+        <div style={{
+          marginBottom: 10, padding: "6px 12px", borderRadius: 6,
+          background: syncStatus.ok ? C.green + "22" : C.red + "22",
+          border: `1px solid ${syncStatus.ok ? C.green : C.red}`,
+          color: syncStatus.ok ? C.green : C.red,
+          fontSize: 11, fontWeight: 700,
+        }}>
+          {syncStatus.msg}
+        </div>
+      )}
 
       {/* Navigation + filtres */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
