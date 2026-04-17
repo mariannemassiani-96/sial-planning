@@ -248,25 +248,34 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
       }
       currentAff._livreurs = livreursMap;
 
-      // 3) Aggréger tous les livreurs du jour (toutes zones)
-      const allLivreursForDay = new Set<string>();
-      for (const [key, ids] of Object.entries(livreursMap)) {
-        const [dt] = key.split("|");
-        if (dt !== date) continue;
-        for (const oid of ids) {
-          const nm = EQUIPE.find(m => m.id === oid)?.nom;
-          if (nm) allLivreursForDay.add(nm);
-        }
-      }
-
-      // 4) Remplacer les ops dans AUT|jIdx|am et |pm (où les tâches livraison auto sont créées)
+      // 3) Pour chaque zone du jour, affecter ses livreurs à l'extra livraison correspondant
+      // (dans extraOps, pas dans ops généraux)
       for (const slot of ["am", "pm"]) {
         const cellKey = `AUT|${jIdx}|${slot}`;
         const raw = currentAff[cellKey];
         const existing = Array.isArray(raw) ? { ops: raw, cmds: [], extras: [] } : raw || { ops: [], cmds: [], extras: [] };
+        const extras: string[] = existing.extras || [];
+        const extraOps: Record<string, string[]> = { ...(existing.extraOps || {}) };
+
+        // Trouver l'extra de livraison pour chaque zone et y affecter les livreurs
+        for (const [compKey, ids] of Object.entries(livreursMap)) {
+          const [dt, zn] = compKey.split("|");
+          if (dt !== date) continue;
+          // Chercher l'extra qui contient "Livraison {zone}"
+          const matchExtra = extras.find(e => e.toLowerCase().includes("livraison") && e.includes(zn));
+          if (matchExtra) {
+            const opNamesForZone = ids.map(id => EQUIPE.find(m => m.id === id)?.nom).filter(Boolean) as string[];
+            if (opNamesForZone.length > 0) {
+              extraOps[matchExtra] = opNamesForZone;
+            } else {
+              delete extraOps[matchExtra];
+            }
+          }
+        }
+
         currentAff[cellKey] = {
           ...existing,
-          ops: Array.from(allLivreursForDay),
+          extraOps,
         };
       }
 

@@ -86,6 +86,7 @@ interface CellData {
   cmds: string[];    // "client · chantier"
   extras?: string[]; // tâches supplémentaires ("INTERV: SAV Dupont 2h", "SUPERVISION")
   cmdOps?: Record<string, string[]>; // chantier → liste ops spécifiques (override de ops générales)
+  extraOps?: Record<string, string[]>; // extra → liste ops spécifiques
 }
 type AffMap = Record<string, CellData>;
 
@@ -148,7 +149,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   const [dragOp, setDragOp] = useState<string | null>(null);
   const [quickAssignOp, setQuickAssignOp] = useState<{ id: string; nom: string } | null>(null);
   const [quickAssignCmd, setQuickAssignCmd] = useState<{ pid: string; chantier: string; color: string } | null>(null);
-  const [cmdOpPicker, setCmdOpPicker] = useState<{ cellKey: string; chantier: string; color: string } | null>(null);
+  const [cmdOpPicker, setCmdOpPicker] = useState<{ cellKey: string; chantier: string; color: string; isExtra?: boolean } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState<string | null>(null);
@@ -1771,7 +1772,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                                   return ch === cmdLabel;
                                 });
                                 const specificOps = cell.cmdOps?.[cmdLabel] || [];
-                                const hasMultiCmds = cell.cmds.length > 1;
+                                const hasMultiTasks = cell.cmds.length + (cell.extras?.length || 0) > 1;
                                 return (
                                   <div key={cmdLabel} style={{
                                     fontSize: 8, padding: "2px 4px", borderRadius: 2, marginBottom: 1,
@@ -1783,7 +1784,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                                         style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: matchCmd ? "pointer" : "default", textDecoration: matchCmd ? "underline" : "none", textDecorationColor: grp.color + "66" }}
                                       >{cmdLabel}</span>
                                       <span style={{ display: "flex", gap: 2 }}>
-                                        {hasMultiCmds && (
+                                        {hasMultiTasks && (
                                           <span
                                             onClick={() => setCmdOpPicker({ cellKey: key, chantier: cmdLabel, color: grp.color })}
                                             title="Affecter un opérateur à ce chantier"
@@ -1850,10 +1851,49 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                                 const isInterv = ext.toLowerCase().includes("interv");
                                 const isSuperv = ext.toLowerCase().includes("superv");
                                 const col = isInterv ? C.red : isSuperv ? C.yellow : C.purple;
+                                const extraSpecificOps = cell.extraOps?.[ext] || [];
+                                const hasMultiTasks = (cell.extras || []).length + (cell.cmds?.length || 0) > 1;
                                 return (
-                                  <div key={ext} style={{ fontSize: 8, padding: "1px 4px", borderRadius: 2, marginBottom: 1, background: col + "22", color: col, fontWeight: 600, display: "flex", justifyContent: "space-between" }}>
-                                    <span>{isInterv ? "🔧" : isSuperv ? "👁" : "📋"} {ext}</span>
-                                    <span onClick={() => toggleExtra(key, ext)} style={{ cursor: "pointer", opacity: 0.6 }}>✕</span>
+                                  <div key={ext} style={{ fontSize: 8, padding: "1px 4px", borderRadius: 2, marginBottom: 1, background: col + "22", color: col, fontWeight: 600 }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                      <span>{isInterv ? "🔧" : isSuperv ? "👁" : "📋"} {ext}</span>
+                                      <span style={{ display: "flex", gap: 2 }}>
+                                        {hasMultiTasks && (
+                                          <span
+                                            onClick={() => setCmdOpPicker({ cellKey: key, chantier: ext, color: col, isExtra: true })}
+                                            title="Affecter un opérateur à cette tâche"
+                                            style={{ cursor: "pointer", fontSize: 8, color: col, padding: "0 2px" }}>👤</span>
+                                        )}
+                                        <span onClick={() => toggleExtra(key, ext)} style={{ cursor: "pointer", opacity: 0.6 }}>✕</span>
+                                      </span>
+                                    </div>
+                                    {/* Ops spécifiques à cet extra */}
+                                    {extraSpecificOps.length > 0 && (
+                                      <div style={{ display: "flex", gap: 2, flexWrap: "wrap", marginTop: 1 }}>
+                                        {extraSpecificOps.map(opNom => {
+                                          const op = ops.find(o => o.nom === opNom);
+                                          return (
+                                            <span key={opNom}
+                                              onClick={() => {
+                                                const newAff = { ...aff };
+                                                const c = newAff[key] || { ops: [], cmds: [], extras: [] };
+                                                const extraOps = { ...(c.extraOps || {}) };
+                                                extraOps[ext] = (extraOps[ext] || []).filter(o => o !== opNom);
+                                                if (extraOps[ext].length === 0) delete extraOps[ext];
+                                                newAff[key] = { ...c, extraOps };
+                                                saveAff(newAff);
+                                              }}
+                                              style={{
+                                                fontSize: 7, padding: "1px 4px", borderRadius: 2,
+                                                background: OP_COLORS[op?.key || ""] || C.s2,
+                                                color: "#000", fontWeight: 700, cursor: "pointer",
+                                              }}>
+                                              → {opNom} ✕
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -2469,24 +2509,38 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         );
       })()}
 
-      {/* ── Popup affectation opérateur → chantier spécifique ── */}
+      {/* ── Popup affectation opérateur → chantier / extra spécifique ── */}
       {cmdOpPicker && (() => {
-        const { cellKey, chantier, color } = cmdOpPicker;
+        const { cellKey, chantier, color, isExtra } = cmdOpPicker;
         const cell = aff[cellKey] || { ops: [], cmds: [], extras: [] };
-        const cellOps = cell.ops; // opérateurs généraux sur cette cellule
-        const specificOps = cell.cmdOps?.[chantier] || [];
+        const cellOps = cell.ops;
+        const specificOps = isExtra
+          ? (cell.extraOps?.[chantier] || [])
+          : (cell.cmdOps?.[chantier] || []);
         const toggleCmdOp = (opNom: string) => {
           const newAff = { ...aff };
           const c = newAff[cellKey] || { ops: [], cmds: [], extras: [] };
-          const cmdOps = { ...(c.cmdOps || {}) };
-          const cur = cmdOps[chantier] || [];
-          if (cur.includes(opNom)) {
-            cmdOps[chantier] = cur.filter(o => o !== opNom);
-            if (cmdOps[chantier].length === 0) delete cmdOps[chantier];
+          if (isExtra) {
+            const extraOps = { ...(c.extraOps || {}) };
+            const cur = extraOps[chantier] || [];
+            if (cur.includes(opNom)) {
+              extraOps[chantier] = cur.filter(o => o !== opNom);
+              if (extraOps[chantier].length === 0) delete extraOps[chantier];
+            } else {
+              extraOps[chantier] = [...cur, opNom];
+            }
+            newAff[cellKey] = { ...c, extraOps };
           } else {
-            cmdOps[chantier] = [...cur, opNom];
+            const cmdOps = { ...(c.cmdOps || {}) };
+            const cur = cmdOps[chantier] || [];
+            if (cur.includes(opNom)) {
+              cmdOps[chantier] = cur.filter(o => o !== opNom);
+              if (cmdOps[chantier].length === 0) delete cmdOps[chantier];
+            } else {
+              cmdOps[chantier] = [...cur, opNom];
+            }
+            newAff[cellKey] = { ...c, cmdOps };
           }
-          newAff[cellKey] = { ...c, cmdOps };
           saveAff(newAff);
         };
         return (
@@ -2496,7 +2550,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                  onClick={e => e.stopPropagation()}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 800, color }}>👤 Affecter au chantier</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color }}>👤 Affecter à {isExtra ? "la tâche" : "au chantier"}</div>
                   <div style={{ fontSize: 11, color: C.sec, marginTop: 2 }}>{chantier}</div>
                 </div>
                 <button onClick={() => setCmdOpPicker(null)} style={{ padding: "6px 14px", background: C.orange, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
@@ -2504,7 +2558,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 </button>
               </div>
               <div style={{ fontSize: 10, color: C.muted, marginBottom: 8 }}>
-                Cochez les opérateurs qui travaillent sur CE chantier spécifiquement. Les autres opérateurs de la cellule travaillent sur les autres chantiers.
+                Cochez les opérateurs qui travaillent sur {isExtra ? "CETTE tâche" : "CE chantier"} spécifiquement. Les autres opérateurs de la cellule travaillent sur les autres {isExtra ? "tâches" : "chantiers"}.
               </div>
               {cellOps.length === 0 && (
                 <div style={{ fontSize: 10, color: C.red, marginBottom: 8, padding: "6px 10px", background: C.red + "15", borderRadius: 4 }}>
