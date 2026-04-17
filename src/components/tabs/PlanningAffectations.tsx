@@ -141,6 +141,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       .catch(() => setCmdOverrides({}));
   }, [detailCmd?.cmdId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [dragOp, setDragOp] = useState<string | null>(null);
+  const [quickAssignOp, setQuickAssignOp] = useState<{ id: string; nom: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState<string | null>(null);
@@ -1203,9 +1204,11 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   <div key={op.id}
                     draggable={!full}
                     onDragStart={!full ? (e) => { setDragOp(op.nom); e.dataTransfer.effectAllowed = "copy"; } : undefined}
+                    onClick={() => !locked && setQuickAssignOp({ id: op.id, nom: op.nom })}
+                    title="Clic : affectation rapide · Glisser : drag&drop"
                     style={{
                       padding: "3px 8px", borderRadius: 4, userSelect: "none",
-                      cursor: full ? "default" : "grab",
+                      cursor: full ? "pointer" : "grab",
                       background: full ? C.s2 : OP_COLORS[op.key] || C.s2,
                       color: full ? C.muted : "#000",
                       fontSize: 10, fontWeight: 700,
@@ -2100,6 +2103,137 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   style={{ padding: "8px 16px", background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, fontSize: 12, cursor: "pointer" }}>
                   Fermer
                 </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Popup affectation rapide opérateur ── */}
+      {quickAssignOp && (() => {
+        const opNom = quickAssignOp.nom;
+        const isChecked = (pid: string, j: number, demi: string) => {
+          const cell = aff[ck(pid, j, demi)];
+          return !!cell?.ops?.includes(opNom);
+        };
+        const togglePost = (pid: string, j: number, demi: string) => {
+          const key = ck(pid, j, demi);
+          const cell = aff[key] || { ops: [], cmds: [], extras: [] };
+          const has = cell.ops.includes(opNom);
+          const newOps = has ? cell.ops.filter(o => o !== opNom) : [...cell.ops, opNom];
+          saveAff({ ...aff, [key]: { ...cell, ops: newOps } });
+        };
+        const toggleRow = (pid: string) => {
+          // Si la ligne a au moins un coché → tout décocher, sinon tout cocher
+          let hasAny = false;
+          for (let j = 0; j < 5; j++) for (const demi of ["am", "pm"]) if (isChecked(pid, j, demi)) { hasAny = true; break; }
+          const newAff = { ...aff };
+          for (let j = 0; j < 5; j++) {
+            for (const demi of ["am", "pm"]) {
+              const key = ck(pid, j, demi);
+              const cell = newAff[key] || { ops: [], cmds: [], extras: [] };
+              const has = cell.ops.includes(opNom);
+              if (hasAny && has) newAff[key] = { ...cell, ops: cell.ops.filter(o => o !== opNom) };
+              else if (!hasAny && !has) newAff[key] = { ...cell, ops: [...cell.ops, opNom] };
+            }
+          }
+          saveAff(newAff);
+        };
+        const toggleCol = (j: number, demi: string) => {
+          // Toutes les positions visibles du coup
+          let hasAny = false;
+          for (const grp of activePosts) for (const pid of grp.visiblePosts) if (isChecked(pid, j, demi)) { hasAny = true; break; }
+          const newAff = { ...aff };
+          for (const grp of activePosts) {
+            for (const pid of grp.visiblePosts) {
+              const key = ck(pid, j, demi);
+              const cell = newAff[key] || { ops: [], cmds: [], extras: [] };
+              const has = cell.ops.includes(opNom);
+              if (hasAny && has) newAff[key] = { ...cell, ops: cell.ops.filter(o => o !== opNom) };
+              else if (!hasAny && !has) newAff[key] = { ...cell, ops: [...cell.ops, opNom] };
+            }
+          }
+          saveAff(newAff);
+        };
+
+        // Compter le nombre de demi-journées assignées
+        let countHalfDays = 0;
+        for (const grp of activePosts) for (const pid of grp.visiblePosts) for (let j = 0; j < 5; j++) for (const demi of ["am", "pm"]) if (isChecked(pid, j, demi)) countHalfDays++;
+
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+               onClick={() => setQuickAssignOp(null)}>
+            <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 20, maxWidth: 900, width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}
+                 onClick={e => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div>
+                  <span style={{ fontSize: 16, fontWeight: 800, color: OP_COLORS[quickAssignOp.id] || C.orange }}>👷 {opNom}</span>
+                  <span style={{ fontSize: 11, color: C.sec, marginLeft: 10 }}>
+                    {countHalfDays} demi-journée{countHalfDays > 1 ? "s" : ""} cochée{countHalfDays > 1 ? "s" : ""}
+                  </span>
+                </div>
+                <button onClick={() => setQuickAssignOp(null)} style={{ padding: "6px 14px", background: C.orange, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                  Fermer
+                </button>
+              </div>
+              <div style={{ fontSize: 10, color: C.muted, marginBottom: 10 }}>
+                Cochez les demi-journées où {opNom} doit travailler sur chaque poste. Cliquez sur un en-tête ligne/colonne pour tout cocher/décocher.
+              </div>
+
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ padding: "6px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", color: C.sec, minWidth: 140, position: "sticky", left: 0, zIndex: 2 }}>POSTE</th>
+                      {JOURS.map((j, jIdx) => ["AM", "PM"].map(demi => (
+                        <th key={`${j}${demi}`} onClick={() => toggleCol(jIdx, demi.toLowerCase())}
+                          style={{
+                            padding: "4px 2px", background: C.s2, border: `1px solid ${C.border}`,
+                            color: C.sec, textAlign: "center", cursor: "pointer", minWidth: 55,
+                          }}>
+                          {j}<br /><span style={{ fontSize: 9 }}>{demi}</span>
+                        </th>
+                      )))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activePosts.map(grp => [
+                      <tr key={`h-${grp.label}`}>
+                        <td colSpan={11} style={{ padding: "4px 8px", background: grp.color + "15", borderBottom: `2px solid ${grp.color}`, fontSize: 9, fontWeight: 700, color: grp.color, textTransform: "uppercase", letterSpacing: 1 }}>
+                          {grp.label}
+                        </td>
+                      </tr>,
+                      ...grp.visiblePosts.map(pid => (
+                        <tr key={pid} style={{ borderBottom: `1px solid ${C.border}` }}>
+                          <td onClick={() => toggleRow(pid)}
+                            style={{ padding: "5px 8px", background: C.s1, border: `1px solid ${C.border}`, cursor: "pointer", position: "sticky", left: 0, zIndex: 1 }}>
+                            <span style={{ fontWeight: 700, color: grp.color }}>{pid}</span>
+                            <span style={{ fontSize: 9, color: C.muted, marginLeft: 4 }}>{POST_LABELS[pid]}</span>
+                          </td>
+                          {JOURS.map((j, jIdx) => ["am", "pm"].map(demi => {
+                            const checked = isChecked(pid, jIdx, demi);
+                            return (
+                              <td key={`${pid}-${jIdx}-${demi}`}
+                                onClick={() => togglePost(pid, jIdx, demi)}
+                                style={{
+                                  padding: 0, border: `1px solid ${C.border}`, textAlign: "center",
+                                  cursor: "pointer",
+                                  background: checked ? (OP_COLORS[quickAssignOp.id] || C.orange) + "44" : "transparent",
+                                  height: 32,
+                                }}>
+                                {checked ? (
+                                  <span style={{ color: OP_COLORS[quickAssignOp.id] || C.orange, fontSize: 16, fontWeight: 700 }}>✓</span>
+                                ) : (
+                                  <span style={{ color: C.muted, fontSize: 12 }}>·</span>
+                                )}
+                              </td>
+                            );
+                          }))}
+                        </tr>
+                      )),
+                    ])}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
