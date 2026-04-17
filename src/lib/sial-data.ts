@@ -268,7 +268,7 @@ export const EQUIPE = [
   { id:"kentin",    nom:"Kentin",        poste:"coupe",      h:35, vendrediOff:false, remplace:["frappes"],            competences:["coupe","frappes"],                    note:"Coupe + soutien montage frappes · 7h/jour" },
 ];
 
-export const ZONES = ["SIAL","Porto-Vecchio","Balagne","Ajaccio","Plaine Orientale","Continent","Sur chantier","Autre"];
+export const ZONES = ["SIAL","Porto-Vecchio","Ajaccio","Bastia","Balagne","Plaine Orientale","Continent","Sur chantier","Autre"];
 
 export const TAMPONS_OFFICIELS = {
   coupe_livraison: 15,

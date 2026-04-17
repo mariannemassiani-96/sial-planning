@@ -5,14 +5,15 @@ import { H, Bdg } from "@/components/ui";
 import { openPrintWindow, fmtDatePrint } from "@/lib/print-utils";
 
 const ZONE_COLORS: Record<string, string> = {
-  "SIAL":             "#757575",
-  "Porto-Vecchio":    "#E53935",
-  "Balagne":          "#1E88E5",
-  "Ajaccio":          "#FB8C00",
-  "Plaine Orientale": "#8E24AA",
-  "Continent":        "#6D4C41",
-  "Sur chantier":     "#43A047",
-  "Autre":            "#546E7A",
+  "SIAL":             "#FDD835", // Jaune
+  "Porto-Vecchio":    "#FB8C00", // Orange
+  "Ajaccio":          "#1E88E5", // Bleu
+  "Bastia":           "#E53935", // Rouge
+  "Balagne":          "#00BCD4", // Turquoise
+  "Plaine Orientale": "#8E24AA", // Violet
+  "Continent":        "#43A047", // Vert
+  "Sur chantier":     "#6D4C41", // Marron
+  "Autre":            "#546E7A", // Gris bleuté
 };
 
 function getZoneColor(zone: string | null | undefined, fallback = "#888"): string {
