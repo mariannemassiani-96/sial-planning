@@ -126,6 +126,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
 
   // Popup détail chantier
   const [detailCmd, setDetailCmd] = useState<{ chantier: string; cmdId: string; cmd: any } | null>(null);
+  const [showOccupation, setShowOccupation] = useState(false);
   const [cmdOverrides, setCmdOverrides] = useState<Record<string, number>>({});
   // Overrides par commande pour recalcul postWork : { cmdId: { "C3": 1200 } }
   const [allCmdOverrides, setAllCmdOverrides] = useState<Record<string, Record<string, number>>>({});
@@ -1147,7 +1148,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   }
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)" }}>
       {/* ── Navigation semaine ── */}
       {onWeekChange && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
@@ -1393,13 +1394,14 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         const idle = opStats.filter(o => o.pct === 0);
 
         return (
-          <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px", marginBottom: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 700 }}>Occupation opérateurs</span>
+          <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: showOccupation ? "10px 14px" : "6px 14px", marginBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={() => setShowOccupation(p => !p)}>
+              <span style={{ fontSize: 11, fontWeight: 700 }}>{showOccupation ? "▼" : "▶"} Occupation opérateurs</span>
               <span style={{ fontSize: 11, fontWeight: 700, color: avgPct > 90 ? C.red : avgPct > 60 ? C.orange : C.green }}>{avgPct}% moyen</span>
               {overloaded.length > 0 && <span style={{ fontSize: 10, color: C.red }}>⚠ {overloaded.map(o => o.nom).join(", ")} surchargé{overloaded.length > 1 ? "s" : ""}</span>}
               {idle.length > 0 && <span style={{ fontSize: 10, color: C.muted }}>{idle.length} non affecté{idle.length > 1 ? "s" : ""}</span>}
             </div>
+            {showOccupation && <>
             {/* Alerte journées vides par opérateur */}
             {(() => {
               const alerts: string[] = [];
@@ -1443,17 +1445,18 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 );
               })}
             </div>
+            </>}
           </div>
         );
       })()}
 
       {/* ── Grille ── */}
-      <div style={{ overflowX: "auto" }}>
+      <div style={{ flex: 1, overflow: "auto", minHeight: 0, borderRadius: 6, border: `1px solid ${C.border}` }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-          <thead>
+          <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
             <tr>
-              <th style={{ padding: "6px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec, width: 130 }}>POSTE</th>
-              <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 50 }}>CHARGE</th>
+              <th style={{ padding: "6px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "left", fontSize: 10, color: C.sec, width: 130, position: "sticky", left: 0, zIndex: 11 }}>POSTE</th>
+              <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 50, position: "sticky", left: 130, zIndex: 11 }}>CHARGE</th>
               {JOURS.map((j, jIdx) => ["AM", "PM"].map(d => (
                 <th key={`${j}_${d}`} style={{
                   padding: "4px 2px", background: jIdx === todayIdx ? C.s2 : C.s1,
@@ -1466,7 +1469,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             </tr>
             {/* Ligne % couverture opérateurs par demi-journée */}
             <tr>
-              <th colSpan={2} style={{ padding: "4px 6px", background: C.s2, border: `1px solid ${C.border}`, fontSize: 9, color: C.sec, textAlign: "left" }}>% couvert</th>
+              <th colSpan={2} style={{ padding: "4px 6px", background: C.s2, border: `1px solid ${C.border}`, fontSize: 9, color: C.sec, textAlign: "left", position: "sticky", left: 0, zIndex: 11 }}>% couvert</th>
               {JOURS.map((j, jIdx) => ["am", "pm"].map(demi => {
                 // Scanner TOUTES les cellules de ce créneau (tous postes)
                 let workSlots = 0; // nombre de postes avec du travail
@@ -1498,7 +1501,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           <tbody>
             {activePosts.map(grp => [
               <tr key={`h-${grp.label}`}>
-                <td colSpan={2 + 10} style={{ padding: "5px 8px", background: grp.color + "15", borderBottom: `2px solid ${grp.color}`, fontSize: 10, fontWeight: 700, color: grp.color, textTransform: "uppercase", letterSpacing: 1 }}>
+                <td colSpan={2 + 10} style={{ padding: "5px 8px", background: grp.color + "15", borderBottom: `2px solid ${grp.color}`, fontSize: 10, fontWeight: 700, color: grp.color, textTransform: "uppercase", letterSpacing: 1, position: "sticky", left: 0 }}>
                   {grp.label}
                   {/* Postes entièrement faits (tous chantiers cochés) */}
                   {grp.allPosts.filter(p => !grp.visiblePosts.includes(p)).length > 0 && (
@@ -1521,7 +1524,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
 
                 return (
                   <tr key={pid} style={{ borderBottom: `1px solid ${C.border}` }}>
-                    <td style={{ padding: "4px 6px", background: C.s1, border: `1px solid ${C.border}`, verticalAlign: "top" }}>
+                    <td style={{ padding: "4px 6px", background: C.s1, border: `1px solid ${C.border}`, verticalAlign: "top", position: "sticky", left: 0, zIndex: 3 }}>
                       <div style={{ fontWeight: 700, color: grp.color, fontSize: 11 }}>{pid} <span style={{ fontWeight: 400, color: C.muted, fontSize: 8 }}>{POST_LABELS[pid]}</span></div>
                       {pw.cmds.map((c, ci) => {
                         const ch = c.chantier || c.client;
@@ -1539,7 +1542,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                       })}
                       <div style={{ fontSize: 9, color: C.sec, marginTop: 2 }}>{pw.cmds.length} cmd</div>
                     </td>
-                    <td style={{ padding: "4px", border: `1px solid ${overCapacity ? C.red : C.border}`, textAlign: "center", verticalAlign: "top" }}>
+                    <td style={{ padding: "4px", border: `1px solid ${overCapacity ? C.red : C.border}`, textAlign: "center", verticalAlign: "top", position: "sticky", left: 130, zIndex: 3, background: C.s1 }}>
                       <div className="mono" style={{ fontWeight: 700, color: overCapacity ? C.red : grp.color }}>{hm(pw.totalMin)}</div>
                       {maxPers && <div style={{ fontSize: 8, color: C.muted }}>max {maxPers} pers.</div>}
                       {overCapacity && <div style={{ fontSize: 8, color: C.red, fontWeight: 700 }}>SURCHARGE</div>}
