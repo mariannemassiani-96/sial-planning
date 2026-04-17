@@ -231,9 +231,10 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
 
   const submit = () => {
     if (!f.client) return;
-    const premType = f.lignes[0]?.type || null;
-    const premHS = f.lignes[0]?.type === "hors_standard" ? { nb_profils: f.lignes[0].hs_nb_profils, t_coupe: f.lignes[0].hs_t_coupe, t_montage: f.lignes[0].hs_t_montage, t_vitrage: f.lignes[0].hs_t_vitrage, operateur_montage: f.lignes[0].hs_op_montage || "jp", operateur_vitrage: f.lignes[0].hs_op_vitrage || "quentin" } : null;
-    const result = { ...f, id: commande?.id || Date.now(), type: premType, quantite: qteTotale, hsTemps: premHS, date_livraison_souhaitee: f.date_livraison_souhaitee || dlReelle() || dlAuto() };
+    const premType = f.lignes[0]?.type || commande?.type || "ob1_pvc";
+    const premHS = f.lignes[0]?.type === "hors_standard" ? { nb_profils: f.lignes[0].hs_nb_profils, t_coupe: f.lignes[0].hs_t_coupe, t_montage: f.lignes[0].hs_t_montage, t_vitrage: f.lignes[0].hs_t_vitrage, operateur_montage: f.lignes[0].hs_op_montage || "jp", operateur_vitrage: f.lignes[0].hs_op_vitrage || "quentin" } : (commande?.hsTemps ?? null);
+    const qte = qteTotale || commande?.quantite || 1;
+    const result = { ...f, id: commande?.id || Date.now(), type: premType, quantite: qte, hsTemps: premHS, date_livraison_souhaitee: f.date_livraison_souhaitee || dlReelle() || dlAuto() };
     if (commande && onModifier) { onModifier(result); } else { onAjouter(result); }
     setF(empty);
   };

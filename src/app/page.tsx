@@ -230,10 +230,19 @@ export default function HomePage() {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(cmd),
       });
-      if (res.ok) { const saved = await res.json(); setCommandes(p => p.map(x => x.id === saved.id ? saved : x)); }
-    } catch {}
-    setCmdEdit(null);
-    setOng("carnet");
+      if (res.ok) {
+        const saved = await res.json();
+        setCommandes(p => p.map(x => x.id === saved.id ? saved : x));
+        setApiError(null);
+        setCmdEdit(null);
+        setOng("carnet");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setApiError(`Modification échouée: ${err.error || res.status}`);
+      }
+    } catch (e: unknown) {
+      setApiError(`Erreur réseau: ${e instanceof Error ? e.message : "inconnue"}`);
+    }
   };
 
   const updateStock = async (id: string, v: { actuel: string }) => {
