@@ -199,14 +199,53 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
   };
 
   // ── Sauvegarder la liste des livreurs pour un chargement ──
-  const saveLivreurs = async (date: string, zone: string, ops: string[]) => {
+  // + Synchroniser avec l'affectation du planning (poste LIVR sur le jour)
+  const saveLivreurs = async (date: string, zone: string, opIds: string[]) => {
     const k = livreursKey(date, zone);
-    setLivreurs(prev => ({ ...prev, [k]: ops }));
+    setLivreurs(prev => ({ ...prev, [k]: opIds }));
     try {
       await fetch(`/api/planning-poste?semaine=${encodeURIComponent(k)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ops }),
+        body: JSON.stringify({ ops: opIds }),
+      });
+      // ── Synchroniser avec le planning des affectations ──
+      // 1) Trouver la semaine (lundi) de la date
+      const d = new Date(date + "T12:00:00");
+      const weekMon = localStr(getMondayOf(d));
+      // 2) Calculer le jIdx (0=lundi ... 4=vendredi). Si weekend, skip.
+      const dow = d.getDay();
+      const jIdx = dow === 0 ? -1 : dow === 6 ? -1 : dow - 1;
+      if (jIdx < 0 || jIdx > 4) return;
+      // 3) Récupérer l'affectation de la semaine
+      const opNames = opIds.map(id => EQUIPE.find(m => m.id === id)?.nom).filter(Boolean) as string[];
+      const res = await fetch(`/api/planning/affectations?semaine=${weekMon}`);
+      const currentAff: Record<string, any> = res.ok ? await res.json().catch(() => ({})) : {};
+      // 4) Pour chaque créneau LIVR|jIdx|am et LIVR|jIdx|pm, remplacer les ops
+      // Récupérer tous les livreurs de CE jour toutes zones confondues (plusieurs chargements possibles)
+      const allLivreursForDay = new Set<string>(opNames);
+      // Scanner les autres clés livreurs pour la même date mais autres zones
+      for (const [lk, lops] of Object.entries(livreurs)) {
+        if (lk === k) continue;
+        if (!lk.startsWith(`livreurs_${date}_`)) continue;
+        for (const oid of lops) {
+          const nm = EQUIPE.find(m => m.id === oid)?.nom;
+          if (nm) allLivreursForDay.add(nm);
+        }
+      }
+      for (const slot of ["am", "pm"]) {
+        const cellKey = `LIVR|${jIdx}|${slot}`;
+        const existing = currentAff[cellKey] || { ops: [], cmds: [], extras: [] };
+        currentAff[cellKey] = {
+          ...existing,
+          ops: Array.from(allLivreursForDay),
+        };
+      }
+      // 5) Sauvegarder
+      await fetch("/api/planning/affectations", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ semaine: weekMon, affectations: currentAff }),
       });
     } catch {}
   };
