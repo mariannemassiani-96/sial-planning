@@ -110,6 +110,20 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
 
   const filtered = zone === "toutes" ? enriched : enriched.filter(x => (x.cmd as any).zone === zone);
 
+  // ── Grouper les livraisons par chargement (date + transporteur + zone) ──
+  function groupByChargement(delivs: typeof enriched) {
+    const groups = new Map<string, typeof enriched>();
+    const order: string[] = [];
+    for (const x of delivs) {
+      const transp = x.cmd.transporteur || "_aucun";
+      const zoneG = x.cmd.zone || "_aucune";
+      const key = `${transp}|${zoneG}`;
+      if (!groups.has(key)) { groups.set(key, []); order.push(key); }
+      groups.get(key)!.push(x);
+    }
+    return order.map(key => ({ key, items: groups.get(key)! }));
+  }
+
   // ── Navigation ──────────────────────────────────────────────────────
   const navigate = (delta: number) => {
     const d = new Date(anchor + "T00:00:00");
@@ -449,29 +463,53 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
                   <div style={{ fontSize:10, color:C.muted, textAlign:"center" }}>—</div>
                 )}
 
-                {delivs.map((x, i) => {
-                  const retardColor = x.cc?.critique ? C.red : x.cc?.enRetard ? C.orange : C.green;
-                  const tm = TYPES_MENUISERIE[x.c.type];
-                  const transp = TRANSPORTEURS.find(t => t.id === x.cmd.transporteur);
-                  const zoneCol = ZONE_COLORS[x.cmd.zone] || C.border;
+                {groupByChargement(delivs).map((grp, gi) => {
+                  const transpId = grp.items[0].cmd.transporteur;
+                  const zoneName = grp.items[0].cmd.zone;
+                  const transp = TRANSPORTEURS.find(t => t.id === transpId);
+                  const zoneCol = ZONE_COLORS[zoneName] || C.border;
+                  const chargementKey = `${transpId || "?"}|${zoneName || "?"}`;
+                  const totalQte = grp.items.reduce((s, x) => s + (x.c.quantite || 0), 0);
+
                   return (
-                    <div key={i}
-                      draggable
-                      onDragStart={handleDragStart(String(x.c.id), x.livSouhaitee)}
-                      onDragEnd={handleDragEnd}
-                      onDoubleClick={() => onEdit?.(x.c)}
-                      style={{ marginBottom:4, padding:"5px 6px", background:C.bg, borderRadius:4, border:`1px solid ${zoneCol}33`, borderLeft:`4px solid ${zoneCol}`, cursor: onEdit ? "pointer" : "grab", userSelect:"none" }}>
-                      <div style={{ fontSize:11, fontWeight:700, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                        {x.c.client}{x.cmd.ref_chantier ? ` — ${x.cmd.ref_chantier}` : ""}
-                      </div>
-                      <div style={{ fontSize:9, color:C.sec }}>{tm?.label} ×{x.c.quantite}</div>
-                      <div style={{ display:"flex", gap:4, marginTop:2, flexWrap:"wrap", alignItems:"center" }}>
-                        {x.cc?.enRetard && <Bdg t={`+${x.cc.retardJours}j`} c={retardColor} sz={8}/>}
-                        {transp
-                          ? <span style={{ fontSize:8, padding:"0px 4px", background:transp.c+"22", border:`1px solid ${transp.c}44`, borderRadius:2, color:transp.c, fontWeight:700 }}>{transp.label}</span>
-                          : <span style={{ fontSize:8, color:C.muted, fontStyle:"italic" }}>— transporteur non défini</span>
-                        }
-                      </div>
+                    <div key={gi} style={{
+                      marginBottom: 6,
+                      padding: grp.items.length > 1 ? "4px 5px 5px" : 0,
+                      background: grp.items.length > 1 ? zoneCol + "10" : "transparent",
+                      borderRadius: 5,
+                      border: grp.items.length > 1 ? `2px dashed ${zoneCol}66` : "none",
+                    }}>
+                      {grp.items.length > 1 && (
+                        <div style={{ fontSize: 8, fontWeight: 700, color: zoneCol, marginBottom: 3, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span>🚚 CHARGEMENT ({grp.items.length} cmd, {totalQte}p)</span>
+                          <span style={{ color: transp?.c || C.muted }}>{transp?.label?.slice(0, 10) || "?"}</span>
+                        </div>
+                      )}
+                      {grp.items.map((x, i) => {
+                        const retardColor = x.cc?.critique ? C.red : x.cc?.enRetard ? C.orange : C.green;
+                        const tm = TYPES_MENUISERIE[x.c.type];
+                        return (
+                          <div key={i}
+                            draggable
+                            onDragStart={handleDragStart(String(x.c.id), x.livSouhaitee)}
+                            onDragEnd={handleDragEnd}
+                            onClick={() => openQuickAction(x.cmd, x.livSouhaitee)}
+                            onDoubleClick={e => { e.stopPropagation(); onEdit?.(x.c); }}
+                            style={{ marginBottom: i < grp.items.length - 1 ? 2 : 0, padding:"5px 6px", background:C.bg, borderRadius:4, border:`1px solid ${zoneCol}33`, borderLeft:`4px solid ${zoneCol}`, cursor: "pointer", userSelect:"none" }}>
+                            <div style={{ fontSize:11, fontWeight:700, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                              {x.c.client}{x.cmd.ref_chantier ? ` — ${x.cmd.ref_chantier}` : ""}
+                            </div>
+                            <div style={{ fontSize:9, color:C.sec }}>{tm?.label} ×{x.c.quantite}</div>
+                            <div style={{ display:"flex", gap:4, marginTop:2, flexWrap:"wrap", alignItems:"center" }}>
+                              {x.cc?.enRetard && <Bdg t={`+${x.cc.retardJours}j`} c={retardColor} sz={8}/>}
+                              {grp.items.length === 1 && (transp
+                                ? <span style={{ fontSize:8, padding:"0px 4px", background:transp.c+"22", border:`1px solid ${transp.c}44`, borderRadius:2, color:transp.c, fontWeight:700 }}>{transp.label}</span>
+                                : <span style={{ fontSize:8, color:C.muted, fontStyle:"italic" }}>— transporteur non défini</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -493,15 +531,40 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
                 </div>
               );
             }
+            const sorted = [...delivs].sort((a,b) => (a.cc?.critique?0:1) - (b.cc?.critique?0:1));
+            const groups = groupByChargement(sorted);
             return (
               <div>
                 <div style={{ marginBottom:10, fontSize:12, color:C.sec }}>
-                  <span className="mono" style={{ color:C.green, fontWeight:700 }}>{delivs.length}</span> livraison(s) prévue(s) le {fmtDate(anchor)}
+                  <span className="mono" style={{ color:C.green, fontWeight:700 }}>{delivs.length}</span> livraison(s) prévue(s) le {fmtDate(anchor)} · <span className="mono" style={{ color: C.blue, fontWeight: 700 }}>{groups.filter(g => g.items.length > 1 || g.items[0].cmd.transporteur).length}</span> chargement(s)
                 </div>
-                {delivs
-                  .sort((a,b) => (a.cc?.critique?0:1) - (b.cc?.critique?0:1))
-                  .map((x,i) => <DelivCard key={i} x={x} draggable />)
-                }
+                {groups.map((grp, gi) => {
+                  const transpId = grp.items[0].cmd.transporteur;
+                  const zoneName = grp.items[0].cmd.zone;
+                  const transp = TRANSPORTEURS.find(t => t.id === transpId);
+                  const zoneCol = ZONE_COLORS[zoneName] || C.border;
+                  const totalQte = grp.items.reduce((s, x) => s + (x.c.quantite || 0), 0);
+                  if (grp.items.length === 1 && !transpId) {
+                    return <DelivCard key={gi} x={grp.items[0]} draggable />;
+                  }
+                  return (
+                    <div key={gi} style={{
+                      marginBottom: 10, padding: 10, borderRadius: 8,
+                      background: zoneCol + "10",
+                      border: `2px dashed ${zoneCol}66`,
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: zoneCol }}>
+                          🚚 Chargement · {zoneName || "Zone?"}
+                        </div>
+                        <div style={{ fontSize: 11, color: transp?.c || C.muted, fontWeight: 600 }}>
+                          {transp?.label || "Transporteur non défini"} · {grp.items.length} cmd · {totalQte} pièces
+                        </div>
+                      </div>
+                      {grp.items.map((x, i) => <DelivCard key={i} x={x} draggable />)}
+                    </div>
+                  );
+                })}
               </div>
             );
           })()}
