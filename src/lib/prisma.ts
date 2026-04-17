@@ -9,7 +9,7 @@ export const prisma = globalForPrisma.prisma ?? new PrismaClient({
         const base = process.env.DATABASE_URL;
         if (!base) return undefined;
         const sep = base.includes("?") ? "&" : "?";
-        return `${base}${sep}connection_limit=10&pool_timeout=15`;
+        return `${base}${sep}connection_limit=3&pool_timeout=15`;
       })(),
     },
   },
