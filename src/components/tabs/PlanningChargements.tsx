@@ -66,6 +66,33 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
   const [filterZone, setFilterZone] = useState("");
   const [horizonWeeks, setHorizonWeeks] = useState(4); // combien de semaines à afficher
 
+  // ── Gel des semaines : snapshot figé par semaine ──
+  // Structure stockée : { [semaineLundi]: { [transpId]: [ { date, zone, cmdIds[] } ] } }
+  interface FrozenItem { date: string; zone: string; cmdIds: string[] }
+  interface FrozenSnapshot { _frozenAt?: string; _frozenBy?: string; byTransp?: Record<string, FrozenItem[]> }
+  const [frozen, setFrozen] = useState<Record<string, FrozenSnapshot>>({}); // key = semaineLundi
+  const [reloadCounter, setReloadCounter] = useState(0);
+
+  // Charger les snapshots des semaines de l'horizon
+  useEffect(() => {
+    const weekMondays: string[] = [];
+    for (let w = 0; w < horizonWeeks; w++) {
+      weekMondays.push(addWeeks(monday, w));
+    }
+    Promise.all(weekMondays.map(m =>
+      fetch(`/api/chargements-frozen?semaine=${m}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => ({ m, data }))
+        .catch(() => ({ m, data: null }))
+    )).then(results => {
+      const map: Record<string, FrozenSnapshot> = {};
+      for (const { m, data } of results) {
+        if (data) map[m] = data;
+      }
+      setFrozen(map);
+    });
+  }, [monday, horizonWeeks, reloadCounter]);
+
   const horizonDays = useMemo(() => {
     const days: string[] = [];
     for (let w = 0; w < horizonWeeks; w++) {
@@ -136,6 +163,163 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
 
   const btn = { padding: "5px 10px", background: C.s1, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 };
 
+  // Trouver la semaine (lundi) d'une date
+  function getWeekMondayFor(date: string): string {
+    return localStr(getMondayOf(new Date(date + "T12:00:00")));
+  }
+
+  // ── Détection des alertes : différences entre figé et actuel ──
+  interface Alerte {
+    type: "added" | "removed" | "moved" | "changed_transp" | "changed_zone" | "changed_date";
+    semaineMonday: string;
+    transpId: string;
+    message: string;
+    cmdIds: string[];
+  }
+
+  const alertes: Alerte[] = useMemo(() => {
+    const out: Alerte[] = [];
+    // Pour chaque semaine figée, comparer avec les chargements actuels
+    for (const [weekMon, snap] of Object.entries(frozen)) {
+      if (!snap.byTransp) continue;
+
+      for (const [transpId, frozenItems] of Object.entries(snap.byTransp)) {
+        // Reconstruire l'état actuel pour ce transporteur × cette semaine
+        const weekEnd = addWeeks(weekMon, 1);
+        const currentForThis = chargements.filter(ch =>
+          ch.transporteur === transpId && ch.date >= weekMon && ch.date < weekEnd
+        );
+
+        // Map cmdId → position actuelle
+        const currentCmdMap = new Map<string, { date: string; zone: string; transp: string }>();
+        for (const ch of currentForThis) {
+          for (const x of ch.items) {
+            currentCmdMap.set(String(x.c.id), { date: ch.date, zone: ch.zone, transp: ch.transporteur });
+          }
+        }
+
+        // Commandes actuelles qui étaient chez ce transp dans le figé
+        const frozenCmdIds = new Set<string>();
+        for (const fi of frozenItems) {
+          for (const cid of fi.cmdIds) {
+            frozenCmdIds.add(cid);
+            const current = currentCmdMap.get(cid);
+            if (!current) {
+              // La commande a disparu de ce transporteur (changement transp ou supprimée)
+              // Vérifier si elle est maintenant chez un autre transp cette semaine
+              const nowElsewhere = chargements.find(ch =>
+                ch.items.some(x => String(x.c.id) === cid)
+              );
+              const cmdObj = commandes.find(c => String(c.id) === cid);
+              const cmdLabel = cmdObj ? `${(cmdObj as any).client}${(cmdObj as any).ref_chantier ? " — " + (cmdObj as any).ref_chantier : ""}` : cid;
+              if (nowElsewhere) {
+                if (nowElsewhere.transporteur !== transpId) {
+                  out.push({
+                    type: "changed_transp",
+                    semaineMonday: weekMon,
+                    transpId,
+                    message: `${cmdLabel} : transporteur changé → ${nowElsewhere.transporteur === "_aucun" ? "aucun" : nowElsewhere.transporteur}`,
+                    cmdIds: [cid],
+                  });
+                } else if (nowElsewhere.date !== fi.date) {
+                  out.push({
+                    type: "changed_date",
+                    semaineMonday: weekMon,
+                    transpId,
+                    message: `${cmdLabel} : date changée ${fmtDate(fi.date)} → ${fmtDate(nowElsewhere.date)}`,
+                    cmdIds: [cid],
+                  });
+                }
+              } else {
+                out.push({
+                  type: "removed",
+                  semaineMonday: weekMon,
+                  transpId,
+                  message: `${cmdLabel} : retirée du planning`,
+                  cmdIds: [cid],
+                });
+              }
+            } else {
+              // Commande toujours chez ce transp, vérifier date/zone
+              if (current.date !== fi.date) {
+                const cmdObj = commandes.find(c => String(c.id) === cid);
+                const cmdLabel = cmdObj ? `${(cmdObj as any).client}${(cmdObj as any).ref_chantier ? " — " + (cmdObj as any).ref_chantier : ""}` : cid;
+                out.push({
+                  type: "changed_date",
+                  semaineMonday: weekMon,
+                  transpId,
+                  message: `${cmdLabel} : date ${fmtDate(fi.date)} → ${fmtDate(current.date)}`,
+                  cmdIds: [cid],
+                });
+              } else if (current.zone !== fi.zone) {
+                const cmdObj = commandes.find(c => String(c.id) === cid);
+                const cmdLabel = cmdObj ? `${(cmdObj as any).client}${(cmdObj as any).ref_chantier ? " — " + (cmdObj as any).ref_chantier : ""}` : cid;
+                out.push({
+                  type: "changed_zone",
+                  semaineMonday: weekMon,
+                  transpId,
+                  message: `${cmdLabel} : zone "${fi.zone}" → "${current.zone}"`,
+                  cmdIds: [cid],
+                });
+              }
+            }
+          }
+        }
+
+        // Nouvelles commandes ajoutées chez ce transporteur
+        for (const [cid, cur] of Array.from(currentCmdMap.entries())) {
+          if (!frozenCmdIds.has(cid)) {
+            const cmdObj = commandes.find(c => String(c.id) === cid);
+            const cmdLabel = cmdObj ? `${(cmdObj as any).client}${(cmdObj as any).ref_chantier ? " — " + (cmdObj as any).ref_chantier : ""}` : cid;
+            out.push({
+              type: "added",
+              semaineMonday: weekMon,
+              transpId,
+              message: `${cmdLabel} : nouvelle (${fmtDate(cur.date)}, ${cur.zone})`,
+              cmdIds: [cid],
+            });
+          }
+        }
+      }
+    }
+    return out;
+  }, [frozen, chargements, commandes]);
+
+  // ── Figer une semaine (prendre un snapshot de l'état actuel) ──
+  const figerSemaine = async (weekMon: string) => {
+    const weekEnd = addWeeks(weekMon, 1);
+    const weekChargements = chargements.filter(ch => ch.date >= weekMon && ch.date < weekEnd);
+    const byTransp: Record<string, FrozenItem[]> = {};
+    for (const ch of weekChargements) {
+      if (!byTransp[ch.transporteur]) byTransp[ch.transporteur] = [];
+      byTransp[ch.transporteur].push({
+        date: ch.date,
+        zone: ch.zone,
+        cmdIds: ch.items.map(x => String(x.c.id)),
+      });
+    }
+    const snapshot = { byTransp };
+    try {
+      await fetch("/api/chargements-frozen", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ semaine: weekMon, snapshot }),
+      });
+      setReloadCounter(c => c + 1);
+    } catch {}
+  };
+
+  // ── Défiger (supprimer le snapshot) ──
+  const defigerSemaine = async (weekMon: string) => {
+    try {
+      await fetch(`/api/chargements-frozen?semaine=${weekMon}`, { method: "DELETE" });
+      setReloadCounter(c => c + 1);
+    } catch {}
+  };
+
+  // ── Confirmer les changements (re-fige avec l'état actuel) ──
+  const confirmerSemaine = (weekMon: string) => figerSemaine(weekMon);
+
   const dateLabel = (d: string) => {
     const dt = new Date(d + "T12:00:00");
     const dow = dt.getDay();
@@ -187,6 +371,65 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
         ))}
       </div>
 
+      {/* ── Zone d'alertes : changements depuis le gel ── */}
+      {alertes.length > 0 && (
+        <div style={{ marginBottom: 14, padding: "12px 16px", background: C.red + "15", border: `2px solid ${C.red}66`, borderRadius: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.red }}>
+              ⚠ {alertes.length} changement{alertes.length > 1 ? "s" : ""} depuis le dernier gel
+            </div>
+          </div>
+          {(() => {
+            // Grouper par (semaineMonday, transpId)
+            const byKey = new Map<string, Alerte[]>();
+            for (const a of alertes) {
+              const k = `${a.semaineMonday}|${a.transpId}`;
+              if (!byKey.has(k)) byKey.set(k, []);
+              byKey.get(k)!.push(a);
+            }
+            return Array.from(byKey.entries()).map(([k, alrts]) => {
+              const [semMon, trId] = k.split("|");
+              const tr = TRANSPORTEURS.find(t => t.id === trId);
+              const trLabel = tr?.label || (trId === "_aucun" ? "Non défini" : trId);
+              const trCol = tr?.c || C.muted;
+              return (
+                <div key={k} style={{ marginBottom: 10, padding: "8px 12px", background: C.s1, borderRadius: 6, border: `1px solid ${C.border}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>
+                      <span style={{ color: trCol }}>🚚 {trLabel}</span>
+                      <span style={{ color: C.sec, marginLeft: 8 }}>· S{getWeekNum(semMon)} ({fmtDate(semMon)})</span>
+                    </div>
+                    <button onClick={() => {
+                      if (!confirm(`Confirmer les ${alrts.length} changement(s) pour ${trLabel} S${getWeekNum(semMon)} ? Cela regèle la semaine avec l'état actuel.`)) return;
+                      confirmerSemaine(semMon);
+                    }} style={{
+                      padding: "5px 14px", background: C.green, border: "none", borderRadius: 4,
+                      color: "#000", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                    }}>
+                      ✓ Confirmé avec transporteur
+                    </button>
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 20, listStyle: "disc" }}>
+                    {alrts.map((a, i) => (
+                      <li key={i} style={{ fontSize: 11, color: C.text, marginBottom: 2 }}>
+                        <span style={{
+                          padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 700, marginRight: 6,
+                          background: a.type === "added" ? C.green + "22" : a.type === "removed" ? C.red + "22" : C.orange + "22",
+                          color: a.type === "added" ? C.green : a.type === "removed" ? C.red : C.orange,
+                        }}>
+                          {a.type === "added" ? "AJOUT" : a.type === "removed" ? "RETRAIT" : a.type === "changed_transp" ? "TRANSP." : a.type === "changed_date" ? "DATE" : "ZONE"}
+                        </span>
+                        {a.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            });
+          })()}
+        </div>
+      )}
+
       {/* Liste par transporteur */}
       {byTransporteur.length === 0 && (
         <div style={{ textAlign: "center", padding: 40, color: C.muted, fontSize: 12 }}>
@@ -221,11 +464,14 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
                 const hasRetard = ch.items.some(x => x.cc?.enRetard);
                 const sansZone = ch.zone === "_aucune";
 
+                const weekMon = getWeekMondayFor(ch.date);
+                const isFrozen = !!frozen[weekMon];
                 return (
                   <div key={ci} style={{
                     padding: "10px 14px",
                     borderBottom: ci < grp.chargements.length - 1 ? `1px solid ${C.border}` : "none",
                     borderLeft: `4px solid ${zoneCol}`,
+                    background: isFrozen ? C.blue + "08" : "transparent",
                   }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -235,6 +481,14 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
                         <span style={{ fontSize: 10, color: C.sec, fontFamily: "monospace" }}>
                           S{getWeekNum(ch.date)}
                         </span>
+                        {isFrozen && (
+                          <span style={{
+                            padding: "2px 8px", borderRadius: 4, fontSize: 9, fontWeight: 700,
+                            background: C.blue + "22", color: C.blue, border: `1px solid ${C.blue}66`,
+                          }}>
+                            🔒 Figé
+                          </span>
+                        )}
                         <span style={{
                           padding: "2px 10px", borderRadius: 4, fontSize: 11, fontWeight: 700,
                           background: zoneCol + "22", color: zoneCol, border: `1px solid ${zoneCol}66`,
@@ -249,6 +503,25 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
                         )}
                       </div>
                       <div style={{ display: "flex", gap: 4 }}>
+                        {isFrozen ? (
+                          <button
+                            onClick={() => {
+                              if (!confirm(`Défiger la semaine S${getWeekNum(weekMon)} ? Les alertes de changements seront effacées.`)) return;
+                              defigerSemaine(weekMon);
+                            }}
+                            style={{ padding: "4px 10px", background: C.blue + "22", border: `1px solid ${C.blue}`, borderRadius: 4, color: C.blue, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                            🔓 Défiger S{getWeekNum(weekMon)}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              if (!confirm(`Figer la semaine S${getWeekNum(weekMon)} avec tous ses chargements actuels ? Tout changement futur déclenchera une alerte.`)) return;
+                              figerSemaine(weekMon);
+                            }}
+                            style={{ padding: "4px 10px", background: C.orange + "22", border: `1px solid ${C.orange}`, borderRadius: 4, color: C.orange, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                            🔒 Figer S{getWeekNum(weekMon)}
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             const newDate = prompt(`Nouvelle date de livraison (YYYY-MM-DD) pour ce chargement :`, ch.date);
