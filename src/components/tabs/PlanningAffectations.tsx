@@ -87,6 +87,7 @@ interface CellData {
   extras?: string[]; // tâches supplémentaires ("INTERV: SAV Dupont 2h", "SUPERVISION")
   cmdOps?: Record<string, string[]>; // chantier → liste ops spécifiques (override de ops générales)
   extraOps?: Record<string, string[]>; // extra → liste ops spécifiques
+  livreursByZone?: Record<string, string[]>; // zone → liste noms opérateurs (pour livraisons)
 }
 type AffMap = Record<string, CellData>;
 
@@ -1850,8 +1851,19 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                               {(cell.extras || []).map(ext => {
                                 const isInterv = ext.toLowerCase().includes("interv");
                                 const isSuperv = ext.toLowerCase().includes("superv");
+                                const isLivr = ext.toLowerCase().includes("livraison");
                                 const col = isInterv ? C.red : isSuperv ? C.yellow : C.purple;
-                                const extraSpecificOps = cell.extraOps?.[ext] || [];
+                                // Si c'est une livraison, chercher les livreurs par zone (matching substring)
+                                let livreursFromZone: string[] = [];
+                                if (isLivr && cell.livreursByZone) {
+                                  for (const [zone, ops] of Object.entries(cell.livreursByZone)) {
+                                    if (ext.includes(zone)) {
+                                      livreursFromZone = ops;
+                                      break;
+                                    }
+                                  }
+                                }
+                                const extraSpecificOps = [...(cell.extraOps?.[ext] || []), ...livreursFromZone];
                                 const hasMultiTasks = (cell.extras || []).length + (cell.cmds?.length || 0) > 1;
                                 return (
                                   <div key={ext} style={{ fontSize: 8, padding: "1px 4px", borderRadius: 2, marginBottom: 1, background: col + "22", color: col, fontWeight: 600 }}>

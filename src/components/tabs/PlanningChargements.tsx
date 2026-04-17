@@ -248,46 +248,28 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
       }
       currentAff._livreurs = livreursMap;
 
-      // 3) Pour chaque zone du jour, créer/mettre à jour l'extra livraison
-      // et affecter les livreurs spécifiquement à cet extra (dans extraOps)
+      // 3) Stocker les livreurs par zone directement dans la cellule AUT
       for (const slot of ["am", "pm"]) {
         const cellKey = `AUT|${jIdx}|${slot}`;
         const raw = currentAff[cellKey];
         const existing = Array.isArray(raw) ? { ops: raw, cmds: [], extras: [] } : raw || { ops: [], cmds: [], extras: [] };
-        let extras: string[] = [...(existing.extras || [])];
-        const extraOps: Record<string, string[]> = { ...(existing.extraOps || {}) };
+        const livreursByZone: Record<string, string[]> = { ...(existing.livreursByZone || {}) };
 
         // Pour chaque zone du jour
         for (const [compKey, ids] of Object.entries(livreursMap)) {
           const [dt, zn] = compKey.split("|");
           if (dt !== date) continue;
-
-          // Construire le label comme dans PlanningAffectations (avec les clients du chargement)
-          const charg = chargements.find(ch => ch.date === date && ch.zone === zn && ch.transporteur === "nous");
-          const clients = charg ? charg.items.map(x => x.c.client || "").filter(Boolean) : [];
-          const labelWithClients = `🚚 Livraison ${zn} (${clients.join(", ")})`;
-
-          // Chercher un extra existant pour cette zone (par substring)
-          const matchExtra = extras.find(e => e.toLowerCase().includes("livraison") && e.includes(zn));
-          const extraLabel = matchExtra || labelWithClients;
-
-          // Créer l'extra si pas présent
-          if (!matchExtra) {
-            extras.push(extraLabel);
-          }
-
           const opNamesForZone = ids.map(id => EQUIPE.find(m => m.id === id)?.nom).filter(Boolean) as string[];
           if (opNamesForZone.length > 0) {
-            extraOps[extraLabel] = opNamesForZone;
+            livreursByZone[zn] = opNamesForZone;
           } else {
-            delete extraOps[extraLabel];
+            delete livreursByZone[zn];
           }
         }
 
         currentAff[cellKey] = {
           ...existing,
-          extras,
-          extraOps,
+          livreursByZone,
         };
       }
 
