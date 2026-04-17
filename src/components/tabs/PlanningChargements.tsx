@@ -4,16 +4,25 @@ import { C, CFAM, CommandeCC, TYPES_MENUISERIE, fmtDate, getWeekNum, calcCheminC
 import { H, Bdg } from "@/components/ui";
 
 const ZONE_COLORS: Record<string, string> = {
+  "SIAL":             "#757575",
   "Porto-Vecchio":    "#E53935",
-  "Ajaccio":          "#FB8C00",
   "Balagne":          "#1E88E5",
-  "Bastia Nord":      "#00ACC1",
-  "Sur chantier":     "#43A047",
+  "Ajaccio":          "#FB8C00",
   "Plaine Orientale": "#8E24AA",
   "Continent":        "#6D4C41",
-  "SIAL":             "#757575",
+  "Sur chantier":     "#43A047",
   "Autre":            "#546E7A",
 };
+
+function getZoneColor(zone: string | null | undefined, fallback = "#888"): string {
+  if (!zone) return fallback;
+  if (ZONE_COLORS[zone]) return ZONE_COLORS[zone];
+  const norm = zone.trim().toLowerCase();
+  for (const [k, v] of Object.entries(ZONE_COLORS)) {
+    if (k.toLowerCase() === norm) return v;
+  }
+  return fallback;
+}
 
 const TRANSPORTEURS = [
   { id: "nous",    label: "Par nous-memes",        c: "#42A5F5" },
@@ -194,7 +203,7 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
 
               {dayChargs.map((ch, ci) => {
                 const transp = TRANSPORTEURS.find(t => t.id === ch.transporteur);
-                const zoneCol = ZONE_COLORS[ch.zone] || C.muted;
+                const zoneCol = getZoneColor(ch.zone, C.muted);
                 const transpCol = transp?.c || C.muted;
                 const totalPcs = ch.items.reduce((s, x) => s + (x.c.quantite || 0), 0);
                 const hasRetard = ch.items.some(x => x.cc?.enRetard);

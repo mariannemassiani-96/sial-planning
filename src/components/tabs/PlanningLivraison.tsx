@@ -5,16 +5,27 @@ import { H, Bdg } from "@/components/ui";
 import { openPrintWindow, fmtDatePrint } from "@/lib/print-utils";
 
 const ZONE_COLORS: Record<string, string> = {
-  "Porto-Vecchio":   "#E53935",
-  "Ajaccio":         "#FB8C00",
-  "Balagne":         "#1E88E5",
-  "Bastia Nord":     "#00ACC1",
-  "Sur chantier":    "#43A047",
-  "Plaine Orientale":"#8E24AA",
-  "Continent":       "#6D4C41",
-  "SIAL":            "#757575",
-  "Autre":           "#546E7A",
+  "SIAL":             "#757575",
+  "Porto-Vecchio":    "#E53935",
+  "Balagne":          "#1E88E5",
+  "Ajaccio":          "#FB8C00",
+  "Plaine Orientale": "#8E24AA",
+  "Continent":        "#6D4C41",
+  "Sur chantier":     "#43A047",
+  "Autre":            "#546E7A",
 };
+
+function getZoneColor(zone: string | null | undefined, fallback = "#888"): string {
+  if (!zone) return fallback;
+  // Match exact d'abord
+  if (ZONE_COLORS[zone]) return ZONE_COLORS[zone];
+  // Match case-insensitive ensuite
+  const norm = zone.trim().toLowerCase();
+  for (const [k, v] of Object.entries(ZONE_COLORS)) {
+    if (k.toLowerCase() === norm) return v;
+  }
+  return fallback;
+}
 
 const TRANSPORTEURS = [
   { id: "nous",    label: "Par nous-mêmes",   c: "#42A5F5" },
@@ -239,7 +250,7 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
       ? Math.round((new Date(livSouhaitee).getTime() - Date.now()) / 86400000)
       : null;
     const jc = jr === null ? C.sec : jr < 0 ? C.red : jr < 7 ? C.orange : C.green;
-    const zoneColor = ZONE_COLORS[cmd.zone] || C.sec;
+    const zoneColor = getZoneColor(cmd.zone, C.sec);
     const transp = TRANSPORTEURS.find(t => t.id === cmd.transporteur);
 
     return (
@@ -318,7 +329,7 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
     const rows = periodDelivs.map(x => {
       const { cmd, c, cc, livSouhaitee } = x;
       const tm = TYPES_MENUISERIE[c.type];
-      const zc = ZONE_COLORS[cmd.zone] || "#888";
+      const zc = getZoneColor(cmd.zone);
       const jr = livSouhaitee ? Math.round((new Date(livSouhaitee).getTime()-Date.now())/86400000) : null;
       const retardCol = cc?.critique ? "crit" : cc?.enRetard ? "warn" : "ok";
       const transp = cmd.transporteur || "—";
@@ -459,7 +470,7 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
                   const transpId = grp.items[0].cmd.transporteur;
                   const zoneName = grp.items[0].cmd.zone;
                   const transp = TRANSPORTEURS.find(t => t.id === transpId);
-                  const zoneCol = ZONE_COLORS[zoneName] || C.border;
+                  const zoneCol = getZoneColor(zoneName, C.border);
                   const totalQte = grp.items.reduce((s, x) => s + (x.c.quantite || 0), 0);
 
                   return (
@@ -533,7 +544,7 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
                   const transpId = grp.items[0].cmd.transporteur;
                   const zoneName = grp.items[0].cmd.zone;
                   const transp = TRANSPORTEURS.find(t => t.id === transpId);
-                  const zoneCol = ZONE_COLORS[zoneName] || C.border;
+                  const zoneCol = getZoneColor(zoneName, C.border);
                   const totalQte = grp.items.reduce((s, x) => s + (x.c.quantite || 0), 0);
                   if (grp.items.length === 1 && !transpId) {
                     return <DelivCard key={gi} x={grp.items[0]} draggable />;
@@ -606,7 +617,7 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
                         {delivs.slice(0,3).map((x,i) => {
                           // retardColor unused — zone color used instead
                           const transp = TRANSPORTEURS.find(t => t.id === x.cmd.transporteur);
-                          const zoneCol = ZONE_COLORS[x.cmd.zone] || C.border;
+                          const zoneCol = getZoneColor(x.cmd.zone, C.border);
                           return (
                             <div key={i}
                               draggable
