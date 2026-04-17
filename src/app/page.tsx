@@ -12,6 +12,7 @@ import SaisieCommande from "@/components/tabs/SaisieCommande";
 import PlanningCrise from "@/components/tabs/PlanningCrise";
 import Carnet from "@/components/tabs/Carnet";
 import PlanningLivraison from "@/components/tabs/PlanningLivraison";
+import PlanningChargements from "@/components/tabs/PlanningChargements";
 import Dashboard from "@/components/tabs/Dashboard";
 import PlanningRH from "@/components/tabs/PlanningRH";
 import PlanningIsula from "@/components/tabs/PlanningIsula";
@@ -155,6 +156,7 @@ export default function HomePage() {
     { id: "planning_fab",    l: "📅 Planning" },
     { id: "dashboard",       l: `🏠 Suivi${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
     { id: "livraison",       l: "🚚 Livraisons" },
+    { id: "chargements",     l: "📦 Chargements" },
     { id: "saisie",          l: "➕ Commande" },
     { id: "carnet",          l: `📂 Commandes (${commandes.length})` },
     { id: "rh",              l: "👥 Équipe" },
@@ -265,7 +267,7 @@ export default function HomePage() {
   // Icônes courtes pour mobile bottom nav
   const mobileIcons: Record<string, string> = {
     planning_fab: "📅", carnet: "📂", pointage: "✅", rh: "👥", isula: "🔷",
-    dashboard: "🏠", livraison: "🚚", saisie: "➕", affichage_atelier: "📺",
+    dashboard: "🏠", livraison: "🚚", chargements: "📦", saisie: "➕", affichage_atelier: "📺",
     qualite: "✓", stocks: "📦", referentiel: "📐", import_csv: "📥",
     stats_admin: "📊", admin_users: "⚙",
   };
@@ -371,6 +373,7 @@ export default function HomePage() {
             {ong === "saisie" && <SaisieCommande key={String(cmdEdit?.id || "new")} onAjouter={addCommande} commande={cmdEdit} onModifier={modifCommande} />}
             {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} onEdit={editCommande} onPatch={patchCommande} savedFiltersState={carnetFilters} onFiltersChange={setCarnetFilters} />}
             {ong === "livraison" && <PlanningLivraison commandes={commandes} onPatch={patchCommande} onEdit={editCommande} />}
+            {ong === "chargements" && <PlanningChargements commandes={commandes} onPatch={patchCommande} onEdit={editCommande} />}
 
             {/* Équipe SIAL + Compétences fusionnés */}
             {ong === "rh" && (
