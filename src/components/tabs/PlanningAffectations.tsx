@@ -82,9 +82,10 @@ const POST_MAX_PERS: Record<string, number> = {
 
 // Chaque cellule poste|jour|demi contient : opérateurs + chantiers + tâches extras
 interface CellData {
-  ops: string[];     // noms opérateurs
+  ops: string[];     // noms opérateurs généraux
   cmds: string[];    // "client · chantier"
   extras?: string[]; // tâches supplémentaires ("INTERV: SAV Dupont 2h", "SUPERVISION")
+  cmdOps?: Record<string, string[]>; // chantier → liste ops spécifiques (override de ops générales)
 }
 type AffMap = Record<string, CellData>;
 
@@ -147,6 +148,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   const [dragOp, setDragOp] = useState<string | null>(null);
   const [quickAssignOp, setQuickAssignOp] = useState<{ id: string; nom: string } | null>(null);
   const [quickAssignCmd, setQuickAssignCmd] = useState<{ pid: string; chantier: string; color: string } | null>(null);
+  const [cmdOpPicker, setCmdOpPicker] = useState<{ cellKey: string; chantier: string; color: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState<string | null>(null);
@@ -1768,17 +1770,55 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                                   const ch = (c as any).ref_chantier || (c as any).client;
                                   return ch === cmdLabel;
                                 });
+                                const specificOps = cell.cmdOps?.[cmdLabel] || [];
+                                const hasMultiCmds = cell.cmds.length > 1;
                                 return (
                                   <div key={cmdLabel} style={{
                                     fontSize: 8, padding: "2px 4px", borderRadius: 2, marginBottom: 1,
                                     background: grp.color + "20", borderLeft: `2px solid ${grp.color}`,
-                                    display: "flex", alignItems: "center", justifyContent: "space-between",
                                   }}>
-                                    <span
-                                      onClick={() => { if (matchCmd) setDetailCmd({ chantier: cmdLabel, cmdId: String(matchCmd.id), cmd: matchCmd }); }}
-                                      style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: matchCmd ? "pointer" : "default", textDecoration: matchCmd ? "underline" : "none", textDecorationColor: grp.color + "66" }}
-                                    >{cmdLabel}</span>
-                                    <span onClick={() => toggleCmd(key, cmdLabel)} style={{ cursor: "pointer", fontSize: 7, color: C.muted, marginLeft: 2 }}>✕</span>
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                      <span
+                                        onClick={() => { if (matchCmd) setDetailCmd({ chantier: cmdLabel, cmdId: String(matchCmd.id), cmd: matchCmd }); }}
+                                        style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: matchCmd ? "pointer" : "default", textDecoration: matchCmd ? "underline" : "none", textDecorationColor: grp.color + "66" }}
+                                      >{cmdLabel}</span>
+                                      <span style={{ display: "flex", gap: 2 }}>
+                                        {hasMultiCmds && (
+                                          <span
+                                            onClick={() => setCmdOpPicker({ cellKey: key, chantier: cmdLabel, color: grp.color })}
+                                            title="Affecter un opérateur à ce chantier"
+                                            style={{ cursor: "pointer", fontSize: 8, color: grp.color, padding: "0 2px" }}>👤</span>
+                                        )}
+                                        <span onClick={() => toggleCmd(key, cmdLabel)} style={{ cursor: "pointer", fontSize: 7, color: C.muted }}>✕</span>
+                                      </span>
+                                    </div>
+                                    {/* Ops spécifiques à ce chantier */}
+                                    {specificOps.length > 0 && (
+                                      <div style={{ display: "flex", gap: 2, flexWrap: "wrap", marginTop: 1 }}>
+                                        {specificOps.map(opNom => {
+                                          const op = ops.find(o => o.nom === opNom);
+                                          return (
+                                            <span key={opNom}
+                                              onClick={() => {
+                                                const newAff = { ...aff };
+                                                const c = newAff[key] || { ops: [], cmds: [], extras: [] };
+                                                const cmdOps = { ...(c.cmdOps || {}) };
+                                                cmdOps[cmdLabel] = (cmdOps[cmdLabel] || []).filter(o => o !== opNom);
+                                                if (cmdOps[cmdLabel].length === 0) delete cmdOps[cmdLabel];
+                                                newAff[key] = { ...c, cmdOps };
+                                                saveAff(newAff);
+                                              }}
+                                              style={{
+                                                fontSize: 7, padding: "1px 4px", borderRadius: 2,
+                                                background: OP_COLORS[op?.key || ""] || C.s2,
+                                                color: "#000", fontWeight: 700, cursor: "pointer",
+                                              }}>
+                                              → {opNom} ✕
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -2423,6 +2463,73 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                     ])}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Popup affectation opérateur → chantier spécifique ── */}
+      {cmdOpPicker && (() => {
+        const { cellKey, chantier, color } = cmdOpPicker;
+        const cell = aff[cellKey] || { ops: [], cmds: [], extras: [] };
+        const cellOps = cell.ops; // opérateurs généraux sur cette cellule
+        const specificOps = cell.cmdOps?.[chantier] || [];
+        const toggleCmdOp = (opNom: string) => {
+          const newAff = { ...aff };
+          const c = newAff[cellKey] || { ops: [], cmds: [], extras: [] };
+          const cmdOps = { ...(c.cmdOps || {}) };
+          const cur = cmdOps[chantier] || [];
+          if (cur.includes(opNom)) {
+            cmdOps[chantier] = cur.filter(o => o !== opNom);
+            if (cmdOps[chantier].length === 0) delete cmdOps[chantier];
+          } else {
+            cmdOps[chantier] = [...cur, opNom];
+          }
+          newAff[cellKey] = { ...c, cmdOps };
+          saveAff(newAff);
+        };
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+               onClick={() => setCmdOpPicker(null)}>
+            <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, maxWidth: 420, width: "100%", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}
+                 onClick={e => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color }}>👤 Affecter au chantier</div>
+                  <div style={{ fontSize: 11, color: C.sec, marginTop: 2 }}>{chantier}</div>
+                </div>
+                <button onClick={() => setCmdOpPicker(null)} style={{ padding: "6px 14px", background: C.orange, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                  Fermer
+                </button>
+              </div>
+              <div style={{ fontSize: 10, color: C.muted, marginBottom: 8 }}>
+                Cochez les opérateurs qui travaillent sur CE chantier spécifiquement. Les autres opérateurs de la cellule travaillent sur les autres chantiers.
+              </div>
+              {cellOps.length === 0 && (
+                <div style={{ fontSize: 10, color: C.red, marginBottom: 8, padding: "6px 10px", background: C.red + "15", borderRadius: 4 }}>
+                  ⚠ Aucun opérateur n&apos;est encore affecté à cette cellule. Ajoutez-en d&apos;abord dans la cellule.
+                </div>
+              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {cellOps.map(opNom => {
+                  const op = ops.find(o => o.nom === opNom);
+                  const assigned = specificOps.includes(opNom);
+                  return (
+                    <button key={opNom}
+                      onClick={() => toggleCmdOp(opNom)}
+                      style={{
+                        padding: "8px 12px", borderRadius: 4, border: `2px solid ${assigned ? (OP_COLORS[op?.key || ""] || color) : C.border}`,
+                        background: assigned ? (OP_COLORS[op?.key || ""] || color) + "22" : C.bg,
+                        color: assigned ? (OP_COLORS[op?.key || ""] || color) : C.text,
+                        fontSize: 12, fontWeight: assigned ? 700 : 500, cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                      }}>
+                      <span>{opNom}</span>
+                      <span style={{ fontSize: 14 }}>{assigned ? "✓" : "○"}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
