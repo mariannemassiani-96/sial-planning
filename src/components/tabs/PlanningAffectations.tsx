@@ -128,6 +128,11 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   // Popup détail chantier
   const [detailCmd, setDetailCmd] = useState<{ chantier: string; cmdId: string; cmd: any } | null>(null);
   const [showOccupation, setShowOccupation] = useState(false);
+  const [transposed, setTransposed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try { return localStorage.getItem("sial_aff_transposed") === "1"; } catch { return false; }
+  });
+  useEffect(() => { try { localStorage.setItem("sial_aff_transposed", transposed ? "1" : "0"); } catch {} }, [transposed]);
   const [cmdOverrides, setCmdOverrides] = useState<Record<string, number>>({});
   // Overrides par commande pour recalcul postWork : { cmdId: { "C3": 1200 } }
   const [allCmdOverrides, setAllCmdOverrides] = useState<Record<string, Record<string, number>>>({});
@@ -1159,6 +1164,9 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           <button onClick={() => { const d = new Date(); const day = d.getDay(); d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); onWeekChange(localStr(d)); }} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, padding: "6px 10px", cursor: "pointer", fontSize: 11 }}>Auj.</button>
           <button onClick={() => { const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() + 7); onWeekChange(localStr(d)); }} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, padding: "6px 12px", cursor: "pointer", fontSize: 14 }}>→</button>
           <div style={{ fontSize: 16, fontWeight: 800 }}>Affectations {weekId(viewWeek)}</div>
+          <button onClick={() => setTransposed(p => !p)} style={{ marginLeft: "auto", background: transposed ? C.orange + "22" : C.s2, border: `1px solid ${transposed ? C.orange : C.border}`, borderRadius: 4, color: transposed ? C.orange : C.sec, padding: "6px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+            ⇄ {transposed ? "Vue : Jours × Postes" : "Vue : Postes × Jours"}
+          </button>
         </div>
       )}
 
@@ -1458,6 +1466,157 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       })()}
 
       {/* ── Grille ── */}
+      {(() => {
+        // Rendu d'une cellule (commun aux deux vues)
+        const renderCell = (pid: string, jIdx: number, demi: string, grp: typeof activePosts[0]) => {
+          const key = ck(pid, jIdx, demi);
+          const cell = affWithAuto[key] || { ops: [], cmds: [] };
+          const hasContent = cell.ops.length > 0 || cell.cmds.length > 0;
+          const isTarget = dropTarget === key;
+          return (
+            <td key={`${pid}_${jIdx}_${demi}`}
+              onDragOver={(e) => { e.preventDefault(); setDropTarget(key); }}
+              onDragLeave={() => { if (dropTarget === key) setDropTarget(null); }}
+              onDrop={(ev) => onDrop(key, ev)}
+              style={{
+                padding: "3px 3px",
+                border: `1px solid ${isTarget ? C.orange : jIdx === todayIdx ? C.orange + "44" : C.border}`,
+                background: isTarget ? grp.color + "18" : hasContent ? grp.color + "08" : C.bg,
+                verticalAlign: "top",
+                minWidth: 75,
+              }}
+            >
+              {cell.cmds.length > 0 && (
+                <div style={{ marginBottom: 2 }}>
+                  {cell.cmds.map(cmdLabel => {
+                    const matchCmd = commandes.find(c => {
+                      const ch = (c as any).ref_chantier || (c as any).client;
+                      return ch === cmdLabel;
+                    });
+                    return (
+                      <div key={cmdLabel} style={{
+                        fontSize: 8, padding: "2px 4px", borderRadius: 2, marginBottom: 1,
+                        background: grp.color + "20", borderLeft: `2px solid ${grp.color}`,
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                      }}>
+                        <span
+                          onClick={() => { if (matchCmd) setDetailCmd({ chantier: cmdLabel, cmdId: String(matchCmd.id), cmd: matchCmd }); }}
+                          style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: matchCmd ? "pointer" : "default", textDecoration: matchCmd ? "underline" : "none", textDecorationColor: grp.color + "66" }}
+                        >{cmdLabel}</span>
+                        <span onClick={() => toggleCmd(key, cmdLabel)} style={{ cursor: "pointer", fontSize: 7, color: C.muted, marginLeft: 2 }}>✕</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {cell.ops.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                  {cell.ops.map(opNom => {
+                    const op = ops.find(o => o.nom === opNom);
+                    return (
+                      <div key={opNom} style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        padding: "1px 4px", borderRadius: 3,
+                        background: OP_COLORS[op?.key || ""] || C.s2,
+                        color: "#000", fontSize: 8, fontWeight: 700,
+                      }}>
+                        {opNom}
+                        <span onClick={() => removeOp(key, opNom)} style={{ cursor: "pointer", marginLeft: 2, fontSize: 7, opacity: 0.6 }}>✕</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {(cell.extras || []).length > 0 && (
+                <div style={{ marginTop: 2 }}>
+                  {(cell.extras || []).map(ext => {
+                    const isInterv = ext.toLowerCase().includes("interv");
+                    const isSuperv = ext.toLowerCase().includes("superv");
+                    const col = isInterv ? C.red : isSuperv ? C.yellow : C.purple;
+                    return (
+                      <div key={ext} style={{ fontSize: 8, padding: "1px 4px", borderRadius: 2, marginBottom: 1, background: col + "22", color: col, fontWeight: 600, display: "flex", justifyContent: "space-between" }}>
+                        <span>{isInterv ? "🔧" : isSuperv ? "👁" : "📋"} {ext}</span>
+                        <span onClick={() => toggleExtra(key, ext)} style={{ cursor: "pointer", opacity: 0.6 }}>✕</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {!hasContent && (
+                <div style={{ color: C.muted, textAlign: "center", padding: "4px 0", fontSize: 9 }}>
+                  {isTarget ? "▼" : "+"}
+                </div>
+              )}
+            </td>
+          );
+        };
+
+        if (transposed) {
+          // ── Vue inversée : jours en lignes, postes en colonnes ──
+          const allVisiblePostGroups = activePosts.flatMap(grp =>
+            grp.visiblePosts.map(pid => ({ pid, grp }))
+          );
+          return (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                <thead>
+                  <tr>
+                    <th style={{ padding: "6px 8px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 80 }}>JOUR</th>
+                    <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 50 }}>% CVT</th>
+                    {allVisiblePostGroups.map(({ pid, grp }) => (
+                      <th key={pid} style={{
+                        padding: "4px 4px", background: grp.color + "18",
+                        border: `1px solid ${grp.color}66`,
+                        textAlign: "center", fontSize: 9, color: grp.color, minWidth: 80,
+                      }}>
+                        <div style={{ fontWeight: 800 }}>{pid}</div>
+                        <div style={{ fontSize: 8, fontWeight: 400, color: C.muted }}>{POST_LABELS[pid]}</div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {JOURS.flatMap((j, jIdx) => ["am", "pm"].map(demi => {
+                    // Calcul du % de couverture pour cette demi-journée
+                    let workSlots = 0;
+                    let opsSlots = 0;
+                    for (const [key, cell] of Object.entries(aff)) {
+                      const parts = key.split("|");
+                      if (parseInt(parts[1]) !== jIdx || parts[2] !== demi) continue;
+                      if (!cell) continue;
+                      const hasWork = (cell.cmds?.length || 0) > 0 || (cell.extras?.length || 0) > 0;
+                      const hasOps = (cell.ops?.length || 0) > 0;
+                      if (hasWork) workSlots++;
+                      if (hasWork && hasOps) opsSlots++;
+                    }
+                    const pct = workSlots > 0 ? Math.round(opsSlots / workSlots * 100) : 0;
+                    const hasWork = workSlots > 0;
+                    const pctCol = !hasWork ? C.muted : pct >= 100 ? C.green : pct >= 50 ? C.orange : C.red;
+
+                    return (
+                      <tr key={`${j}-${demi}`} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "5px 8px", background: jIdx === todayIdx ? C.orange + "15" : C.s1, border: `1px solid ${jIdx === todayIdx ? C.orange : C.border}`, fontSize: 10, fontWeight: 700, color: jIdx === todayIdx ? C.orange : C.text, textAlign: "center", verticalAlign: "middle" }}>
+                          {j}
+                          <div style={{ fontSize: 9, color: C.sec, fontWeight: 400 }}>{demi.toUpperCase()}</div>
+                        </td>
+                        <td style={{ padding: "3px 2px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", verticalAlign: "middle" }}>
+                          {hasWork ? (
+                            <span style={{ fontSize: 11, fontWeight: 800, color: pctCol }}>{pct}%</span>
+                          ) : (
+                            <span style={{ fontSize: 9, color: C.muted }}>—</span>
+                          )}
+                        </td>
+                        {allVisiblePostGroups.map(({ pid, grp }) => renderCell(pid, jIdx, demi, grp))}
+                      </tr>
+                    );
+                  }))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+
+        return (
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
           <thead>
@@ -1651,6 +1810,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           </tbody>
         </table>
       </div>
+        );
+      })()}
 
       {/* ── Tâches prédéfinies + personnalisées ── */}
       <div style={{ background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px", marginTop: 12 }}>
@@ -2310,7 +2471,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 <button onClick={toggleAll} style={{ padding: "4px 6px", background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, fontSize: 9, fontWeight: 700, cursor: "pointer" }}>
                   Tout / rien
                 </button>
-                {JOURS.map((j, jIdx) => ["AM", "PM"].map(demi => (
+                {JOURS.map(j => ["AM", "PM"].map(demi => (
                   <div key={`${j}${demi}`} style={{ textAlign: "center", fontSize: 10, color: C.sec, fontWeight: 700 }}>
                     {j}<br /><span style={{ fontSize: 9 }}>{demi}</span>
                   </div>
