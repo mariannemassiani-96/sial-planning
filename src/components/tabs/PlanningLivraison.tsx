@@ -88,14 +88,6 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
     setQuickAction(null);
   };
 
-  const decaler = () => {
-    if (!quickAction || !quickNewDate) return;
-    onPatch(quickAction.cmdId, {
-      ...quickPatchBase(),
-      date_livraison_souhaitee: quickNewDate,
-    });
-    setQuickAction(null);
-  };
 
   // Enriched commandes
   const enriched = useMemo(() =>
@@ -697,13 +689,30 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
               </div>
             </div>
 
-            {/* Boutons actions */}
+            {/* Bouton Enregistrer (change transporteur/zone/date sans changer statut) */}
+            <button onClick={() => {
+              if (!quickAction) return;
+              const updates: Record<string, unknown> = { ...quickPatchBase() };
+              if (quickNewDate && quickNewDate !== quickAction.livDate) {
+                updates.date_livraison_souhaitee = quickNewDate;
+              }
+              if (Object.keys(updates).length === 0) { setQuickAction(null); return; }
+              onPatch(quickAction.cmdId, updates);
+              setQuickAction(null);
+            }} style={{
+              width: "100%", padding: "10px 0", background: C.orange, border: "none", borderRadius: 6,
+              color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 8,
+            }}>
+              💾 Enregistrer
+            </button>
+
+            {/* Actions statut */}
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <button onClick={markLivree} style={{
                 flex: 1, padding: "10px 0", background: C.green, border: "none", borderRadius: 6,
-                color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer",
+                color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer",
               }}>
-                Livree
+                ✓ Livrée
               </button>
               <button onClick={() => {
                 if (!quickAction) return;
@@ -716,18 +725,10 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
                 setQuickAction(null);
               }} style={{
                 flex: 1, padding: "10px 0", background: C.orange + "22", border: `1px solid ${C.orange}`,
-                borderRadius: 6, color: C.orange, fontWeight: 700, fontSize: 13, cursor: "pointer",
+                borderRadius: 6, color: C.orange, fontWeight: 700, fontSize: 12, cursor: "pointer",
               }}>
                 Partielle
               </button>
-              {quickNewDate && quickNewDate !== quickAction.livDate && (
-                <button onClick={decaler} style={{
-                  flex: 1, padding: "10px 0", background: C.blue + "22", border: `1px solid ${C.blue}`,
-                  borderRadius: 6, color: C.blue, fontWeight: 700, fontSize: 13, cursor: "pointer",
-                }}>
-                  Decaler
-                </button>
-              )}
             </div>
 
             {/* Lien modifier */}
