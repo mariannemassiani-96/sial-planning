@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { signOut } from "next-auth/react";
 import { C, STOCKS_DEF, calcCheminCritique, CommandeCC } from "@/lib/sial-data";
@@ -50,15 +50,14 @@ function SubTabs({ tabs, active, onChange }: { tabs: { id: string; l: string }[]
 export default function HomePage() {
   const { data: session, status } = useSession();
 
-  // Lire localStorage une seule fois pour les valeurs initiales
-  const savedNav = useRef<{ tab?: string; psub?: string; week?: string } | null>(null);
-  if (savedNav.current === null && typeof window !== "undefined") {
+  // Lire localStorage synchrone avant useState (pour éviter mismatch hydratation)
+  const initNav = (() => {
+    if (typeof window === "undefined") return {} as { tab?: string; psub?: string; week?: string };
     try {
       const raw = localStorage.getItem("sial_nav");
-      savedNav.current = raw ? JSON.parse(raw) : {};
-    } catch { savedNav.current = {}; }
-  }
-  const initNav = savedNav.current || {};
+      return raw ? (JSON.parse(raw) as { tab?: string; psub?: string; week?: string }) : {};
+    } catch { return {} as { tab?: string; psub?: string; week?: string }; }
+  })();
 
   const defaultWeek = (() => {
     const d = new Date(); const day = d.getDay();
@@ -66,6 +65,7 @@ export default function HomePage() {
     d.setDate(d.getDate() + diff); d.setHours(0,0,0,0);
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   })();
+
 
   const [ong, setOng] = useState(initNav.tab || "planning_fab");
   const [commandes, setCommandes] = useState<CommandeCC[]>([]);

@@ -1,14 +1,14 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { C, CFAM, CommandeCC, TYPES_MENUISERIE, fmtDate, getWeekNum, calcCheminCritique, ZONES } from "@/lib/sial-data";
 import { H, Bdg } from "@/components/ui";
 
 const ZONE_COLORS: Record<string, string> = {
-  "SIAL":             "#FDD835", // Jaune
+  "SIAL":             "#EC407A", // Rose
   "Porto-Vecchio":    "#FB8C00", // Orange
   "Ajaccio":          "#1E88E5", // Bleu
   "Bastia":           "#E53935", // Rouge
-  "Balagne":          "#00BCD4", // Turquoise
+  "Balagne":          "#FDD835", // Jaune
   "Plaine Orientale": "#8E24AA", // Violet
   "Continent":        "#43A047", // Vert
   "Sur chantier":     "#6D4C41", // Marron
@@ -57,7 +57,12 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
   onEdit?: (cmd: CommandeCC) => void;
 }) {
   const today = localStr(new Date());
-  const [monday, setMonday] = useState(localStr(getMondayOf(new Date())));
+  const [monday, setMonday] = useState(() => {
+    const def = localStr(getMondayOf(new Date()));
+    if (typeof window === "undefined") return def;
+    try { return localStorage.getItem("sial_chargements_monday") || def; } catch { return def; }
+  });
+  useEffect(() => { try { localStorage.setItem("sial_chargements_monday", monday); } catch {} }, [monday]);
   const [filterTransp, setFilterTransp] = useState("");
   const [filterZone, setFilterZone] = useState("");
 

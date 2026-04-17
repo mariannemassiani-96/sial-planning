@@ -1,15 +1,15 @@
 "use client";
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { calcCheminCritique, C, CFAM, fmtDate, CommandeCC, TYPES_MENUISERIE, ZONES, JOURS_FERIES, isWorkday, getWeekNum } from "@/lib/sial-data";
 import { H, Bdg } from "@/components/ui";
 import { openPrintWindow, fmtDatePrint } from "@/lib/print-utils";
 
 const ZONE_COLORS: Record<string, string> = {
-  "SIAL":             "#FDD835", // Jaune
+  "SIAL":             "#EC407A", // Rose
   "Porto-Vecchio":    "#FB8C00", // Orange
   "Ajaccio":          "#1E88E5", // Bleu
   "Bastia":           "#E53935", // Rouge
-  "Balagne":          "#00BCD4", // Turquoise
+  "Balagne":          "#FDD835", // Jaune
   "Plaine Orientale": "#8E24AA", // Violet
   "Continent":        "#43A047", // Vert
   "Sur chantier":     "#6D4C41", // Marron
@@ -66,7 +66,11 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
 }) {
   const today = localStr(new Date());
   const [view,        setView]        = useState<ViewMode>("semaine");
-  const [anchor,      setAnchor]      = useState(today);
+  const [anchor,      setAnchor]      = useState(() => {
+    if (typeof window === "undefined") return today;
+    try { return localStorage.getItem("sial_livraison_anchor") || today; } catch { return today; }
+  });
+  useEffect(() => { try { localStorage.setItem("sial_livraison_anchor", anchor); } catch {} }, [anchor]);
   const [zone,        setZone]        = useState("toutes");
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
   const dragRef = useRef<{ id: string; fromDay: string } | null>(null);
