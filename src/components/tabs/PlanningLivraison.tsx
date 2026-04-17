@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo, useRef } from "react";
-import { calcCheminCritique, C, CFAM, fmtDate, CommandeCC, TYPES_MENUISERIE, ZONES, JOURS_FERIES, isWorkday } from "@/lib/sial-data";
+import { calcCheminCritique, C, CFAM, fmtDate, CommandeCC, TYPES_MENUISERIE, ZONES, JOURS_FERIES, isWorkday, getWeekNum } from "@/lib/sial-data";
 import { H, Bdg } from "@/components/ui";
 import { openPrintWindow, fmtDatePrint } from "@/lib/print-utils";
 
@@ -58,6 +58,44 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
   const [zone,        setZone]        = useState("toutes");
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
   const dragRef = useRef<{ id: string; fromDay: string } | null>(null);
+  const [quickAction, setQuickAction] = useState<{ cmdId: string; client: string; chantier: string; livDate: string; transporteur: string; zone: string } | null>(null);
+  const [quickNewDate, setQuickNewDate] = useState("");
+  const [quickTransporteur, setQuickTransporteur] = useState("");
+  const [quickZone, setQuickZone] = useState("");
+
+  // ── Quick Action popup : Livrée / Décaler ──
+  const openQuickAction = (cmd: any, livDate: string) => {
+    setQuickAction({ cmdId: String(cmd.id), client: cmd.client || "", chantier: cmd.ref_chantier || "", livDate, transporteur: cmd.transporteur || "", zone: cmd.zone || "" });
+    setQuickNewDate(livDate);
+    setQuickTransporteur(cmd.transporteur || "");
+    setQuickZone(cmd.zone || "");
+  };
+
+  const quickPatchBase = () => {
+    const updates: Record<string, unknown> = {};
+    if (quickTransporteur !== quickAction?.transporteur) updates.transporteur = quickTransporteur || null;
+    if (quickZone !== quickAction?.zone) updates.zone = quickZone || null;
+    return updates;
+  };
+
+  const markLivree = () => {
+    if (!quickAction) return;
+    onPatch(quickAction.cmdId, {
+      ...quickPatchBase(),
+      statut: "livre",
+      date_livraison_souhaitee: quickNewDate || quickAction.livDate,
+    });
+    setQuickAction(null);
+  };
+
+  const decaler = () => {
+    if (!quickAction || !quickNewDate) return;
+    onPatch(quickAction.cmdId, {
+      ...quickPatchBase(),
+      date_livraison_souhaitee: quickNewDate,
+    });
+    setQuickAction(null);
+  };
 
   // Enriched commandes
   const enriched = useMemo(() =>
@@ -203,11 +241,12 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
         draggable={isDraggable}
         onDragStart={isDraggable ? handleDragStart(String(c.id), livSouhaitee) : undefined}
         onDragEnd={isDraggable ? handleDragEnd : undefined}
+        onClick={() => openQuickAction(cmd, livSouhaitee)}
         onDoubleClick={() => onEdit?.(x.c)}
         style={{
           marginBottom:6, padding:"8px 10px", background:C.bg, borderRadius:5,
           border:`1px solid ${zoneColor}44`, borderLeft:`4px solid ${zoneColor}`,
-          cursor: onEdit ? "pointer" : isDraggable ? "grab" : "default",
+          cursor: "pointer",
         }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
           <div style={{ flex:1, minWidth:0 }}>
@@ -547,6 +586,95 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
               if (monthDelivs.length === 0) return <div style={{ fontSize:12, color:C.muted }}>Aucune livraison ce mois</div>;
               return monthDelivs.map((x,i) => <DelivCard key={i} x={x} showDate draggable />);
             })()}
+          </div>
+        </div>
+      )}
+      {/* ── Popup rapide livraison ── */}
+      {quickAction && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => setQuickAction(null)}>
+          <div style={{ background: C.s1, borderRadius: 12, padding: 20, width: 360, maxWidth: "90vw", border: `1px solid ${C.border}` }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>
+              {quickAction.client}
+            </div>
+            {quickAction.chantier && <div style={{ fontSize: 11, color: C.teal, marginBottom: 8 }}>{quickAction.chantier}</div>}
+            <div style={{ fontSize: 10, color: C.sec, marginBottom: 12 }}>
+              Livraison prévue : <b>{fmtDate(quickAction.livDate)}</b> (S{getWeekNum(quickAction.livDate)})
+            </div>
+
+            {/* Date */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 4 }}>Date de livraison</label>
+              <input type="date" value={quickNewDate} onChange={e => setQuickNewDate(e.target.value)}
+                style={{ width: "100%", padding: "8px 10px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, color: C.text, fontSize: 13 }} />
+              {quickNewDate && quickNewDate !== quickAction.livDate && (
+                <div style={{ fontSize: 10, color: C.orange, marginTop: 4 }}>
+                  Nouvelle date : S{getWeekNum(quickNewDate)} — {fmtDate(quickNewDate)}
+                </div>
+              )}
+            </div>
+
+            {/* Transporteur + Zone */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 4 }}>Transporteur</label>
+                <select value={quickTransporteur} onChange={e => setQuickTransporteur(e.target.value)}
+                  style={{ width: "100%", padding: "8px 10px", background: C.bg, border: `1px solid ${quickTransporteur ? C.blue : C.border}`, borderRadius: 6, color: C.text, fontSize: 12 }}>
+                  <option value="">— Non defini —</option>
+                  {TRANSPORTEURS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                </select>
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 4 }}>Zone</label>
+                <select value={quickZone} onChange={e => setQuickZone(e.target.value)}
+                  style={{ width: "100%", padding: "8px 10px", background: C.bg, border: `1px solid ${quickZone ? C.teal : C.border}`, borderRadius: 6, color: C.text, fontSize: 12 }}>
+                  <option value="">— Zone —</option>
+                  {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Boutons actions */}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button onClick={markLivree} style={{
+                flex: 1, padding: "10px 0", background: C.green, border: "none", borderRadius: 6,
+                color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer",
+              }}>
+                Livree
+              </button>
+              <button onClick={() => {
+                if (!quickAction) return;
+                const dateUsed = quickNewDate || quickAction.livDate;
+                onPatch(quickAction.cmdId, {
+                  ...quickPatchBase(),
+                  statut: "en_cours",
+                  notes: ((commandes.find(c => String(c.id) === quickAction.cmdId) as any)?.notes || "") + `\n[Livraison partielle le ${fmtDate(dateUsed)}]`,
+                });
+                setQuickAction(null);
+              }} style={{
+                flex: 1, padding: "10px 0", background: C.orange + "22", border: `1px solid ${C.orange}`,
+                borderRadius: 6, color: C.orange, fontWeight: 700, fontSize: 13, cursor: "pointer",
+              }}>
+                Partielle
+              </button>
+              {quickNewDate && quickNewDate !== quickAction.livDate && (
+                <button onClick={decaler} style={{
+                  flex: 1, padding: "10px 0", background: C.blue + "22", border: `1px solid ${C.blue}`,
+                  borderRadius: 6, color: C.blue, fontWeight: 700, fontSize: 13, cursor: "pointer",
+                }}>
+                  Decaler
+                </button>
+              )}
+            </div>
+
+            {/* Lien modifier */}
+            <div style={{ textAlign: "center", marginTop: 10 }}>
+              <button onClick={() => { setQuickAction(null); onEdit?.(commandes.find(c => String(c.id) === quickAction.cmdId)!); }}
+                style={{ background: "none", border: "none", color: C.sec, fontSize: 10, cursor: "pointer", textDecoration: "underline" }}>
+                Modifier la commande
+              </button>
+            </div>
           </div>
         </div>
       )}
