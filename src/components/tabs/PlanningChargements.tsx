@@ -119,7 +119,6 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
   }, [chargements, weekDays]);
 
   const btn = { padding: "5px 10px", background: C.s1, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 };
-  const btnActive = (color: string) => ({ ...btn, background: color + "22", border: `1px solid ${color}`, color, fontWeight: 700 as any });
 
   return (
     <div>

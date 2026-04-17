@@ -468,7 +468,6 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
                   const zoneName = grp.items[0].cmd.zone;
                   const transp = TRANSPORTEURS.find(t => t.id === transpId);
                   const zoneCol = ZONE_COLORS[zoneName] || C.border;
-                  const chargementKey = `${transpId || "?"}|${zoneName || "?"}`;
                   const totalQte = grp.items.reduce((s, x) => s + (x.c.quantite || 0), 0);
 
                   return (
