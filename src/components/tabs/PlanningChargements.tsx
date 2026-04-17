@@ -71,6 +71,11 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
   const [livreurs, setLivreurs] = useState<Record<string, string[]>>({});
   const livreursKey = (date: string, zone: string) => `livreurs_${date}_${zone.replace(/\s+/g, "_")}`;
 
+  // ── Nom du poseur (transporteur = "poseur") ──
+  // Stocké via PlanningPoste : clé = "poseur_{date}_{zoneSlug}" → { name: string }
+  const [poseurs, setPoseurs] = useState<Record<string, string>>({});
+  const poseurKey = (date: string, zone: string) => `poseur_${date}_${zone.replace(/\s+/g, "_")}`;
+
   // ── Gel des semaines : snapshot figé par semaine ──
   // Structure stockée : { [semaineLundi]: { [transpId]: [ { date, zone, cmdIds[] } ] } }
   interface FrozenItem { date: string; zone: string; cmdIds: string[] }
@@ -161,6 +166,37 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
       setLivreurs(map);
     });
   }, [chargements]);
+
+  // ── Charger les noms de poseurs ──
+  useEffect(() => {
+    const poseurChargs = chargements.filter(ch => ch.transporteur === "poseur");
+    if (poseurChargs.length === 0) return;
+    const keys = poseurChargs.map(ch => poseurKey(ch.date, ch.zone));
+    Promise.all(keys.map(k =>
+      fetch(`/api/planning-poste?semaine=${encodeURIComponent(k)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => ({ k, data }))
+        .catch(() => ({ k, data: null }))
+    )).then(results => {
+      const map: Record<string, string> = {};
+      for (const { k, data } of results) {
+        if (data && typeof (data as any).name === "string") map[k] = (data as any).name;
+      }
+      setPoseurs(map);
+    });
+  }, [chargements]);
+
+  const savePoseur = async (date: string, zone: string, name: string) => {
+    const k = poseurKey(date, zone);
+    setPoseurs(prev => ({ ...prev, [k]: name }));
+    try {
+      await fetch(`/api/planning-poste?semaine=${encodeURIComponent(k)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+    } catch {}
+  };
 
   // ── Sauvegarder la liste des livreurs pour un chargement ──
   const saveLivreurs = async (date: string, zone: string, ops: string[]) => {
@@ -595,6 +631,36 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
                         </button>
                       </div>
                     </div>
+
+                    {/* Poseur (seulement si transporteur = poseur) */}
+                    {ch.transporteur === "poseur" && (() => {
+                      const k = poseurKey(ch.date, ch.zone);
+                      const current = poseurs[k] || "";
+                      return (
+                        <div style={{ marginBottom: 8, padding: "6px 10px", background: C.bg, borderRadius: 4, border: `1px solid ${C.purple}44` }}>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: C.purple, letterSpacing: "0.05em" }}>
+                              👤 POSEUR :
+                            </span>
+                            <input
+                              defaultValue={current}
+                              placeholder="Nom du poseur..."
+                              onBlur={e => {
+                                const v = e.target.value.trim();
+                                if (v !== current) savePoseur(ch.date, ch.zone, v);
+                              }}
+                              onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                              style={{
+                                flex: 1, minWidth: 200, padding: "4px 10px", fontSize: 12,
+                                background: C.s2, border: `1px solid ${current ? C.purple : C.border}`,
+                                borderRadius: 4, color: current ? C.purple : C.text,
+                                fontWeight: current ? 700 : 400, outline: "none",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Livreurs (seulement si transporteur = nous) */}
                     {ch.transporteur === "nous" && (() => {
