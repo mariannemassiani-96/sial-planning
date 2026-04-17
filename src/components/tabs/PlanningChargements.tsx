@@ -148,20 +148,30 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
     return Array.from(byKey.values()).sort((a, b) => a.date.localeCompare(b.date));
   }, [commandes, horizonDays, filterZone]);
 
-  // ── Charger les livreurs pour tous les chargements "nous" ──
+  // ── Charger les livreurs depuis les affectations de toutes les semaines visibles ──
   useEffect(() => {
-    const nousChargs = chargements.filter(ch => ch.transporteur === "nous");
-    if (nousChargs.length === 0) return;
-    const keys = nousChargs.map(ch => livreursKey(ch.date, ch.zone));
-    Promise.all(keys.map(k =>
-      fetch(`/api/planning-poste?semaine=${encodeURIComponent(k)}`)
+    const weeks = new Set<string>();
+    for (const ch of chargements) {
+      if (ch.transporteur !== "nous") continue;
+      weeks.add(localStr(getMondayOf(new Date(ch.date + "T12:00:00"))));
+    }
+    if (weeks.size === 0) return;
+    Promise.all(Array.from(weeks).map(wm =>
+      fetch(`/api/planning/affectations?semaine=${wm}`)
         .then(r => r.ok ? r.json() : null)
-        .then(data => ({ k, data }))
-        .catch(() => ({ k, data: null }))
+        .then(data => ({ wm, data }))
+        .catch(() => ({ wm, data: null }))
     )).then(results => {
       const map: Record<string, string[]> = {};
-      for (const { k, data } of results) {
-        if (data && Array.isArray((data as any).ops)) map[k] = (data as any).ops;
+      for (const { data } of results) {
+        const lvMap = (data && (data as any)._livreurs) as Record<string, string[]> | undefined;
+        if (lvMap) {
+          for (const [compKey, opIds] of Object.entries(lvMap)) {
+            const [date, zone] = compKey.split("|");
+            if (!date || !zone) continue;
+            map[livreursKey(date, zone)] = opIds;
+          }
+        }
       }
       setLivreurs(map);
     });
@@ -206,42 +216,47 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
     const k = livreursKey(date, zone);
     setLivreurs(prev => ({ ...prev, [k]: opIds }));
     setSyncStatus({ msg: "Synchro en cours...", ok: true });
+
+    // Calcul semaine + jIdx avant tout
+    const d = new Date(date + "T12:00:00");
+    const weekMon = localStr(getMondayOf(d));
+    const dow = d.getDay();
+    const jIdx = dow === 0 ? -1 : dow === 6 ? -1 : dow - 1;
+    if (jIdx < 0 || jIdx > 4) {
+      setSyncStatus({ msg: "✓ Livreurs enregistrés (weekend non synchro)", ok: true });
+      setTimeout(() => setSyncStatus(null), 3000);
+      return;
+    }
+
+    const opNames = opIds.map(id => EQUIPE.find(m => m.id === id)?.nom).filter(Boolean) as string[];
+
     try {
-      const r1 = await fetch(`/api/planning-poste?semaine=${encodeURIComponent(k)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ops: opIds }),
-      });
-      if (!r1.ok) throw new Error(`livreurs save failed: ${r1.status}`);
-
-      // ── Synchroniser avec le planning des affectations ──
-      const d = new Date(date + "T12:00:00");
-      const weekMon = localStr(getMondayOf(d));
-      const dow = d.getDay();
-      const jIdx = dow === 0 ? -1 : dow === 6 ? -1 : dow - 1;
-      if (jIdx < 0 || jIdx > 4) {
-        setSyncStatus({ msg: "✓ Livreurs enregistrés (weekend non synchro)", ok: true });
-        setTimeout(() => setSyncStatus(null), 3000);
-        return;
-      }
-
-      const opNames = opIds.map(id => EQUIPE.find(m => m.id === id)?.nom).filter(Boolean) as string[];
+      // 1) Charger l'affectation actuelle de la semaine
       const res = await fetch(`/api/planning/affectations?semaine=${weekMon}`);
-      if (!res.ok) throw new Error(`get affectations failed: ${res.status}`);
-      const currentAff: Record<string, any> = await res.json().catch(() => ({})) || {};
+      if (!res.ok) throw new Error(`GET affectations ${res.status}`);
+      const currentAff: Record<string, any> = (await res.json().catch(() => ({}))) || {};
 
-      // Aggréger tous les livreurs du jour (toutes zones)
-      const allLivreursForDay = new Set<string>(opNames);
-      for (const [lk, lops] of Object.entries(livreurs)) {
-        if (lk === k) continue;
-        if (!lk.startsWith(`livreurs_${date}_`)) continue;
-        for (const oid of lops) {
+      // 2) Stocker les livreurs dans une clé spéciale de l'affectation (pas besoin d'API séparée)
+      const livreursMap = (currentAff._livreurs as Record<string, string[]>) || {};
+      if (opIds.length > 0) {
+        livreursMap[`${date}|${zone}`] = opIds;
+      } else {
+        delete livreursMap[`${date}|${zone}`];
+      }
+      currentAff._livreurs = livreursMap;
+
+      // 3) Aggréger tous les livreurs du jour (toutes zones)
+      const allLivreursForDay = new Set<string>();
+      for (const [key, ids] of Object.entries(livreursMap)) {
+        const [dt] = key.split("|");
+        if (dt !== date) continue;
+        for (const oid of ids) {
           const nm = EQUIPE.find(m => m.id === oid)?.nom;
           if (nm) allLivreursForDay.add(nm);
         }
       }
 
-      // Migrer le format si nécessaire (Array → Object)
+      // 4) Remplacer les ops dans LIVR|jIdx|am et |pm
       for (const slot of ["am", "pm"]) {
         const cellKey = `LIVR|${jIdx}|${slot}`;
         const raw = currentAff[cellKey];
@@ -252,12 +267,16 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
         };
       }
 
+      // 5) Sauvegarder
       const r2 = await fetch("/api/planning/affectations", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ semaine: weekMon, affectations: currentAff }),
       });
-      if (!r2.ok) throw new Error(`save affectations failed: ${r2.status}`);
+      if (!r2.ok) {
+        const err = await r2.json().catch(() => ({}));
+        throw new Error(`PUT affectations ${r2.status}: ${err.error || ""}`);
+      }
 
       setSyncStatus({ msg: `✓ Synchronisé : ${opNames.join(", ") || "(vide)"} → LIVR ${["Lun","Mar","Mer","Jeu","Ven"][jIdx]} (S${getWeekNum(weekMon)})`, ok: true });
       setTimeout(() => setSyncStatus(null), 4000);
