@@ -44,7 +44,7 @@ const POST_GROUPS = [
   { label: "Vitrage",       color: "#26C6DA", phase: "vitrage", competence: "vitrage", ids: ["V1","V2","V3"] },
   { label: "Logistique",    color: "#CE93D8", phase: "logistique", competence: "logistique", ids: ["L4","L6","L7"] },
   { label: "ISULA",         color: "#4DB6AC", phase: "isula", competence: "isula", ids: ["IL","IB","I3","I4"] },
-  { label: "Autre",         color: "#78909C", phase: "autre", competence: "", ids: ["AUT","LIVR"] },
+  { label: "Autre",         color: "#78909C", phase: "autre", competence: "", ids: ["AUT"] },
 ];
 const POST_LABELS: Record<string, string> = {
   C2:"Prépa barres",C3:"Coupe LMT",C4:"Coupe 2 têtes",C5:"Renfort acier",C6:"Soudure PVC",
@@ -53,7 +53,6 @@ const POST_LABELS: Record<string, string> = {
   V1:"Vitr. Frappe",V2:"Vitr. Coul/Gal",V3:"Emballage",
   L4:"Prépa acc.",L6:"Palettes",L7:"Chargement",
   IL:"Coupe Lisec",IB:"Coupe Bottero",I3:"Coupe interc.",I4:"Assemblage VI",
-  LIVR:"Livraison",
   AUT:"Autre",
 };
 const PHASE_FIELD: Record<string, string> = {

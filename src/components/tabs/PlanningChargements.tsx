@@ -256,9 +256,9 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
         }
       }
 
-      // 4) Remplacer les ops dans LIVR|jIdx|am et |pm
+      // 4) Remplacer les ops dans AUT|jIdx|am et |pm (où les tâches livraison auto sont créées)
       for (const slot of ["am", "pm"]) {
-        const cellKey = `LIVR|${jIdx}|${slot}`;
+        const cellKey = `AUT|${jIdx}|${slot}`;
         const raw = currentAff[cellKey];
         const existing = Array.isArray(raw) ? { ops: raw, cmds: [], extras: [] } : raw || { ops: [], cmds: [], extras: [] };
         currentAff[cellKey] = {
