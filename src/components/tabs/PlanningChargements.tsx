@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo, useEffect } from "react";
-import { C, CFAM, CommandeCC, TYPES_MENUISERIE, fmtDate, getWeekNum, calcCheminCritique, ZONES } from "@/lib/sial-data";
+import { C, CFAM, CommandeCC, TYPES_MENUISERIE, fmtDate, getWeekNum, calcCheminCritique, ZONES, EQUIPE } from "@/lib/sial-data";
 import { H, Bdg } from "@/components/ui";
 
 const ZONE_COLORS: Record<string, string> = {
@@ -65,6 +65,11 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
 
   const [filterZone, setFilterZone] = useState("");
   const [horizonWeeks, setHorizonWeeks] = useState(4); // combien de semaines à afficher
+
+  // ── Livreurs assignés (transporteur = "nous") ──
+  // Stocké via PlanningPoste : clé = "livreurs_{date}_{zoneSlug}" → { ops: string[] }
+  const [livreurs, setLivreurs] = useState<Record<string, string[]>>({});
+  const livreursKey = (date: string, zone: string) => `livreurs_${date}_${zone.replace(/\s+/g, "_")}`;
 
   // ── Gel des semaines : snapshot figé par semaine ──
   // Structure stockée : { [semaineLundi]: { [transpId]: [ { date, zone, cmdIds[] } ] } }
@@ -137,6 +142,51 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
     }
     return Array.from(byKey.values()).sort((a, b) => a.date.localeCompare(b.date));
   }, [commandes, horizonDays, filterZone]);
+
+  // ── Charger les livreurs pour tous les chargements "nous" ──
+  useEffect(() => {
+    const nousChargs = chargements.filter(ch => ch.transporteur === "nous");
+    if (nousChargs.length === 0) return;
+    const keys = nousChargs.map(ch => livreursKey(ch.date, ch.zone));
+    Promise.all(keys.map(k =>
+      fetch(`/api/planning-poste?semaine=${encodeURIComponent(k)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => ({ k, data }))
+        .catch(() => ({ k, data: null }))
+    )).then(results => {
+      const map: Record<string, string[]> = {};
+      for (const { k, data } of results) {
+        if (data && Array.isArray((data as any).ops)) map[k] = (data as any).ops;
+      }
+      setLivreurs(map);
+    });
+  }, [chargements]);
+
+  // ── Sauvegarder la liste des livreurs pour un chargement ──
+  const saveLivreurs = async (date: string, zone: string, ops: string[]) => {
+    const k = livreursKey(date, zone);
+    setLivreurs(prev => ({ ...prev, [k]: ops }));
+    try {
+      await fetch(`/api/planning-poste?semaine=${encodeURIComponent(k)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ops }),
+      });
+    } catch {}
+  };
+
+  const toggleLivreur = (date: string, zone: string, opId: string) => {
+    const k = livreursKey(date, zone);
+    const cur = livreurs[k] || [];
+    let next: string[];
+    if (cur.includes(opId)) {
+      next = cur.filter(o => o !== opId);
+    } else {
+      if (cur.length >= 2) return; // max 2 livreurs
+      next = [...cur, opId];
+    }
+    saveLivreurs(date, zone, next);
+  };
 
   // ── Grouper par transporteur ──
   const byTransporteur = useMemo(() => {
@@ -545,6 +595,58 @@ export default function PlanningChargements({ commandes, onPatch, onEdit }: {
                         </button>
                       </div>
                     </div>
+
+                    {/* Livreurs (seulement si transporteur = nous) */}
+                    {ch.transporteur === "nous" && (() => {
+                      const k = livreursKey(ch.date, ch.zone);
+                      const assigned = livreurs[k] || [];
+                      return (
+                        <div style={{ marginBottom: 8, padding: "6px 10px", background: C.bg, borderRadius: 4, border: `1px solid ${C.blue}33` }}>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: C.blue, letterSpacing: "0.05em", marginRight: 4 }}>
+                              👷 LIVREURS ({assigned.length}/2) :
+                            </span>
+                            {assigned.length === 0 && (
+                              <span style={{ fontSize: 10, color: C.muted, fontStyle: "italic" }}>
+                                Aucun assigné — cliquez sur un opérateur ci-dessous
+                              </span>
+                            )}
+                            {assigned.map(opId => {
+                              const op = EQUIPE.find(m => m.id === opId);
+                              if (!op) return null;
+                              return (
+                                <span key={opId}
+                                  onClick={() => toggleLivreur(ch.date, ch.zone, opId)}
+                                  title="Cliquer pour retirer"
+                                  style={{
+                                    padding: "3px 10px", fontSize: 11, fontWeight: 700, borderRadius: 3,
+                                    background: C.blue + "33", border: `1px solid ${C.blue}`,
+                                    color: C.blue, cursor: "pointer",
+                                  }}>
+                                  {op.nom} ✕
+                                </span>
+                              );
+                            })}
+                          </div>
+                          <div style={{ marginTop: 6, display: "flex", gap: 4, flexWrap: "wrap" }}>
+                            {EQUIPE.filter(m => !assigned.includes(m.id)).map(op => (
+                              <button key={op.id}
+                                onClick={() => toggleLivreur(ch.date, ch.zone, op.id)}
+                                disabled={assigned.length >= 2}
+                                style={{
+                                  padding: "2px 8px", fontSize: 9, fontWeight: 600, borderRadius: 3,
+                                  background: "transparent", border: `1px solid ${C.border}`,
+                                  color: assigned.length >= 2 ? C.muted : C.sec,
+                                  cursor: assigned.length >= 2 ? "not-allowed" : "pointer",
+                                  opacity: assigned.length >= 2 ? 0.4 : 1,
+                                }}>
+                                + {op.nom}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Liste des commandes du chargement */}
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: 6 }}>
