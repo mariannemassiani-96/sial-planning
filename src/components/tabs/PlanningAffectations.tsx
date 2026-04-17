@@ -227,9 +227,9 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         setHiddenTasks(Array.isArray(hidden) ? new Set(hidden) : new Set());
       })
       .catch(() => { setLocked(false); setHiddenTasks(new Set()); });
-    // Charger les overrides par commande
+    // Charger les overrides par commande (toutes, pas juste 50)
     const cmdIds = commandes.filter(c => { const s = (c as any).statut; return s !== "livre" && s !== "terminee" && s !== "annulee"; }).map(c => String(c.id));
-    Promise.all(cmdIds.slice(0, 50).map(id =>
+    Promise.all(cmdIds.map(id =>
       fetch(`/api/planning/affectations?semaine=cmd_temps_${id}`).then(r => r.ok ? r.json() : null).then(d => ({ id, d })).catch(() => ({ id, d: null }))
     )).then(results => {
       const ov: Record<string, Record<string, number>> = {};
