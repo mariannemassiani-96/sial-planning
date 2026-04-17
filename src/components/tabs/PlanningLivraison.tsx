@@ -161,9 +161,9 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
 
   // ── Nav label ───────────────────────────────────────────────────────
   const navLabel = view === "semaine"
-    ? `Sem. du ${fmtDate(weekDays[0])} au ${fmtDate(weekDays[4])}`
+    ? `S${getWeekNum(weekDays[0])} — du ${fmtDate(weekDays[0])} au ${fmtDate(weekDays[4])}`
     : view === "jour"
-    ? fmtDate(anchor)
+    ? `S${getWeekNum(anchor)} — ${fmtDate(anchor)}`
     : `${MOIS_FR[month]} ${year}`;
 
   // ── Stats ───────────────────────────────────────────────────────────
