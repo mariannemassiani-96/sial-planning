@@ -31,7 +31,9 @@ export async function PUT(req: Request) {
       create: { semaine, plan },
     });
     return NextResponse.json(result);
-  } catch {
-    return NextResponse.json({ error: "Erreur sauvegarde planning" }, { status: 500 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "erreur inconnue";
+    console.error("PUT /api/planning-poste error:", msg, "semaine:", semaine);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
