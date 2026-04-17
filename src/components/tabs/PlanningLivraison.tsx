@@ -459,6 +459,25 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
                       {delivs.length} liv.
                     </div>
                   )}
+                  {/* Bouton "Tout Livré" si jour passé (≤ aujourd'hui) et commandes non livrées */}
+                  {(day <= today) && (() => {
+                    const nonLivrees = delivs.filter(x => (x.cmd as any).statut !== "livre");
+                    if (nonLivrees.length === 0) return null;
+                    return (
+                      <button onClick={() => {
+                        if (!confirm(`Marquer les ${nonLivrees.length} commande(s) du ${fmtDate(day)} comme livrées ?`)) return;
+                        for (const x of nonLivrees) {
+                          onPatch(String(x.c.id), { statut: "livre" });
+                        }
+                      }} style={{
+                        marginTop: 4, padding: "3px 8px", background: C.green + "22",
+                        border: `1px solid ${C.green}`, borderRadius: 3, color: C.green,
+                        fontSize: 9, fontWeight: 700, cursor: "pointer", width: "100%",
+                      }}>
+                        ✓ Tout livré ({nonLivrees.length})
+                      </button>
+                    );
+                  })()}
                 </div>
 
                 {isDragTarget && delivs.length === 0 && (
@@ -540,10 +559,25 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
             }
             const sorted = [...delivs].sort((a,b) => (a.cc?.critique?0:1) - (b.cc?.critique?0:1));
             const groups = groupByChargement(sorted);
+            const nonLivrees = sorted.filter(x => (x.cmd as any).statut !== "livre");
+            const isPassed = anchor <= today;
             return (
               <div>
-                <div style={{ marginBottom:10, fontSize:12, color:C.sec }}>
-                  <span className="mono" style={{ color:C.green, fontWeight:700 }}>{delivs.length}</span> livraison(s) prévue(s) le {fmtDate(anchor)} · <span className="mono" style={{ color: C.blue, fontWeight: 700 }}>{groups.filter(g => g.items.length > 1 || g.items[0].cmd.transporteur).length}</span> chargement(s)
+                <div style={{ marginBottom:10, fontSize:12, color:C.sec, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                  <span>
+                    <span className="mono" style={{ color:C.green, fontWeight:700 }}>{delivs.length}</span> livraison(s) prévue(s) le {fmtDate(anchor)} · <span className="mono" style={{ color: C.blue, fontWeight: 700 }}>{groups.filter(g => g.items.length > 1 || g.items[0].cmd.transporteur).length}</span> chargement(s)
+                  </span>
+                  {isPassed && nonLivrees.length > 0 && (
+                    <button onClick={() => {
+                      if (!confirm(`Marquer les ${nonLivrees.length} commande(s) du ${fmtDate(anchor)} comme livrées ?`)) return;
+                      for (const x of nonLivrees) onPatch(String(x.c.id), { statut: "livre" });
+                    }} style={{
+                      padding: "6px 14px", background: C.green, border: "none", borderRadius: 5,
+                      color: "#000", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                    }}>
+                      ✓ Tout livré ({nonLivrees.length})
+                    </button>
+                  )}
                 </div>
                 {groups.map((grp, gi) => {
                   const transpId = grp.items[0].cmd.transporteur;
