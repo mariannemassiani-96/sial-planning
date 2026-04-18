@@ -612,37 +612,80 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   }, [aff, saveAff]);
 
   // ── Proposition automatique ──
+  // Algorithme par chantier (séquentiel) : pour chaque chantier, placer ses étapes
+  // de routage dans l'ordre (coupe → montage → vitrage → palette) avec tampon.
   const autoAssign = useCallback(() => {
     const newAff: AffMap = {};
-
     const MIN_PERS: Record<string, number> = { coupe: 2, montage: 1, vitrage: 1, logistique: 1 };
 
-    for (const grp of activePosts) {
-      if (grp.phase === "autre") continue;
-      const minPers = MIN_PERS[grp.phase] || 1;
+    // Construire la liste des chantiers à placer avec leur routage complet
+    // Chaque chantier = un objet { label, etapes: [{ pid, phase, minutes }] }
+    interface ChantierTask {
+      label: string;
+      priority: number; // 0=chantier_bloque, 1=urgente, 2=normale
+      deadline: string;
+      etapes: Array<{ pid: string; phase: string; minutes: number }>;
+    }
 
-      for (const pid of grp.posts) {
-        const pw = postWork[pid];
-        if (!pw || pw.totalMin === 0) continue;
+    const chantiers: ChantierTask[] = [];
+    const prioMap: Record<string, number> = { chantier_bloque: 0, urgente: 1, normale: 2 };
 
-        // Nombre de personnes selon le poste et la charge
-        const maxPersPoste = POST_MAX_PERS[pid];
-        let nbPers = maxPersPoste ? Math.min(minPers, maxPersPoste) : minPers;
-
-        // C3 : adapter selon la charge (barres)
-        // 1 pers = 50 barres/8h, 2 pers = 80 barres/8h, 3 pers = 120 barres/8h
-        // Si plus de 16h de travail (> 4 demi-journées) → 3 personnes pour finir dans la semaine
-        // Si 8-16h → 2 personnes
-        // Si < 8h → 2 personnes (minimum coupe)
-        if (pid === "C3") {
-          const slotsDispoSemaine = 10; // 5 jours × 2 demi-journées
-          const slotsAvec2 = Math.ceil(pw.totalMin / DEMI_MIN);
-          if (slotsAvec2 > slotsDispoSemaine * 0.6) {
-            nbPers = 3; // charge lourde : 3 personnes pour tenir dans la semaine
-          } else {
-            nbPers = 2;
+    // Parcourir les commandes actives de la semaine affichée
+    for (const cmd of commandes) {
+      const statut = (cmd as any).statut;
+      if (statut === "livre" || statut === "terminee" || statut === "annulee") continue;
+      // Construire le label chantier
+      const label = (cmd as any).ref_chantier || (cmd as any).client || "";
+      if (!label) continue;
+      // Récupérer toutes les étapes de routage pour ce chantier (via postWork)
+      const etapes: Array<{ pid: string; phase: string; minutes: number }> = [];
+      for (const grp of activePosts) {
+        if (grp.phase === "autre") continue;
+        for (const pid of grp.posts) {
+          const pw = postWork[pid];
+          if (!pw) continue;
+          const cmdInfo = pw.cmds.find(c => (c.chantier || c.client) === label);
+          if (cmdInfo && cmdInfo.min > 0) {
+            etapes.push({ pid, phase: grp.phase, minutes: cmdInfo.min });
           }
         }
+      }
+      if (etapes.length === 0) continue;
+      // Trier les étapes dans l'ordre : coupe → montage → vitrage → logistique → isula
+      const phaseOrder: Record<string, number> = { coupe: 0, montage: 1, vitrage: 2, logistique: 3, isula: 4 };
+      etapes.sort((a, b) => (phaseOrder[a.phase] ?? 9) - (phaseOrder[b.phase] ?? 9));
+
+      chantiers.push({
+        label,
+        priority: prioMap[(cmd as any).priorite] ?? 2,
+        deadline: (cmd as any).date_livraison_souhaitee || "9999-12-31",
+        etapes,
+      });
+    }
+
+    // Trier les chantiers par priorité, puis deadline
+    chantiers.sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      return a.deadline.localeCompare(b.deadline);
+    });
+
+    // Tracker la charge cumulée par (pid, j, demi) pour éviter surcharge
+    const cellLoad: Record<string, number> = {};
+    // Tracker ops par créneau pour éviter les conflits
+    // "opNom|j|demi" → true
+    const opBooked: Record<string, boolean> = {};
+    // Tracker par chantier la dernière demi-journée atteinte (pour séquencement + tampon)
+    // Tampon = 1 demi-journée entre étapes
+
+    for (const ch of chantiers) {
+      let minSlotIdx = 0; // index global du prochain créneau disponible pour ce chantier
+
+      for (const et of ch.etapes) {
+        const pid = et.pid;
+        const grp = activePosts.find(g => g.posts.includes(pid));
+        if (!grp) continue;
+        const minPers = MIN_PERS[grp.phase] || 1;
+        const maxPersPoste = POST_MAX_PERS[pid];
 
         // Opérateurs compétents
         let competentOps = ops.filter(op => op.competentPosts.includes(pid));
@@ -655,80 +698,82 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         }
         if (competentOps.length === 0) continue;
 
-        // Placer chaque chantier un par un, le finir avant de passer au suivant
-        let nextSlotJ = 0;
-        let nextSlotD = 0; // 0=am, 1=pm
+        // Nombre d'opérateurs à placer
+        let nbPers = maxPersPoste ? Math.min(minPers, maxPersPoste) : minPers;
+        // C3 : adapter selon la charge
+        if (pid === "C3" && et.minutes > DEMI_MIN * 4) nbPers = 3;
 
-        for (const cmd of pw.cmds) {
-          const chLabel = cmd.chantier || cmd.client;
-          const slotsForCmd = Math.max(1, Math.ceil(cmd.min / DEMI_MIN));
+        // Combien de demi-journées nécessaires pour cette étape
+        const slotsNeeded = Math.max(1, Math.ceil(et.minutes / (DEMI_MIN * nbPers)));
 
-          for (let placed = 0; placed < slotsForCmd; placed++) {
-            // Trouver le prochain créneau libre
-            while (nextSlotJ < 5) {
-              const demi = nextSlotD === 0 ? "am" : "pm";
-              const key = ck(pid, nextSlotJ, demi);
+        // Trouver les créneaux disponibles consécutifs (ou dispersés) à partir de minSlotIdx
+        let slotsPlaced = 0;
+        let lastSlotIdxUsed = minSlotIdx;
 
-              if (!newAff[key]) {
-                const postHabits = habits[pid] || {};
-                const available = competentOps
-                  .filter(op => !(nextSlotJ === 4 && op.vendrediOff))
-                  .filter(op => !(nextSlotJ === 4 && demi === "pm" && op.id === "jp"))
-                  .map(op => {
-                    let load = 0;
-                    for (const k of Object.keys(newAff)) {
-                      const p = k.split("|");
-                      if (parseInt(p[1]) === nextSlotJ && p[2] === demi && (newAff[k]?.ops || []).includes(op.nom)) load++;
-                    }
-                    return { op, load, score: (brainScores[op.nom]?.[pid] || 0) * 0.5 + (postHabits[op.nom] || 0) * 0.5 };
-                  })
-                  .sort((a, b) => a.load !== b.load ? a.load - b.load : b.score - a.score);
+        for (let globalIdx = minSlotIdx; globalIdx < 10 && slotsPlaced < slotsNeeded; globalIdx++) {
+          const j = Math.floor(globalIdx / 2);
+          const demi = globalIdx % 2 === 0 ? "am" : "pm";
+          const key = ck(pid, j, demi);
 
-                let opsToPlace = available.slice(0, nbPers);
+          // Capacité restante sur cette cellule (on peut partager la cellule avec d'autres chantiers)
+          const currentLoad = cellLoad[key] || 0;
+          const cellCapacity = nbPers * DEMI_MIN;
+          const remainingCap = cellCapacity - currentLoad;
+          if (remainingCap <= 0) continue;
 
-                // Vérifier si tous les opérateurs sont débutants (niveau ①)
-                // Si oui, ajouter un superviseur (② ou ③)
-                const allBeginner = opsToPlace.length > 0 && opsToPlace.every(o => {
-                  const level = o.op.skillLevels[pid] || 0;
-                  return level === 1; // ① = débutant
-                });
-                if (allBeginner) {
-                  // Chercher un superviseur (niveau ≥ 2) pas encore dans la liste
-                  const placedNames = opsToPlace.map(o => o.op.nom);
-                  const supervisor = available.find(o =>
-                    !placedNames.includes(o.op.nom) && (o.op.skillLevels[pid] || 0) >= 3
-                  );
-                  if (supervisor) {
-                    opsToPlace = [...opsToPlace, supervisor];
-                  } else {
-                    // Pas de superviseur avec skill cochée, chercher dans EQUIPE par compétence phase
-                    const supFromEquipe = available.find(o => {
-                      if (placedNames.includes(o.op.nom)) return false;
-                      // Considérer les opérateurs expérimentés (plus de tâches sur ce poste dans les habitudes)
-                      const habitScore = (habits[pid] || {})[o.op.nom] || 0;
-                      return habitScore > 5; // a déjà fait ce poste au moins 5 fois
-                    });
-                    if (supFromEquipe) opsToPlace = [...opsToPlace, supFromEquipe];
-                  }
-                }
+          // Trouver opérateurs disponibles (pas déjà bookés sur autre poste ce créneau)
+          const availableOps = competentOps
+            .filter(op => !opBooked[`${op.nom}|${j}|${demi}`])
+            .filter(op => !(j === 4 && op.vendrediOff))
+            .filter(op => !(j === 4 && demi === "pm" && op.id === "jp"))
+            .map(op => {
+              const postHabits = habits[pid] || {};
+              return { op, score: (brainScores[op.nom]?.[pid] || 0) * 0.5 + (postHabits[op.nom] || 0) * 0.5 };
+            })
+            .sort((a, b) => b.score - a.score);
 
-                const opsNames = opsToPlace.map(o => o.op.nom);
-                newAff[key] = { ops: opsNames, cmds: [chLabel] };
-                nextSlotD++;
-                if (nextSlotD > 1) { nextSlotD = 0; nextSlotJ++; }
-                break;
-              }
-              // Créneau déjà pris par un autre chantier, avancer
-              nextSlotD++;
-              if (nextSlotD > 1) { nextSlotD = 0; nextSlotJ++; }
-            }
+          // On réutilise les ops déjà sur la cellule si possible
+          const existingOps = newAff[key]?.ops || [];
+          const opsToPlace: string[] = [...existingOps];
+          for (const o of availableOps) {
+            if (opsToPlace.length >= nbPers) break;
+            if (!opsToPlace.includes(o.op.nom)) opsToPlace.push(o.op.nom);
           }
+
+          // Niveau de supervision si tous débutants
+          const allBeginner = opsToPlace.length > 0 && opsToPlace.every(nm => {
+            const o = ops.find(op => op.nom === nm);
+            return (o?.skillLevels[pid] || 0) === 1;
+          });
+          if (allBeginner) {
+            const supervisor = availableOps.find(o =>
+              !opsToPlace.includes(o.op.nom) && (o.op.skillLevels[pid] || 0) >= 3
+            );
+            if (supervisor) opsToPlace.push(supervisor.op.nom);
+          }
+
+          // Assigner à la cellule
+          const existingCell = newAff[key] || { ops: [], cmds: [], extras: [] };
+          const newCmds = existingCell.cmds.includes(ch.label) ? existingCell.cmds : [...existingCell.cmds, ch.label];
+          newAff[key] = { ...existingCell, ops: opsToPlace, cmds: newCmds };
+
+          // Mettre à jour les trackers
+          cellLoad[key] = currentLoad + Math.min(et.minutes - slotsPlaced * DEMI_MIN * nbPers, remainingCap);
+          for (const opNom of opsToPlace) {
+            opBooked[`${opNom}|${j}|${demi}`] = true;
+          }
+
+          lastSlotIdxUsed = globalIdx;
+          slotsPlaced++;
         }
+
+        // Tampon de 1 demi-journée entre étapes (si pas déjà à la fin)
+        minSlotIdx = lastSlotIdxUsed + 2;
       }
     }
 
     saveAff(newAff);
-  }, [activePosts, postWork, saveAff, ops, habits, brainScores]);
+  }, [activePosts, postWork, saveAff, ops, habits, brainScores, commandes]);
 
   // ── Tout effacer ──
   const clearAll = useCallback(() => { saveAff({}); }, [saveAff]);
