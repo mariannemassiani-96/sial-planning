@@ -671,11 +671,11 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
 
     // Tracker la charge cumulée par (pid, j, demi) pour éviter surcharge
     const cellLoad: Record<string, number> = {};
-    // Tracker ops par créneau pour éviter les conflits
-    // "opNom|j|demi" → true
-    const opBooked: Record<string, boolean> = {};
+    // Tracker ops par créneau ET par poste pour éviter les conflits inter-postes
+    // "opNom|j|demi" → pid (le poste où l'op est placé)
+    const opBookedPost: Record<string, string> = {};
     // Tracker par chantier la dernière demi-journée atteinte (pour séquencement + tampon)
-    // Tampon = 1 demi-journée entre étapes
+    // Tampon = 1 demi-journée entre étapes (sauf si même poste on enchaîne)
 
     for (const ch of chantiers) {
       let minSlotIdx = 0; // index global du prochain créneau disponible pour ce chantier
@@ -706,24 +706,28 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         // Combien de demi-journées nécessaires pour cette étape
         const slotsNeeded = Math.max(1, Math.ceil(et.minutes / (DEMI_MIN * nbPers)));
 
-        // Trouver les créneaux disponibles consécutifs (ou dispersés) à partir de minSlotIdx
+        // Trouver les créneaux disponibles à partir de minSlotIdx
         let slotsPlaced = 0;
-        let lastSlotIdxUsed = minSlotIdx;
+        let lastSlotIdxUsed = minSlotIdx - 1;
 
         for (let globalIdx = minSlotIdx; globalIdx < 10 && slotsPlaced < slotsNeeded; globalIdx++) {
           const j = Math.floor(globalIdx / 2);
           const demi = globalIdx % 2 === 0 ? "am" : "pm";
           const key = ck(pid, j, demi);
 
-          // Capacité restante sur cette cellule (on peut partager la cellule avec d'autres chantiers)
+          // Capacité restante sur cette cellule (on peut partager avec d'autres chantiers)
           const currentLoad = cellLoad[key] || 0;
           const cellCapacity = nbPers * DEMI_MIN;
           const remainingCap = cellCapacity - currentLoad;
-          if (remainingCap <= 0) continue;
+          if (remainingCap <= 0) continue; // cellule pleine, chercher la suivante
 
-          // Trouver opérateurs disponibles (pas déjà bookés sur autre poste ce créneau)
+          // Opérateurs disponibles : pas sur un AUTRE poste ce créneau
+          // Si déjà sur CE poste = OK (on les réutilise)
           const availableOps = competentOps
-            .filter(op => !opBooked[`${op.nom}|${j}|${demi}`])
+            .filter(op => {
+              const booked = opBookedPost[`${op.nom}|${j}|${demi}`];
+              return !booked || booked === pid;
+            })
             .filter(op => !(j === 4 && op.vendrediOff))
             .filter(op => !(j === 4 && demi === "pm" && op.id === "jp"))
             .map(op => {
@@ -732,7 +736,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             })
             .sort((a, b) => b.score - a.score);
 
-          // On réutilise les ops déjà sur la cellule si possible
+          // Réutiliser les ops déjà sur la cellule
           const existingOps = newAff[key]?.ops || [];
           const opsToPlace: string[] = [...existingOps];
           for (const o of availableOps) {
@@ -758,16 +762,17 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           newAff[key] = { ...existingCell, ops: opsToPlace, cmds: newCmds };
 
           // Mettre à jour les trackers
-          cellLoad[key] = currentLoad + Math.min(et.minutes - slotsPlaced * DEMI_MIN * nbPers, remainingCap);
+          const minutesThisSlot = Math.min(et.minutes - slotsPlaced * DEMI_MIN * nbPers, remainingCap);
+          cellLoad[key] = currentLoad + minutesThisSlot;
           for (const opNom of opsToPlace) {
-            opBooked[`${opNom}|${j}|${demi}`] = true;
+            opBookedPost[`${opNom}|${j}|${demi}`] = pid;
           }
 
           lastSlotIdxUsed = globalIdx;
           slotsPlaced++;
         }
 
-        // Tampon de 1 demi-journée entre étapes (si pas déjà à la fin)
+        // Tampon de 1 demi-journée entre étapes (sauf si étape finale)
         minSlotIdx = lastSlotIdxUsed + 2;
       }
     }
