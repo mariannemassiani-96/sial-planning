@@ -461,6 +461,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   // ── Drop opérateur ou tâche extra sur cellule ──
   const onDrop = useCallback((key: string, e?: React.DragEvent) => {
     if (locked) return;
+    const [pid, jStr, demi] = key.split("|");
+    const jIdx = parseInt(jStr);
     // Vérifier si c'est un extra
     const data = e?.dataTransfer?.getData("text/plain") || "";
     if (data.startsWith("extra:")) {
@@ -480,10 +482,27 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       const cmdLabel = data.slice(4);
       const newAff = { ...aff };
       const cell = newAff[key] || { ops: [], cmds: [] };
-      if (!cell.cmds.includes(cmdLabel)) {
-        newAff[key] = { ...cell, cmds: [...cell.cmds, cmdLabel] };
-        saveAff(newAff);
+      if (cell.cmds.includes(cmdLabel)) { setDropTarget(null); return; }
+      // Vérifier la surcharge : total minutes des chantiers ≤ nb ops × 240
+      const pw = postWork[pid];
+      let cellCmdMin = 0;
+      for (const ch of cell.cmds) {
+        const cInfo = pw?.cmds.find(c2 => (c2.chantier || c2.client) === ch);
+        if (cInfo) cellCmdMin += cInfo.min;
       }
+      const newCmdInfo = pw?.cmds.find(c2 => (c2.chantier || c2.client) === cmdLabel);
+      const addedMin = newCmdInfo?.min || 0;
+      const nbOps = Math.max(1, cell.ops.length);
+      const capacity = nbOps * DEMI_MIN;
+      if (cellCmdMin + addedMin > capacity) {
+        alert(`⚠ Impossible d'ajouter ${cmdLabel} sur ${pid} ${["Lun","Mar","Mer","Jeu","Ven"][jIdx]} ${demi.toUpperCase()} :\n\n` +
+          `Total charge : ${Math.round((cellCmdMin + addedMin) / 60 * 10) / 10}h (${nbOps} pers × 4h = ${nbOps * 4}h max)\n\n` +
+          `Ajoutez d'abord des opérateurs ou diminuez la charge.`);
+        setDropTarget(null);
+        return;
+      }
+      newAff[key] = { ...cell, cmds: [...cell.cmds, cmdLabel] };
+      saveAff(newAff);
       setDropTarget(null);
       return;
     }
@@ -491,13 +510,27 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     if (!dragOp) return;
     const newAff = { ...aff };
     const cell = newAff[key] || { ops: [], cmds: [] };
-    if (!cell.ops.includes(dragOp)) {
-      newAff[key] = { ...cell, ops: [...cell.ops, dragOp] };
-      saveAff(newAff);
+    if (cell.ops.includes(dragOp)) { setDragOp(null); setDropTarget(null); return; }
+    // Vérifier conflit : opérateur déjà sur un autre poste ce créneau ?
+    const conflictPost = Object.entries(aff).find(([k2, c2]) => {
+      const [p2, j2, d2] = k2.split("|");
+      return p2 !== pid && parseInt(j2) === jIdx && d2 === demi && c2?.ops?.includes(dragOp);
+    });
+    if (conflictPost) {
+      const [conflictKey] = conflictPost;
+      const [cPid] = conflictKey.split("|");
+      alert(`⚠ Conflit : ${dragOp} est déjà affecté sur ${cPid} ${["Lun","Mar","Mer","Jeu","Ven"][jIdx]} ${demi.toUpperCase()}.\n\n` +
+        `Un opérateur ne peut pas être sur 2 postes en même temps.\n` +
+        `Retirez-le d'abord de ${cPid}.`);
+      setDragOp(null);
+      setDropTarget(null);
+      return;
     }
+    newAff[key] = { ...cell, ops: [...cell.ops, dragOp] };
+    saveAff(newAff);
     setDragOp(null);
     setDropTarget(null);
-  }, [dragOp, aff, saveAff]);
+  }, [dragOp, aff, saveAff, locked, postWork]);
 
   const removeOp = useCallback((key: string, opNom: string) => {
     const newAff = { ...aff };
@@ -2401,6 +2434,18 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           const key = ck(pid, j, demi);
           const cell = aff[key] || { ops: [], cmds: [], extras: [] };
           const has = cell.ops.includes(opNom);
+          if (!has) {
+            // Vérifier conflit : opNom déjà sur un autre poste ce créneau ?
+            const conflict = Object.entries(aff).find(([k2, c2]) => {
+              const [p2, j2, d2] = k2.split("|");
+              return p2 !== pid && parseInt(j2) === j && d2 === demi && c2?.ops?.includes(opNom);
+            });
+            if (conflict) {
+              const [cPid] = conflict[0].split("|");
+              alert(`⚠ ${opNom} est déjà sur ${cPid} ${["Lun","Mar","Mer","Jeu","Ven"][j]} ${demi.toUpperCase()}.\nRetirez-le d'abord de ${cPid}.`);
+              return;
+            }
+          }
           const newOps = has ? cell.ops.filter(o => o !== opNom) : [...cell.ops, opNom];
           saveAff({ ...aff, [key]: { ...cell, ops: newOps } });
         };
