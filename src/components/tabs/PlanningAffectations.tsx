@@ -679,21 +679,44 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
 
     for (const ch of chantiers) {
       let minSlotIdx = 0; // index global du prochain créneau disponible pour ce chantier
+      let prevPhase: string | null = null;
 
       for (const et of ch.etapes) {
         const pid = et.pid;
         const grp = activePosts.find(g => g.posts.includes(pid));
         if (!grp) continue;
+        // Tampon : +2 slots si changement de phase (fin d'une étape + 1 demi-journée de tampon)
+        // +1 slot si même phase (on enchaîne)
+        if (prevPhase && prevPhase !== et.phase) {
+          // déjà appliqué en fin de boucle précédente
+        }
+        prevPhase = et.phase;
         const minPers = MIN_PERS[grp.phase] || 1;
         const maxPersPoste = POST_MAX_PERS[pid];
 
-        // Opérateurs compétents
+        // Compétence requise selon le POSTE précis (pas le groupe qui mélange)
+        // M1, M2 → coulissant / glandage
+        // M3 → frappes (portes)
+        // F1, F2, F3 → frappes
+        // MHS → hors_std
+        // V1 → frappes / V2 → coulissant
+        // C* → coupe / I* → isula / L* → logistique
+        const postCompetence = (() => {
+          if (pid === "M1" || pid === "M2" || pid === "V2") return "coulissant";
+          if (["F1","F2","F3","M3","V1"].includes(pid)) return "frappes";
+          if (pid === "MHS") return "hors_std";
+          if (pid.startsWith("C")) return "coupe";
+          if (pid.startsWith("I")) return "isula";
+          if (pid.startsWith("L")) return "logistique";
+          return grp.competence;
+        })();
+
+        // Opérateurs compétents : 1) skill cochée en base 2) fallback EQUIPE par compétence du POSTE
         let competentOps = ops.filter(op => op.competentPosts.includes(pid));
         if (competentOps.length === 0) {
-          const equipeComp = grp.competence;
           competentOps = ops.filter(op => {
             const eq = EQUIPE.find(e => e.nom === op.nom);
-            return eq?.competences.includes(equipeComp);
+            return eq?.competences.includes(postCompetence);
           });
         }
         if (competentOps.length === 0) continue;
@@ -772,8 +795,11 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           slotsPlaced++;
         }
 
-        // Tampon de 1 demi-journée entre étapes (sauf si étape finale)
-        minSlotIdx = lastSlotIdxUsed + 2;
+        // Tampon : +1 si même phase, +2 si changement de phase (appliqué au prochain tour)
+        // Pour l'instant, simple : +1 (même phase) ou +2 (changement)
+        const nextEt = ch.etapes[ch.etapes.indexOf(et) + 1];
+        const samePhaseAsNext = nextEt && nextEt.phase === et.phase;
+        minSlotIdx = lastSlotIdxUsed + (samePhaseAsNext ? 1 : 2);
       }
     }
 
