@@ -622,9 +622,10 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     // Chaque chantier = un objet { label, etapes: [{ pid, phase, minutes }] }
     interface ChantierTask {
       label: string;
-      priority: number; // 0=chantier_bloque, 1=urgente, 2=normale
+      priority: number;
       deadline: string;
       etapes: Array<{ pid: string; phase: string; minutes: number }>;
+      phases: Array<{ phase: string; etapes: Array<{ pid: string; minutes: number }> }>;
     }
 
     const chantiers: ChantierTask[] = [];
@@ -655,11 +656,25 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       const phaseOrder: Record<string, number> = { coupe: 0, montage: 1, vitrage: 2, logistique: 3, isula: 4 };
       etapes.sort((a, b) => (phaseOrder[a.phase] ?? 9) - (phaseOrder[b.phase] ?? 9));
 
+      // Grouper par phase (C3+C4+C5+C6 = 1 phase "coupe", F1+F2+F3 = 1 phase "montage")
+      // Toutes les étapes d'une phase se font EN PARALLÈLE sur le même créneau
+      interface PhaseGroup { phase: string; etapes: Array<{ pid: string; minutes: number }> }
+      const phases: PhaseGroup[] = [];
+      for (const et of etapes) {
+        const lastPhase = phases[phases.length - 1];
+        if (lastPhase && lastPhase.phase === et.phase) {
+          lastPhase.etapes.push({ pid: et.pid, minutes: et.minutes });
+        } else {
+          phases.push({ phase: et.phase, etapes: [{ pid: et.pid, minutes: et.minutes }] });
+        }
+      }
+
       chantiers.push({
         label,
         priority: prioMap[(cmd as any).priorite] ?? 2,
         deadline: (cmd as any).date_livraison_souhaitee || "9999-12-31",
         etapes,
+        phases,
       });
     }
 
@@ -678,128 +693,117 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     // Tampon = 1 demi-journée entre étapes (sauf si même poste on enchaîne)
 
     for (const ch of chantiers) {
-      let minSlotIdx = 0; // index global du prochain créneau disponible pour ce chantier
-      let prevPhase: string | null = null;
+      let minSlotIdx = 0; // prochain créneau dispo pour ce chantier
 
-      for (const et of ch.etapes) {
-        const pid = et.pid;
-        const grp = activePosts.find(g => g.posts.includes(pid));
-        if (!grp) continue;
-        // Tampon : +2 slots si changement de phase (fin d'une étape + 1 demi-journée de tampon)
-        // +1 slot si même phase (on enchaîne)
-        if (prevPhase && prevPhase !== et.phase) {
-          // déjà appliqué en fin de boucle précédente
-        }
-        prevPhase = et.phase;
-        const minPers = MIN_PERS[grp.phase] || 1;
-        const maxPersPoste = POST_MAX_PERS[pid];
+      // Placer phase par phase (coupe, montage, vitrage)
+      // Toutes les étapes d'une phase sont placées EN PARALLÈLE sur le même créneau
+      for (const phaseGrp of ch.phases) {
+        // Trouver le temps max parmi les étapes de cette phase
+        // (car elles sont en parallèle → le créneau dure le max)
+        const maxMinutes = Math.max(...phaseGrp.etapes.map(e => e.minutes));
 
-        // Compétence requise selon le POSTE précis (pas le groupe qui mélange)
-        // M1, M2 → coulissant / glandage
-        // M3 → frappes (portes)
-        // F1, F2, F3 → frappes
-        // MHS → hors_std
-        // V1 → frappes / V2 → coulissant
-        // C* → coupe / I* → isula / L* → logistique
-        const postCompetence = (() => {
-          if (pid === "M1" || pid === "M2" || pid === "V2") return "coulissant";
-          if (["F1","F2","F3","M3","V1"].includes(pid)) return "frappes";
-          if (pid === "MHS") return "hors_std";
-          if (pid.startsWith("C")) return "coupe";
-          if (pid.startsWith("I")) return "isula";
-          if (pid.startsWith("L")) return "logistique";
-          return grp.competence;
-        })();
+        // Pour chaque étape de la phase, identifier les opérateurs compétents
+        const etapeInfos = phaseGrp.etapes.map(et => {
+          const pid = et.pid;
+          const grp = activePosts.find(g => g.posts.includes(pid));
+          const minPers = MIN_PERS[phaseGrp.phase] || 1;
+          const maxPersPoste = grp ? POST_MAX_PERS[pid] : undefined;
+          let nbPers = maxPersPoste ? Math.min(minPers, maxPersPoste) : minPers;
+          if (pid === "C3" && et.minutes > DEMI_MIN * 4) nbPers = 3;
 
-        // Opérateurs compétents : 1) skill cochée en base 2) fallback EQUIPE par compétence du POSTE
-        let competentOps = ops.filter(op => op.competentPosts.includes(pid));
-        if (competentOps.length === 0) {
-          competentOps = ops.filter(op => {
-            const eq = EQUIPE.find(e => e.nom === op.nom);
-            return eq?.competences.includes(postCompetence);
-          });
-        }
-        if (competentOps.length === 0) continue;
+          const postCompetence = (() => {
+            if (pid === "M1" || pid === "M2" || pid === "V2") return "coulissant";
+            if (["F1","F2","F3","M3","V1"].includes(pid)) return "frappes";
+            if (pid === "MHS") return "hors_std";
+            if (pid.startsWith("C")) return "coupe";
+            if (pid.startsWith("I")) return "isula";
+            if (pid.startsWith("L")) return "logistique";
+            return grp?.competence || "";
+          })();
 
-        // Nombre d'opérateurs à placer
-        let nbPers = maxPersPoste ? Math.min(minPers, maxPersPoste) : minPers;
-        // C3 : adapter selon la charge
-        if (pid === "C3" && et.minutes > DEMI_MIN * 4) nbPers = 3;
+          let competentOps = ops.filter(op => op.competentPosts.includes(pid));
+          if (competentOps.length === 0) {
+            competentOps = ops.filter(op => {
+              const eq = EQUIPE.find(e => e.nom === op.nom);
+              return eq?.competences.includes(postCompetence);
+            });
+          }
+          return { pid, minutes: et.minutes, nbPers, competentOps, grp };
+        });
 
-        // Combien de demi-journées nécessaires pour cette étape
-        const slotsNeeded = Math.max(1, Math.ceil(et.minutes / (DEMI_MIN * nbPers)));
+        // Combien de demi-journées pour cette phase (basé sur l'étape la plus longue / le nbPers le plus favorable)
+        const primaryEtape = etapeInfos.reduce((a, b) => a.minutes > b.minutes ? a : b, etapeInfos[0]);
+        const slotsNeeded = primaryEtape ? Math.max(1, Math.ceil(primaryEtape.minutes / (DEMI_MIN * primaryEtape.nbPers))) : 1;
 
-        // Trouver les créneaux disponibles à partir de minSlotIdx
         let slotsPlaced = 0;
         let lastSlotIdxUsed = minSlotIdx - 1;
 
         for (let globalIdx = minSlotIdx; globalIdx < 10 && slotsPlaced < slotsNeeded; globalIdx++) {
           const j = Math.floor(globalIdx / 2);
           const demi = globalIdx % 2 === 0 ? "am" : "pm";
-          const key = ck(pid, j, demi);
 
-          // Capacité restante sur cette cellule (on peut partager avec d'autres chantiers)
-          const currentLoad = cellLoad[key] || 0;
-          const cellCapacity = nbPers * DEMI_MIN;
-          const remainingCap = cellCapacity - currentLoad;
-          if (remainingCap <= 0) continue; // cellule pleine, chercher la suivante
-
-          // Opérateurs disponibles : pas sur un AUTRE poste ce créneau
-          // Si déjà sur CE poste = OK (on les réutilise)
-          const availableOps = competentOps
-            .filter(op => {
-              const booked = opBookedPost[`${op.nom}|${j}|${demi}`];
-              return !booked || booked === pid;
-            })
-            .filter(op => !(j === 4 && op.vendrediOff))
-            .filter(op => !(j === 4 && demi === "pm" && op.id === "jp"))
-            .map(op => {
-              const postHabits = habits[pid] || {};
-              return { op, score: (brainScores[op.nom]?.[pid] || 0) * 0.5 + (postHabits[op.nom] || 0) * 0.5 };
-            })
-            .sort((a, b) => b.score - a.score);
-
-          // Réutiliser les ops déjà sur la cellule
-          const existingOps = newAff[key]?.ops || [];
-          const opsToPlace: string[] = [...existingOps];
-          for (const o of availableOps) {
-            if (opsToPlace.length >= nbPers) break;
-            if (!opsToPlace.includes(o.op.nom)) opsToPlace.push(o.op.nom);
+          // Placer TOUTES les étapes de cette phase en parallèle sur ce créneau
+          let canPlace = true;
+          for (const ei of etapeInfos) {
+            const key = ck(ei.pid, j, demi);
+            const currentLoad = cellLoad[key] || 0;
+            if (currentLoad >= ei.nbPers * DEMI_MIN) { canPlace = false; break; }
           }
+          if (!canPlace) continue;
 
-          // Niveau de supervision si tous débutants
-          const allBeginner = opsToPlace.length > 0 && opsToPlace.every(nm => {
-            const o = ops.find(op => op.nom === nm);
-            return (o?.skillLevels[pid] || 0) === 1;
-          });
-          if (allBeginner) {
-            const supervisor = availableOps.find(o =>
-              !opsToPlace.includes(o.op.nom) && (o.op.skillLevels[pid] || 0) >= 3
-            );
-            if (supervisor) opsToPlace.push(supervisor.op.nom);
-          }
+          for (const ei of etapeInfos) {
+            const key = ck(ei.pid, j, demi);
+            const currentLoad = cellLoad[key] || 0;
 
-          // Assigner à la cellule
-          const existingCell = newAff[key] || { ops: [], cmds: [], extras: [] };
-          const newCmds = existingCell.cmds.includes(ch.label) ? existingCell.cmds : [...existingCell.cmds, ch.label];
-          newAff[key] = { ...existingCell, ops: opsToPlace, cmds: newCmds };
+            // Opérateurs disponibles (pas sur un AUTRE poste ce créneau)
+            const availableOps = ei.competentOps
+              .filter(op => {
+                const booked = opBookedPost[`${op.nom}|${j}|${demi}`];
+                return !booked || booked === ei.pid;
+              })
+              .filter(op => !(j === 4 && op.vendrediOff))
+              .filter(op => !(j === 4 && demi === "pm" && op.id === "jp"))
+              .map(op => {
+                const postHabits = habits[ei.pid] || {};
+                return { op, score: (brainScores[op.nom]?.[ei.pid] || 0) * 0.5 + (postHabits[op.nom] || 0) * 0.5 };
+              })
+              .sort((a, b) => b.score - a.score);
 
-          // Mettre à jour les trackers
-          const minutesThisSlot = Math.min(et.minutes - slotsPlaced * DEMI_MIN * nbPers, remainingCap);
-          cellLoad[key] = currentLoad + minutesThisSlot;
-          for (const opNom of opsToPlace) {
-            opBookedPost[`${opNom}|${j}|${demi}`] = pid;
+            const existingOps = newAff[key]?.ops || [];
+            const opsToPlace: string[] = [...existingOps];
+            for (const o of availableOps) {
+              if (opsToPlace.length >= ei.nbPers) break;
+              if (!opsToPlace.includes(o.op.nom)) opsToPlace.push(o.op.nom);
+            }
+
+            // Supervision si tous débutants
+            const allBeginner = opsToPlace.length > 0 && opsToPlace.every(nm => {
+              const o = ops.find(op => op.nom === nm);
+              return (o?.skillLevels[ei.pid] || 0) === 1;
+            });
+            if (allBeginner) {
+              const supervisor = availableOps.find(o =>
+                !opsToPlace.includes(o.op.nom) && (o.op.skillLevels[ei.pid] || 0) >= 3
+              );
+              if (supervisor) opsToPlace.push(supervisor.op.nom);
+            }
+
+            const existingCell = newAff[key] || { ops: [], cmds: [], extras: [] };
+            const newCmds = existingCell.cmds.includes(ch.label) ? existingCell.cmds : [...existingCell.cmds, ch.label];
+            newAff[key] = { ...existingCell, ops: opsToPlace, cmds: newCmds };
+
+            cellLoad[key] = currentLoad + Math.min(ei.minutes, DEMI_MIN * ei.nbPers);
+            for (const opNom of opsToPlace) {
+              opBookedPost[`${opNom}|${j}|${demi}`] = ei.pid;
+            }
           }
 
           lastSlotIdxUsed = globalIdx;
           slotsPlaced++;
         }
 
-        // Tampon : +1 si même phase, +2 si changement de phase (appliqué au prochain tour)
-        // Pour l'instant, simple : +1 (même phase) ou +2 (changement)
-        const nextEt = ch.etapes[ch.etapes.indexOf(et) + 1];
-        const samePhaseAsNext = nextEt && nextEt.phase === et.phase;
-        minSlotIdx = lastSlotIdxUsed + (samePhaseAsNext ? 1 : 2);
+        // Tampon de 1 demi-journée avant la phase suivante (changement coupe→montage)
+        minSlotIdx = lastSlotIdxUsed + 2;
       }
     }
 
