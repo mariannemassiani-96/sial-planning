@@ -700,7 +700,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       for (const phaseGrp of ch.phases) {
         // Trouver le temps max parmi les étapes de cette phase
         // (car elles sont en parallèle → le créneau dure le max)
-        const maxMinutes = Math.max(...phaseGrp.etapes.map(e => e.minutes));
+        const _maxMinutes = Math.max(...phaseGrp.etapes.map(e => e.minutes));
 
         // Pour chaque étape de la phase, identifier les opérateurs compétents
         const etapeInfos = phaseGrp.etapes.map(et => {
