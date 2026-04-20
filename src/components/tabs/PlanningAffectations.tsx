@@ -807,8 +807,61 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       }
     }
 
+    // ── Ajouter automatiquement les livreurs pour les chargements "nous" ──
+    // Pour chaque commande avec transporteur="nous" livrée cette semaine,
+    // regrouper par (date+zone) puis assigner les opérateurs livreurs
+    const deliveries = new Map<string, { date: string; zone: string; clients: string[] }>();
+    for (const cmd of commandes) {
+      const livDate = (cmd as any).date_livraison_souhaitee;
+      if (!livDate) continue;
+      if ((cmd as any).transporteur !== "nous") continue;
+      const zone = (cmd as any).zone || "";
+      const dk = `${livDate}|${zone}`;
+      if (!deliveries.has(dk)) deliveries.set(dk, { date: livDate, zone, clients: [] });
+      deliveries.get(dk)!.clients.push((cmd as any).client || "");
+    }
+
+    // Opérateurs compétents pour livraison (LIVR dans leurs postes OU compétence "logistique")
+    const livreursDispo = ops.filter(op => {
+      if (op.competentPosts.includes("LIVR")) return true;
+      const eq = EQUIPE.find(e => e.nom === op.nom);
+      return eq?.competences.includes("logistique") || eq?.id === "guillaume" || eq?.id === "momo" || eq?.id === "jf" || eq?.id === "jp" || eq?.id === "bruno";
+    });
+
+    for (const del of Array.from(deliveries.values())) {
+      const dlDay = new Date(del.date + "T12:00:00");
+      const weekMon = new Date(viewWeek + "T12:00:00");
+      const jIdx = Math.floor((dlDay.getTime() - weekMon.getTime()) / (24 * 60 * 60 * 1000));
+      if (jIdx < 0 || jIdx > 4) continue;
+
+      // Choisir 1 ou 2 livreurs disponibles (pas déjà bookés ce créneau)
+      const slot = "am"; // livraison le matin par défaut
+      const avail = livreursDispo
+        .filter(op => {
+          const booked = opBookedPost[`${op.nom}|${jIdx}|${slot}`];
+          return !booked;
+        })
+        .filter(op => !(jIdx === 4 && op.vendrediOff))
+        .slice(0, 2);
+
+      const livreursNoms = avail.map(o => o.nom);
+      const label = `🚚 Livraison ${del.zone} (${del.clients.join(", ")})`;
+      const key = ck("AUT", jIdx, slot);
+      const existing = newAff[key] || { ops: [], cmds: [], extras: [] };
+      const extras = [...(existing.extras || [])];
+      if (!extras.includes(label)) extras.push(label);
+      const livreursByZone = { ...(existing.livreursByZone || {}) };
+      if (livreursNoms.length > 0) livreursByZone[del.zone] = livreursNoms;
+      newAff[key] = { ...existing, extras, livreursByZone };
+
+      // Booker les livreurs pour ce créneau
+      for (const nm of livreursNoms) {
+        opBookedPost[`${nm}|${jIdx}|${slot}`] = "AUT";
+      }
+    }
+
     saveAff(newAff);
-  }, [activePosts, postWork, saveAff, ops, habits, brainScores, commandes]);
+  }, [activePosts, postWork, saveAff, ops, habits, brainScores, commandes, viewWeek]);
 
   // ── Tout effacer ──
   const clearAll = useCallback(() => { saveAff({}); }, [saveAff]);
