@@ -3,13 +3,20 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
+let _columnsOk = false;
 async function ensureColumns() {
+  if (_columnsOk) return;
   try {
-    await (prisma as any).$executeRawUnsafe(`
-      ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "nb_livraisons" INTEGER NOT NULL DEFAULT 1;
-      ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "dates_livraisons" JSONB;
-    `);
-  } catch {}
+    await (prisma as any).$executeRawUnsafe(
+      `ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "nb_livraisons" INTEGER NOT NULL DEFAULT 1`
+    );
+    await (prisma as any).$executeRawUnsafe(
+      `ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "dates_livraisons" JSONB`
+    );
+    _columnsOk = true;
+  } catch (e) {
+    console.error("ensureColumns error:", e instanceof Error ? e.message : e);
+  }
 }
 
 function mapToDb(data: any) {
