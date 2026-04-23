@@ -74,23 +74,26 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
   const [zone,        setZone]        = useState("toutes");
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
   const dragRef = useRef<{ id: string; fromDay: string } | null>(null);
-  const [quickAction, setQuickAction] = useState<{ cmdId: string; client: string; chantier: string; livDate: string; transporteur: string; zone: string } | null>(null);
+  const [quickAction, setQuickAction] = useState<{ cmdId: string; client: string; chantier: string; livDate: string; transporteur: string; zone: string; notes: string } | null>(null);
   const [quickNewDate, setQuickNewDate] = useState("");
   const [quickTransporteur, setQuickTransporteur] = useState("");
   const [quickZone, setQuickZone] = useState("");
+  const [quickNotes, setQuickNotes] = useState("");
 
   // ── Quick Action popup : Livrée / Décaler ──
   const openQuickAction = (cmd: any, livDate: string) => {
-    setQuickAction({ cmdId: String(cmd.id), client: cmd.client || "", chantier: cmd.ref_chantier || "", livDate, transporteur: cmd.transporteur || "", zone: cmd.zone || "" });
+    setQuickAction({ cmdId: String(cmd.id), client: cmd.client || "", chantier: cmd.ref_chantier || "", livDate, transporteur: cmd.transporteur || "", zone: cmd.zone || "", notes: cmd.notes || "" });
     setQuickNewDate(livDate);
     setQuickTransporteur(cmd.transporteur || "");
     setQuickZone(cmd.zone || "");
+    setQuickNotes(cmd.notes || "");
   };
 
   const quickPatchBase = () => {
     const updates: Record<string, unknown> = {};
     if (quickTransporteur !== quickAction?.transporteur) updates.transporteur = quickTransporteur || null;
     if (quickZone !== quickAction?.zone) updates.zone = quickZone || null;
+    if (quickNotes !== (quickAction?.notes || "")) updates.notes = quickNotes || null;
     return updates;
   };
 
@@ -326,6 +329,11 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
                 <span>Au + tôt : <span className="mono" style={{ color:retardColor }}>{fmtDate(cc.dateLivraisonAuPlusTot)}</span></span>
               )}
             </div>
+            {cmd.notes && (
+              <div style={{ fontSize:9, color:C.yellow, marginTop:3, whiteSpace:"pre-wrap", overflow:"hidden", maxHeight:28, textOverflow:"ellipsis" }}>
+                {cmd.notes.length > 80 ? cmd.notes.slice(0, 80) + "…" : cmd.notes}
+              </div>
+            )}
             <TransporteurPicker x={x} />
           </div>
           <div style={{ textAlign:"right", flexShrink:0 }}>
@@ -771,6 +779,14 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
                   {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
               </div>
+            </div>
+
+            {/* Notes */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 10, color: C.yellow, display: "block", marginBottom: 4, fontWeight: 700 }}>Notes chantier</label>
+              <textarea value={quickNotes} onChange={e => setQuickNotes(e.target.value)}
+                placeholder="Ajouter des notes sur ce chantier / cette livraison…"
+                style={{ width: "100%", boxSizing: "border-box", minHeight: 60, padding: "8px 10px", background: C.bg, border: `1px solid ${quickNotes ? C.yellow + "66" : C.border}`, borderRadius: 6, color: C.text, fontSize: 12, resize: "vertical", outline: "none" }} />
             </div>
 
             {/* Bouton Enregistrer (change transporteur/zone/date sans changer statut) */}
