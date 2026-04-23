@@ -827,15 +827,15 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       d.setDate(d.getDate() + i);
       weekDays.push(localStr(d));
     }
-    let nbTransporteurNous = 0;
-    let nbDansLaSemaine = 0;
+    let _nbTransporteurNous = 0;
+    let _nbDansLaSemaine = 0;
     for (const cmd of commandes) {
       const livDate = (cmd as any).date_livraison_souhaitee;
       if (!livDate) continue;
       if ((cmd as any).transporteur !== "nous") continue;
-      nbTransporteurNous++;
+      _nbTransporteurNous++;
       if (!weekDays.includes(livDate)) continue;
-      nbDansLaSemaine++;
+      _nbDansLaSemaine++;
       const zone = (cmd as any).zone || "";
       const dk = `${livDate}|${zone}`;
       if (!deliveries.has(dk)) deliveries.set(dk, { date: livDate, zone, clients: [] });
@@ -849,7 +849,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       return eq?.competences.includes("logistique") || eq?.id === "guillaume" || eq?.id === "momo" || eq?.id === "jf" || eq?.id === "jp" || eq?.id === "bruno";
     });
 
-    let nbLivreursPlaces = 0;
+    let _nbLivreursPlaces = 0;
     for (const del of Array.from(deliveries.values())) {
       const jIdx = weekDays.indexOf(del.date);
       if (jIdx < 0 || jIdx > 4) continue;
@@ -878,7 +878,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       for (const nm of livreursNoms) if (!combinedOps.includes(nm)) combinedOps.push(nm);
       newAff[key] = { ...existing, ops: combinedOps, extras, livreursByZone };
 
-      if (livreursNoms.length > 0) nbLivreursPlaces++;
+      if (livreursNoms.length > 0) _nbLivreursPlaces++;
     }
 
     saveAff(newAff);
