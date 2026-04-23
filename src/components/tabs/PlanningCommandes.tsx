@@ -203,6 +203,7 @@ export default function PlanningCommandes({ commandes, onPatch }: {
               {thSort("STATUT", "statut", C.sec)}
               {thSort("SEM. FAB", "fab", C.orange)}
               {thSort("RETARD", "retard", C.red)}
+              <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: "#AB47BC", fontWeight: 700, width: 60 }}>NB LIV.</th>
               <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.sec, width: 70 }}>TRANSP.</th>
               <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.muted, width: 40 }}>FAB</th>
               <th style={{ padding: "6px 4px", background: C.s2, border: `1px solid ${C.border}`, textAlign: "center", fontSize: 10, color: C.muted, width: 40 }}>VIT.</th>
@@ -210,7 +211,7 @@ export default function PlanningCommandes({ commandes, onPatch }: {
           </thead>
           <tbody>
             {cmdList.length === 0 && (
-              <tr><td colSpan={9} style={{ padding: 30, textAlign: "center", color: C.muted, border: `1px solid ${C.border}` }}>
+              <tr><td colSpan={10} style={{ padding: 30, textAlign: "center", color: C.muted, border: `1px solid ${C.border}` }}>
                 {hasFilters ? "Aucune commande ne correspond aux filtres." : "Aucune commande."}
               </td></tr>
             )}
@@ -250,6 +251,19 @@ export default function PlanningCommandes({ commandes, onPatch }: {
                         {retard > 0 ? `+${retard}j` : `${retard}j`}
                       </span>
                     )}
+                  </td>
+                  <td style={{ padding: "2px 4px", border: `1px solid ${C.border}`, textAlign: "center" }}>
+                    <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
+                      {[1, 2, 3, 4].map(n => {
+                        const active = (a.nb_livraisons || 1) === n;
+                        return (
+                          <button key={n} onClick={() => onPatch(String(cmd.id), { nb_livraisons: n, dates_livraisons: n > 1 ? Array.from({ length: n }, (_, i) => ((a.dates_livraisons as any[]) || [])[i] || { date: "", description: `Livraison ${i + 1}` }) : null })}
+                            style={{ width: 18, height: 18, padding: 0, borderRadius: 3, fontSize: 10, fontWeight: 700, border: `1px solid ${active ? "#AB47BC" : C.border}`, background: active ? "#AB47BC22" : "transparent", color: active ? "#AB47BC" : C.muted, cursor: "pointer", lineHeight: "16px" }}>
+                            {n}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </td>
                   <td style={{ padding: "2px 4px", border: `1px solid ${C.border}`, textAlign: "center" }}>
                     <select value={a.transporteur || ""} onChange={e => onPatch(String(cmd.id), { transporteur: e.target.value || null })}
