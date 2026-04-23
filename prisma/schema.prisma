@@ -85,6 +85,13 @@ model Commande {
   reliquat_accessoires      Boolean  @default(false)
   reliquat_accessoires_desc String?
   reliquat_accessoires_date String?
+  nb_livraisons             Int      @default(1)
+  dates_livraisons          Json?
+  semaine_coupe           String?
+  semaine_montage         String?
+  semaine_vitrage         String?
+  semaine_logistique      String?
+  semaine_isula           String?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }

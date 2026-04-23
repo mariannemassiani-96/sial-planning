@@ -3,6 +3,15 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
+async function ensureColumns() {
+  try {
+    await (prisma as any).$executeRawUnsafe(`
+      ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "nb_livraisons" INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE "Commande" ADD COLUMN IF NOT EXISTS "dates_livraisons" JSONB;
+    `);
+  } catch {}
+}
+
 function mapToDb(data: any) {
   return {
     num_commande:            data.num_commande            || "",
@@ -57,6 +66,8 @@ function mapToDb(data: any) {
     reliquat_accessoires:      data.reliquat_accessoires      ?? false,
     reliquat_accessoires_desc: data.reliquat_accessoires_desc || null,
     reliquat_accessoires_date: data.reliquat_accessoires_date || null,
+    nb_livraisons:             parseInt(data.nb_livraisons)   || 1,
+    dates_livraisons:          data.dates_livraisons          ?? null,
   };
 }
 
@@ -64,6 +75,7 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   try {
+    await ensureColumns();
     const commandes = await prisma.commande.findMany({ orderBy: { createdAt: "desc" } });
     return NextResponse.json(commandes);
   } catch {

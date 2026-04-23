@@ -3,7 +3,7 @@
 // Utilise par : validation dependances, auto-planning, scheduling optimal
 // ═══════════════════════════════════════════════════════════════════════
 
-import { TYPES_MENUISERIE, TAMPON_MIN } from "@/lib/sial-data";
+import { TYPES_MENUISERIE, TAMPON_MIN, calcTempsType } from "@/lib/sial-data";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -133,6 +133,30 @@ function ensureCache(typeId: string): ProductionRoute | null {
  */
 export function getRoute(typeId: string): ProductionRoute | null {
   return ensureCache(typeId);
+}
+
+export interface EtapeRoutage {
+  phase: string;
+  postId: string;
+  label: string;
+  estimatedMin: number;
+}
+
+export function getRoutage(typeId: string, quantite: number, hsTemps?: Record<string, unknown> | null): EtapeRoutage[] {
+  const t = calcTempsType(typeId, quantite, hsTemps as any);
+  if (!t) return [];
+  const PHASE_MAP: Record<string, string> = { coupe: "coupe", frappes: "montage", coulissant: "montage", vitrage_ov: "vitrage" };
+  const LABEL_MAP: Record<string, string> = { coupe: "Coupe", frappes: "Montage / Frappes", coulissant: "Montage / Coulissant", vitrage_ov: "Vitrage ouvrants" };
+  const route = getRoute(typeId);
+  const steps = route ? route.steps.map(s => s.poste) : Object.keys(t.par_poste).filter(k => (t.par_poste as any)[k] > 0);
+  return steps
+    .filter(poste => (t.par_poste as any)[poste] > 0)
+    .map(poste => ({
+      phase: PHASE_MAP[poste] || poste,
+      postId: poste,
+      label: LABEL_MAP[poste] || poste,
+      estimatedMin: (t.par_poste as any)[poste] || 0,
+    }));
 }
 
 /**
