@@ -31,6 +31,8 @@ const TRANSPORTEURS: Record<string, string> = {
   nous: "Nous", setec: "Setec", express: "Express", poseur: "Poseur", depot: "Depot",
 };
 
+const JOURS_SEM = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
+
 type SortKey = "livraison" | "fab" | "client" | "statut" | "retard";
 
 export default function PlanningCommandes({ commandes, onPatch }: {
@@ -137,6 +139,46 @@ export default function PlanningCommandes({ commandes, onPatch }: {
     onPatch(cmdId, { date_livraison_souhaitee: localStr(d) });
   };
 
+  const getMondayOfDate = (dateStr: string): string => {
+    if (!dateStr) return "";
+    const d = new Date(dateStr + "T12:00:00");
+    const day = d.getDay(); d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+    return localStr(d);
+  };
+
+  const getDayIndex = (dateStr: string): number => {
+    if (!dateStr) return 4;
+    const d = new Date(dateStr + "T12:00:00");
+    const day = d.getDay();
+    return day === 0 ? 6 : day - 1;
+  };
+
+  const setLivDate = (cmdId: string, cmd: any, livIdx: number, monday: string, dayIdx: number) => {
+    const d = new Date(monday + "T12:00:00");
+    d.setDate(d.getDate() + dayIdx);
+    const dateStr = localStr(d);
+    const nb = cmd.nb_livraisons || 1;
+    const arr = [...((cmd.dates_livraisons as any[]) || Array.from({ length: nb }, (_, i) => ({ date: "", description: `Livraison ${i + 1}` })))];
+    arr[livIdx] = { ...arr[livIdx], date: dateStr };
+    const updates: Record<string, unknown> = { dates_livraisons: arr };
+    if (livIdx === 0) updates.date_livraison_souhaitee = dateStr;
+    onPatch(cmdId, updates);
+  };
+
+  const setLivWeek = (cmdId: string, cmd: any, livIdx: number, monday: string) => {
+    const existing = (cmd.dates_livraisons as any[])?.[livIdx];
+    const oldDayIdx = existing?.date ? getDayIndex(existing.date) : 4;
+    const dayIdx = Math.min(oldDayIdx, 4);
+    setLivDate(cmdId, cmd, livIdx, monday, dayIdx);
+  };
+
+  const setLivDay = (cmdId: string, cmd: any, livIdx: number, dayIdx: number) => {
+    const existing = (cmd.dates_livraisons as any[])?.[livIdx];
+    const monday = existing?.date ? getMondayOfDate(existing.date) : "";
+    if (!monday) return;
+    setLivDate(cmdId, cmd, livIdx, monday, dayIdx);
+  };
+
   const sel = { padding: "5px 8px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, fontSize: 11, cursor: "pointer" };
   const selActive = (active: boolean, color: string) => ({
     ...sel,
@@ -222,11 +264,45 @@ export default function PlanningCommandes({ commandes, onPatch }: {
               const retard = cc?.retardJours ?? 0;
               return (
                 <tr key={String(cmd.id)} style={{ borderBottom: `1px solid ${C.border}`, opacity: a.aucune_menuiserie && a.aucun_vitrage ? 0.5 : 1 }}>
-                  <td style={{ padding: "2px 4px", border: `1px solid ${C.border}` }}>
-                    <select value={getSemaineLivraison(a)} onChange={e => setSemaineLivraison(String(cmd.id), e.target.value)}
-                      style={{ width: "100%", padding: "3px 4px", fontSize: 10, background: getSemaineLivraison(a) ? C.green + "15" : C.bg, border: `1px solid ${getSemaineLivraison(a) ? C.green + "66" : C.border}`, borderRadius: 3, color: C.text, cursor: "pointer" }}>
-                      {weekOptions.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
-                    </select>
+                  <td style={{ padding: "2px 4px", border: `1px solid ${C.border}`, verticalAlign: "top" }}>
+                    {(a.nb_livraisons || 1) <= 1 ? (
+                      <select value={getSemaineLivraison(a)} onChange={e => setSemaineLivraison(String(cmd.id), e.target.value)}
+                        style={{ width: "100%", padding: "3px 4px", fontSize: 10, background: getSemaineLivraison(a) ? C.green + "15" : C.bg, border: `1px solid ${getSemaineLivraison(a) ? C.green + "66" : C.border}`, borderRadius: 3, color: C.text, cursor: "pointer" }}>
+                        {weekOptions.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
+                      </select>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        {Array.from({ length: a.nb_livraisons }, (_, i) => {
+                          const liv = (a.dates_livraisons as any[])?.[i] || {};
+                          const livDate = liv.date || "";
+                          const livMonday = livDate ? getMondayOfDate(livDate) : "";
+                          const livDayIdx = livDate ? getDayIndex(livDate) : -1;
+                          return (
+                            <div key={i} style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                              <span style={{ fontSize: 9, fontWeight: 700, color: "#AB47BC", width: 12, flexShrink: 0 }}>{i + 1}.</span>
+                              <select value={livMonday} onChange={e => { if (e.target.value) setLivWeek(String(cmd.id), a, i, e.target.value); }}
+                                style={{ flex: 1, padding: "2px 3px", fontSize: 9, background: livMonday ? C.green + "15" : C.bg, border: `1px solid ${livMonday ? C.green + "66" : C.border}`, borderRadius: 3, color: C.text, cursor: "pointer", minWidth: 0 }}>
+                                <option value="">—</option>
+                                {weekOptions.filter(w => w.value).map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
+                              </select>
+                              {livMonday && (
+                                <div style={{ display: "flex", gap: 1 }}>
+                                  {JOURS_SEM.map((j, di) => (
+                                    <button key={di} onClick={() => setLivDay(String(cmd.id), a, i, di)}
+                                      style={{ width: 20, height: 16, padding: 0, fontSize: 8, fontWeight: 700, borderRadius: 2,
+                                        border: `1px solid ${livDayIdx === di ? C.green : C.border}`,
+                                        background: livDayIdx === di ? C.green + "33" : "transparent",
+                                        color: livDayIdx === di ? C.green : C.muted, cursor: "pointer" }}>
+                                      {j}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </td>
                   <td style={{ padding: "5px 8px", borderLeft: `3px solid ${borderColor}`, border: `1px solid ${C.border}`, fontWeight: 700, fontSize: 12 }}>
                     {a.client}
