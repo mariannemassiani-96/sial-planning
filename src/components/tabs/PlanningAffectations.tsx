@@ -755,7 +755,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             const key = ck(ei.pid, j, demi);
             const currentLoad = cellLoad[key] || 0;
 
-            // Opérateurs disponibles (pas sur un AUTRE poste ce créneau)
+            // Opérateurs disponibles (pas sur un AUTRE poste ce créneau, pas absent RH)
             const availableOps = ei.competentOps
               .filter(op => {
                 const booked = opBookedPost[`${op.nom}|${j}|${demi}`];
@@ -763,6 +763,16 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               })
               .filter(op => !(j === 4 && op.vendrediOff))
               .filter(op => !(j === 4 && demi === "pm" && op.id === "jp"))
+              // Filtrer les absents RH
+              .filter(op => {
+                const eq = EQUIPE.find(e => e.nom === op.nom);
+                const opRH = rhPlan[eq?.id || ""] || {};
+                const dayDate = new Date(viewWeek + "T12:00:00");
+                dayDate.setDate(dayDate.getDate() + j);
+                const dayStr = localStr(dayDate);
+                const dispo = opRH[dayStr];
+                return dispo === undefined || dispo > 0;
+              })
               .map(op => {
                 const postHabits = habits[ei.pid] || {};
                 return { op, score: (brainScores[op.nom]?.[ei.pid] || 0) * 0.5 + (postHabits[op.nom] || 0) * 0.5 };
@@ -811,10 +821,21 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     // Pour chaque commande avec transporteur="nous" livrée cette semaine,
     // regrouper par (date+zone) puis assigner les opérateurs livreurs
     const deliveries = new Map<string, { date: string; zone: string; clients: string[] }>();
+    const weekDays: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(viewWeek + "T12:00:00");
+      d.setDate(d.getDate() + i);
+      weekDays.push(localStr(d));
+    }
+    let nbTransporteurNous = 0;
+    let nbDansLaSemaine = 0;
     for (const cmd of commandes) {
       const livDate = (cmd as any).date_livraison_souhaitee;
       if (!livDate) continue;
       if ((cmd as any).transporteur !== "nous") continue;
+      nbTransporteurNous++;
+      if (!weekDays.includes(livDate)) continue;
+      nbDansLaSemaine++;
       const zone = (cmd as any).zone || "";
       const dk = `${livDate}|${zone}`;
       if (!deliveries.has(dk)) deliveries.set(dk, { date: livDate, zone, clients: [] });
@@ -828,23 +849,24 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       return eq?.competences.includes("logistique") || eq?.id === "guillaume" || eq?.id === "momo" || eq?.id === "jf" || eq?.id === "jp" || eq?.id === "bruno";
     });
 
+    let nbLivreursPlaces = 0;
     for (const del of Array.from(deliveries.values())) {
-      const dlDay = new Date(del.date + "T12:00:00");
-      const weekMon = new Date(viewWeek + "T12:00:00");
-      const jIdx = Math.floor((dlDay.getTime() - weekMon.getTime()) / (24 * 60 * 60 * 1000));
+      const jIdx = weekDays.indexOf(del.date);
       if (jIdx < 0 || jIdx > 4) continue;
 
-      // Choisir 1 ou 2 livreurs disponibles (pas déjà bookés ce créneau)
-      const slot = "am"; // livraison le matin par défaut
-      const avail = livreursDispo
-        .filter(op => {
-          const booked = opBookedPost[`${op.nom}|${jIdx}|${slot}`];
-          return !booked;
-        })
+      const slot = "am";
+      const notAbsent = livreursDispo
         .filter(op => !(jIdx === 4 && op.vendrediOff))
-        .slice(0, 2);
+        .filter(op => {
+          const eq = EQUIPE.find(e => e.nom === op.nom);
+          const opRH = rhPlan[eq?.id || ""] || {};
+          const dispo = opRH[del.date];
+          return dispo === undefined || dispo > 0;
+        });
+      const notBooked = notAbsent.filter(op => !opBookedPost[`${op.nom}|${jIdx}|${slot}`]);
+      const chosen = (notBooked.length > 0 ? notBooked : notAbsent).slice(0, 2);
+      const livreursNoms = chosen.map(o => o.nom);
 
-      const livreursNoms = avail.map(o => o.nom);
       const label = `🚚 Livraison ${del.zone} (${del.clients.join(", ")})`;
       const key = ck("AUT", jIdx, slot);
       const existing = newAff[key] || { ops: [], cmds: [], extras: [] };
@@ -852,12 +874,11 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       if (!extras.includes(label)) extras.push(label);
       const livreursByZone = { ...(existing.livreursByZone || {}) };
       if (livreursNoms.length > 0) livreursByZone[del.zone] = livreursNoms;
-      newAff[key] = { ...existing, extras, livreursByZone };
+      const combinedOps = [...(existing.ops || [])];
+      for (const nm of livreursNoms) if (!combinedOps.includes(nm)) combinedOps.push(nm);
+      newAff[key] = { ...existing, ops: combinedOps, extras, livreursByZone };
 
-      // Booker les livreurs pour ce créneau
-      for (const nm of livreursNoms) {
-        opBookedPost[`${nm}|${jIdx}|${slot}`] = "AUT";
-      }
+      if (livreursNoms.length > 0) nbLivreursPlaces++;
     }
 
     saveAff(newAff);

@@ -29,6 +29,8 @@ const empty = {
   date_alu: "", date_pvc: "", date_accessoires: "",
   date_panneau_porte: "", date_volet_roulant: "",
   date_livraison_souhaitee: "",
+  nb_livraisons: 1,
+  dates_livraisons: null as any,
   transporteur: "",
   aucune_menuiserie: false,
   aucun_vitrage: false,
@@ -58,6 +60,8 @@ function cmdToForm(cmd: any): FormType {
     date_alu: cmd.date_alu || "", date_pvc: cmd.date_pvc || "", date_accessoires: cmd.date_accessoires || "",
     date_panneau_porte: cmd.date_panneau_porte || "", date_volet_roulant: cmd.date_volet_roulant || "",
     date_livraison_souhaitee: cmd.date_livraison_souhaitee || "",
+    nb_livraisons: cmd.nb_livraisons || 1,
+    dates_livraisons: cmd.dates_livraisons || null,
     transporteur: cmd.transporteur || "",
     aucune_menuiserie: cmd.aucune_menuiserie || false,
     aucun_vitrage: cmd.aucun_vitrage || false,
@@ -234,7 +238,7 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
     const premType = f.lignes[0]?.type || commande?.type || "ob1_pvc";
     const premHS = f.lignes[0]?.type === "hors_standard" ? { nb_profils: f.lignes[0].hs_nb_profils, t_coupe: f.lignes[0].hs_t_coupe, t_montage: f.lignes[0].hs_t_montage, t_vitrage: f.lignes[0].hs_t_vitrage, operateur_montage: f.lignes[0].hs_op_montage || "jp", operateur_vitrage: f.lignes[0].hs_op_vitrage || "quentin" } : (commande?.hsTemps ?? null);
     const qte = qteTotale || commande?.quantite || 1;
-    const result = { ...f, id: commande?.id || Date.now(), type: premType, quantite: qte, hsTemps: premHS, date_livraison_souhaitee: f.date_livraison_souhaitee || dlReelle() || dlAuto() };
+    const result = { ...f, id: commande?.id || Date.now(), type: premType, quantite: qte, hsTemps: premHS, date_livraison_souhaitee: f.date_livraison_souhaitee || dlReelle() || dlAuto(), nb_livraisons: f.nb_livraisons, dates_livraisons: f.nb_livraisons > 1 ? f.dates_livraisons : null };
     if (commande && onModifier) { onModifier(result); } else { onAjouter(result); }
     setF(empty);
   };
@@ -699,10 +703,67 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
         </div>
       </div>
 
-      <div style={{ marginTop: 10 }}>
-        <label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>LIVRAISON SOUHAITÉE</label>
-        <input type="date" style={inp} value={f.date_livraison_souhaitee} onChange={e => set("date_livraison_souhaitee", e.target.value)} />
-        {dlReelle() && !f.date_livraison_souhaitee && <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>Auto : {fmtDate(dlReelle())}</div>}
+      <div style={{ marginTop: 10, padding: 10, background: C.bg, borderRadius: 5, border: `1px solid ${C.border}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 10, color: C.green, fontWeight: 700 }}>LIVRAISON</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 10, color: C.sec }}>Livrer en</span>
+            {[1, 2, 3, 4].map(n => (
+              <button key={n} type="button" onClick={() => {
+                set("nb_livraisons", n);
+                if (n > 1 && (!f.dates_livraisons || (f.dates_livraisons as any[]).length < n)) {
+                  const existing = (f.dates_livraisons as any[] || []);
+                  const arr = Array.from({ length: n }, (_, i) => existing[i] || { date: "", description: `Livraison ${i + 1}` });
+                  if (f.date_livraison_souhaitee && !arr[0].date) arr[0].date = f.date_livraison_souhaitee;
+                  set("dates_livraisons", arr);
+                }
+              }} style={{
+                width: 26, height: 26, borderRadius: 4, fontSize: 12, fontWeight: 700,
+                background: f.nb_livraisons === n ? C.green + "33" : C.s1,
+                border: `1px solid ${f.nb_livraisons === n ? C.green : C.border}`,
+                color: f.nb_livraisons === n ? C.green : C.sec,
+                cursor: "pointer",
+              }}>{n}</button>
+            ))}
+            <span style={{ fontSize: 10, color: C.sec }}>fois</span>
+          </div>
+        </div>
+
+        {f.nb_livraisons === 1 ? (
+          <div>
+            <label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>DATE LIVRAISON SOUHAITÉE</label>
+            <input type="date" style={inp} value={f.date_livraison_souhaitee} onChange={e => set("date_livraison_souhaitee", e.target.value)} />
+            {dlReelle() && !f.date_livraison_souhaitee && <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>Auto : {fmtDate(dlReelle())}</div>}
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {Array.from({ length: f.nb_livraisons }, (_, i) => {
+              const liv = (f.dates_livraisons as any[])?.[i] || { date: "", description: "" };
+              const updateLiv = (k: string, v: string) => {
+                const arr = [...((f.dates_livraisons as any[]) || Array.from({ length: f.nb_livraisons }, (_, j) => ({ date: "", description: `Livraison ${j + 1}` })))];
+                arr[i] = { ...arr[i], [k]: v };
+                set("dates_livraisons", arr);
+              };
+              return (
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "auto 1fr 2fr", gap: 8, alignItems: "end", padding: "6px 8px", background: C.s1, borderRadius: 4, border: `1px solid ${C.border}` }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.green, width: 24, textAlign: "center", paddingBottom: 6 }}>{i + 1}</div>
+                  <div>
+                    <label style={{ fontSize: 9, color: C.green, display: "block", marginBottom: 2 }}>DATE</label>
+                    <input type="date" style={{ ...inp, borderColor: C.green + "66" }} value={liv.date || ""} onChange={e => {
+                      updateLiv("date", e.target.value);
+                      if (i === 0) set("date_livraison_souhaitee", e.target.value);
+                    }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>CONTENU</label>
+                    <input style={inp} value={liv.description || ""} onChange={e => updateLiv("description", e.target.value)} placeholder={`ex: Fenêtres RDC, Baies étage…`} />
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{ fontSize: 9, color: C.muted }}>La 1ère date sera utilisée comme date de livraison principale.</div>
+          </div>
+        )}
       </div>
 
       <button onClick={submit} style={{ marginTop: 12, width: "100%", padding: "9px 0", background: commande ? C.blue : "#E65100", border: "none", borderRadius: 5, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: "0.06em" }}>

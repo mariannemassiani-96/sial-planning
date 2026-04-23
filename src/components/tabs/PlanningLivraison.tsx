@@ -106,15 +106,27 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
 
 
   // Enriched commandes
-  const enriched = useMemo(() =>
-    commandes.map(c => {
+  const enriched = useMemo(() => {
+    const result: { cmd: any; c: CommandeCC; cc: any; livSouhaitee: string; livIndex: number; livTotal: number; livDesc: string }[] = [];
+    for (const c of commandes) {
       const cc  = calcCheminCritique(c);
       const cmd = c as any;
-      const livSouhaitee = cmd.date_livraison_souhaitee || "";
-      return { cmd, c, cc, livSouhaitee };
-    }).filter(x => x.livSouhaitee),
-    [commandes]
-  );
+      const nbLiv = cmd.nb_livraisons || 1;
+      const datesLiv = cmd.dates_livraisons as { date: string; description: string }[] | null;
+
+      if (nbLiv > 1 && datesLiv && datesLiv.length > 0) {
+        for (let i = 0; i < nbLiv; i++) {
+          const livDate = datesLiv[i]?.date || "";
+          if (!livDate) continue;
+          result.push({ cmd, c, cc, livSouhaitee: livDate, livIndex: i + 1, livTotal: nbLiv, livDesc: datesLiv[i]?.description || "" });
+        }
+      } else {
+        const livSouhaitee = cmd.date_livraison_souhaitee || "";
+        if (livSouhaitee) result.push({ cmd, c, cc, livSouhaitee, livIndex: 0, livTotal: 1, livDesc: "" });
+      }
+    }
+    return result;
+  }, [commandes]);
 
   const filtered = zone === "toutes" ? enriched : enriched.filter(x => (x.cmd as any).zone === zone);
 
@@ -191,8 +203,8 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
   }, [filtered, view, weekDays, anchor, year, month]);
 
   // ── Drag & Drop ─────────────────────────────────────────────────────
-  const handleDragStart = (id: string, fromDay: string) => (e: React.DragEvent) => {
-    dragRef.current = { id, fromDay };
+  const handleDragStart = (id: string, fromDay: string, splitIndex?: number) => (e: React.DragEvent) => {
+    (dragRef as any).current = { id, fromDay, splitIndex };
     e.dataTransfer.effectAllowed = "move";
   };
 
@@ -205,9 +217,24 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
   const handleDrop = (day: string) => (e: React.DragEvent) => {
     e.preventDefault();
     setDragOverDay(null);
-    const drag = dragRef.current;
+    const drag = (dragRef as any).current;
     if (!drag || drag.fromDay === day) { dragRef.current = null; return; }
-    onPatch(drag.id, { date_livraison_souhaitee: day });
+    if (drag.splitIndex != null && drag.splitIndex > 0) {
+      const cmd = commandes.find(c => String(c.id) === drag.id) as any;
+      if (cmd?.dates_livraisons) {
+        const arr = [...(cmd.dates_livraisons as any[])];
+        arr[drag.splitIndex - 1] = { ...arr[drag.splitIndex - 1], date: day };
+        onPatch(drag.id, { dates_livraisons: arr });
+      }
+    } else {
+      onPatch(drag.id, { date_livraison_souhaitee: day });
+      const cmd = commandes.find(c => String(c.id) === drag.id) as any;
+      if (cmd?.dates_livraisons && cmd.nb_livraisons > 1) {
+        const arr = [...(cmd.dates_livraisons as any[])];
+        arr[0] = { ...arr[0], date: day };
+        onPatch(drag.id, { date_livraison_souhaitee: day, dates_livraisons: arr });
+      }
+    }
     dragRef.current = null;
   };
 
@@ -248,7 +275,7 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
   function DelivCard({ x, showDate = false, draggable: isDraggable = false }: {
     x: typeof enriched[0]; showDate?: boolean; draggable?: boolean;
   }) {
-    const { cmd, c, cc, livSouhaitee } = x;
+    const { cmd, c, cc, livSouhaitee, livIndex, livTotal, livDesc } = x;
     const tm = TYPES_MENUISERIE[c.type];
     const retardColor = cc?.critique ? C.red : cc?.enRetard ? C.orange : C.green;
     const jr = livSouhaitee
@@ -257,11 +284,12 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
     const jc = jr === null ? C.sec : jr < 0 ? C.red : jr < 7 ? C.orange : C.green;
     const zoneColor = getZoneColor(cmd.zone, C.sec);
     const transp = TRANSPORTEURS.find(t => t.id === cmd.transporteur);
+    const isSplit = livTotal > 1;
 
     return (
       <div
         draggable={isDraggable}
-        onDragStart={isDraggable ? handleDragStart(String(c.id), livSouhaitee) : undefined}
+        onDragStart={isDraggable ? handleDragStart(String(c.id), livSouhaitee, livIndex || undefined) : undefined}
         onDragEnd={isDraggable ? handleDragEnd : undefined}
         onClick={() => openQuickAction(cmd, livSouhaitee)}
         onDoubleClick={() => onEdit?.(x.c)}
@@ -276,6 +304,11 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
               <span className="mono" style={{ fontSize:10, color:C.orange, fontWeight:700 }}>{cmd.num_commande||"—"}</span>
               <span style={{ fontSize:13, fontWeight:700, color:C.text }}>{c.client}</span>
               {cmd.ref_chantier && <Bdg t={cmd.ref_chantier} c={C.teal} sz={9}/>}
+              {isSplit && (
+                <span style={{ fontSize:9, padding:"1px 7px", background:C.purple+"22", border:`1px solid ${C.purple}66`, borderRadius:3, color:C.purple, fontWeight:700 }}>
+                  {livIndex}/{livTotal}
+                </span>
+              )}
               {tm && <Bdg t={tm.label} c={tm.famille==="hors_standard"?C.purple:CFAM[tm.famille]||C.blue} sz={9}/>}
               <Bdg t={`×${c.quantite}`} c={C.sec} sz={9}/>
               {transp
@@ -285,6 +318,7 @@ export default function PlanningLivraison({ commandes, onPatch, onEdit }: {
             </div>
             <div style={{ display:"flex", gap:10, fontSize:10, color:C.sec, flexWrap:"wrap" }}>
               {cmd.zone && <span style={{ color: zoneColor, fontWeight: 600 }}>{cmd.zone}</span>}
+              {isSplit && livDesc && <span style={{ color: C.purple, fontWeight: 600 }}>{livDesc}</span>}
               {showDate && livSouhaitee && (
                 <span>Livraison : <span className="mono" style={{ color:C.text }}>{fmtDate(livSouhaitee)}</span></span>
               )}

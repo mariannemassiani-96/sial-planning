@@ -40,11 +40,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     "reliquat_pvc","reliquat_pvc_desc","reliquat_pvc_date",
     "reliquat_accessoires","reliquat_accessoires_desc","reliquat_accessoires_date",
     "semaine_coupe","semaine_montage","semaine_vitrage","semaine_logistique","semaine_isula",
+    "nb_livraisons","dates_livraisons",
   ];
   for (const key of fields) {
     if (data[key] !== undefined) {
       let val = data[key];
-      if (key === "quantite") val = parseInt(val) || 1;
+      if (key === "quantite" || key === "nb_livraisons") val = parseInt(val) || 1;
       else if (key === "montant_ht" || key === "acompte_montant") val = val != null ? parseFloat(val) || null : null;
       else if (key === "avancement") val = parseInt(val) || 0;
       partial[key] = val;

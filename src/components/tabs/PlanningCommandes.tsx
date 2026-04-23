@@ -227,7 +227,10 @@ export default function PlanningCommandes({ commandes, onPatch }: {
                       {weekOptions.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
                     </select>
                   </td>
-                  <td style={{ padding: "5px 8px", borderLeft: `3px solid ${borderColor}`, border: `1px solid ${C.border}`, fontWeight: 700, fontSize: 12 }}>{a.client}</td>
+                  <td style={{ padding: "5px 8px", borderLeft: `3px solid ${borderColor}`, border: `1px solid ${C.border}`, fontWeight: 700, fontSize: 12 }}>
+                    {a.client}
+                    {a.nb_livraisons > 1 && <span style={{ fontSize: 9, marginLeft: 6, padding: "1px 5px", background: "#AB47BC22", border: "1px solid #AB47BC66", borderRadius: 3, color: "#AB47BC", fontWeight: 700 }}>en {a.nb_livraisons}x</span>}
+                  </td>
                   <td style={{ padding: "5px 8px", border: `1px solid ${C.border}`, color: C.sec }}>{a.ref_chantier || "—"}</td>
                   <td style={{ padding: "4px", border: `1px solid ${C.border}`, textAlign: "center" }}>
                     <select value={statut} onChange={e => onPatch(String(cmd.id), { statut: e.target.value })}
