@@ -223,7 +223,27 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               migrated[key] = val as CellData;
             }
           }
+          // Nettoyer les cellules sur les jours fériés
+          let cleaned = false;
+          for (const key of Object.keys(migrated)) {
+            const parts = key.split("|");
+            if (parts.length < 3) continue;
+            const jIdx = parseInt(parts[1]);
+            if (isNaN(jIdx)) continue;
+            const dayD = new Date(viewWeek + "T12:00:00");
+            dayD.setDate(dayD.getDate() + jIdx);
+            if (JOURS_FERIES[localStr(dayD)]) {
+              delete migrated[key];
+              cleaned = true;
+            }
+          }
           setAff(migrated);
+          if (cleaned) {
+            fetch("/api/planning/affectations", {
+              method: "PUT", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ semaine: viewWeek, affectations: migrated }),
+            }).catch(() => {});
+          }
         } else {
           setAff({});
         }
