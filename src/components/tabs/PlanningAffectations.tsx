@@ -494,15 +494,13 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       const addedMin = newCmdInfo?.min || 0;
       const nbOps = Math.max(1, cell.ops.length);
       const capacity = nbOps * DEMI_MIN;
-      if (cellCmdMin + addedMin > capacity) {
-        alert(`⚠ Impossible d'ajouter ${cmdLabel} sur ${pid} ${["Lun","Mar","Mer","Jeu","Ven"][jIdx]} ${demi.toUpperCase()} :\n\n` +
-          `Total charge : ${Math.round((cellCmdMin + addedMin) / 60 * 10) / 10}h (${nbOps} pers × 4h = ${nbOps * 4}h max)\n\n` +
-          `Ajoutez d'abord des opérateurs ou diminuez la charge.`);
-        setDropTarget(null);
-        return;
-      }
       newAff[key] = { ...cell, cmds: [...cell.cmds, cmdLabel] };
       saveAff(newAff);
+      if (cellCmdMin + addedMin > capacity) {
+        setTimeout(() => alert(`⚠ Attention : charge élevée sur ${pid} ${["Lun","Mar","Mer","Jeu","Ven"][jIdx]} ${demi.toUpperCase()}\n\n` +
+          `Charge totale : ${Math.round((cellCmdMin + addedMin) / 60 * 10) / 10}h — Capacité actuelle : ${nbOps} pers × 4h = ${nbOps * 4}h\n\n` +
+          `Pensez à ajouter des opérateurs sur ce créneau.`), 50);
+      }
       setDropTarget(null);
       return;
     }
