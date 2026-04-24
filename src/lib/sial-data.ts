@@ -173,8 +173,8 @@ export function calcTempsType(typeId: string, quantite = 1, hsTemps?: HsTemps | 
 
   const tPosteCoupe = tCoupe + tSoudurePoincon;
   const tPosteCoul = tMontDormantCoul + tMontDormantGland;
-  const tPosteFrappes = tFerrage + tPrepDormant + tMiseEnBois + tVitrageFrappe + tControle + tPaletteFrappe;
-  const tPosteVitOuv = tVitrageOuv + tPaletteCoul;
+  const tPosteFrappes = tFerrage + tPrepDormant + tMiseEnBois + tControle + tPaletteFrappe;
+  const tPosteVitOuv = tVitrageOuv + tVitrageFrappe + tPaletteCoul;
 
   return {
     typeId, label: tm.label, mat, famille, quantite,
