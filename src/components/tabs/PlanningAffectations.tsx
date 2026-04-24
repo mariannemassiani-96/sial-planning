@@ -91,6 +91,31 @@ interface CellData {
 }
 type AffMap = Record<string, CellData>;
 
+function migrateAff(data: any, week: string): { aff: AffMap; cleaned: boolean } {
+  const migrated: AffMap = {};
+  let cleaned = false;
+  for (const [key, val] of Object.entries(data)) {
+    if (Array.isArray(val)) {
+      migrated[key] = { ops: val as string[], cmds: [] };
+    } else if (val && typeof val === "object" && "ops" in (val as any)) {
+      migrated[key] = val as CellData;
+    }
+  }
+  for (const key of Object.keys(migrated)) {
+    const parts = key.split("|");
+    if (parts.length < 3) continue;
+    const jIdx = parseInt(parts[1]);
+    if (isNaN(jIdx) || jIdx < 0 || jIdx > 6) continue;
+    const dayD = new Date(week + "T12:00:00");
+    dayD.setDate(dayD.getDate() + jIdx);
+    if (JOURS_FERIES[localStr(dayD)]) {
+      delete migrated[key];
+      cleaned = true;
+    }
+  }
+  return { aff: migrated, cleaned };
+}
+
 // Tâche supplémentaire (intervention, supervision, etc.)
 interface ExtraTask {
   id: string;
@@ -213,35 +238,12 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       .then(r => r.ok ? r.json() : {})
       .then(data => {
         if (data && typeof data === "object" && Object.keys(data).length > 0) {
-          // Migrer l'ancien format (string[]) vers le nouveau (CellData)
-          const migrated: AffMap = {};
-          for (const [key, val] of Object.entries(data)) {
-            if (Array.isArray(val)) {
-              // Ancien format : string[] → { ops: string[], cmds: [] }
-              migrated[key] = { ops: val as string[], cmds: [] };
-            } else if (val && typeof val === "object" && "ops" in (val as any)) {
-              migrated[key] = val as CellData;
-            }
-          }
-          // Nettoyer les cellules sur les jours fériés
-          let cleaned = false;
-          for (const key of Object.keys(migrated)) {
-            const parts = key.split("|");
-            if (parts.length < 3) continue;
-            const jIdx = parseInt(parts[1]);
-            if (isNaN(jIdx)) continue;
-            const dayD = new Date(viewWeek + "T12:00:00");
-            dayD.setDate(dayD.getDate() + jIdx);
-            if (JOURS_FERIES[localStr(dayD)]) {
-              delete migrated[key];
-              cleaned = true;
-            }
-          }
-          setAff(migrated);
-          if (cleaned) {
+          const migrated = migrateAff(data, viewWeek);
+          setAff(migrated.aff);
+          if (migrated.cleaned) {
             fetch("/api/planning/affectations", {
               method: "PUT", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ semaine: viewWeek, affectations: migrated }),
+              body: JSON.stringify({ semaine: viewWeek, affectations: migrated.aff }),
             }).catch(() => {});
           }
         } else {
@@ -285,12 +287,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (!data || typeof data !== "object") return;
-          const migrated: AffMap = {};
-          for (const [key, val] of Object.entries(data)) {
-            if (Array.isArray(val)) migrated[key] = { ops: val as string[], cmds: [] };
-            else if (val && typeof val === "object" && "ops" in (val as any)) migrated[key] = val as CellData;
-          }
-          if (Object.keys(migrated).length > 0) setAff(migrated);
+          const { aff: m } = migrateAff(data, viewWeek);
+          if (Object.keys(m).length > 0) setAff(m);
         })
         .catch(() => {});
     }, 30000);
