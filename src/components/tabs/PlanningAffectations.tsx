@@ -234,24 +234,26 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   // ── Charger les affectations depuis la base ──
   useEffect(() => {
     setLoaded(null);
+    // D'abord nettoyer les jours fériés côté serveur (directement en base)
+    fetch("/api/planning/clean-feries", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ semaine: viewWeek }),
+    }).catch(() => {});
+    // Puis charger les données nettoyées
+    setTimeout(() => {
     fetch(`/api/planning/affectations?semaine=${viewWeek}`)
       .then(r => r.ok ? r.json() : {})
       .then(data => {
         if (data && typeof data === "object" && Object.keys(data).length > 0) {
-          const migrated = migrateAff(data, viewWeek);
-          setAff(migrated.aff);
-          if (migrated.cleaned) {
-            fetch("/api/planning/affectations", {
-              method: "PUT", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ semaine: viewWeek, affectations: migrated.aff }),
-            }).catch(() => {});
-          }
+          const { aff: m } = migrateAff(data, viewWeek);
+          setAff(m);
         } else {
           setAff({});
         }
         setLoaded(viewWeek);
       })
       .catch(() => { setAff({}); setLoaded(viewWeek); });
+    }, 300);
     // Charger le statut verrouillé + postes masqués
     fetch(`/api/planning/affectations?semaine=lock_${viewWeek}`)
       .then(r => r.ok ? r.json() : {})
