@@ -137,17 +137,21 @@ export default function HomePage() {
 
   // ── Permissions utilisateur ────────────────────────────────────────────────
   const [userPerms, setUserPerms] = useState<{ tabs?: string[]; droits?: string[] } | null>(null);
+  const [permsLoaded, setPermsLoaded] = useState(false);
   useEffect(() => {
-    if (!isAdmin && status === "authenticated") {
+    if (isAdmin) { setPermsLoaded(true); return; }
+    if (status === "authenticated") {
       fetch("/api/admin/users/me").then(r => r.ok ? r.json() : null).then(d => {
         if (d?.permissions) setUserPerms(d.permissions);
-      }).catch(() => {});
+        setPermsLoaded(true);
+      }).catch(() => setPermsLoaded(true));
     }
   }, [isAdmin, status]);
 
   const canSeeTab = (tabId: string) => {
     if (isAdmin) return true;
-    if (!userPerms?.tabs) return true; // pas de restriction = tout visible
+    if (!permsLoaded) return false;
+    if (!userPerms?.tabs) return true;
     return userPerms.tabs.includes(tabId);
   };
 
