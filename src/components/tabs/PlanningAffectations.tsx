@@ -962,7 +962,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               cellWorkMin = DEMI_MIN;
             }
             // Part de cet opérateur = total / nb opérateurs sur ce créneau
-            affDayMin += Math.min(cellWorkMin, DEMI_MIN); // temps réel du chantier, max 4h
+            const cellNbOps = Math.max(1, cell.ops?.length || 1);
+            affDayMin += Math.min(Math.round(cellWorkMin / cellNbOps), DEMI_MIN);
           }
         }
 
@@ -998,7 +999,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         }
         if (cell.extras?.length) { for (const ext of cell.extras) { const m = ext.match(/\((\d+)h(\d+)?\)/); cellWorkMin += m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : DEMI_MIN; } }
         if (cellWorkMin === 0 && (cell.cmds?.length || 0) === 0 && (cell.extras?.length || 0) === 0) cellWorkMin = DEMI_MIN;
-        totalAffMin += Math.min(cellWorkMin, DEMI_MIN);
+        const wkNbOps = Math.max(1, cell.ops?.length || 1);
+        totalAffMin += Math.min(Math.round(cellWorkMin / wkNbOps), DEMI_MIN);
       }
       const baseMin = (eq?.h || 39) * 60;
       let absTotal = 0;
@@ -1330,14 +1332,15 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         if (!pw || pw.totalMin === 0) continue;
 
         // Un poste est couvert si les chantiers sont positionnés OU des opérateurs affectés
+        // La capacité d'un créneau = nb opérateurs × 4h (plus d'ops = plus de travail absorbé)
         let affMin = 0;
         for (let j = 0; j < 5; j++) {
           for (const d of ["am", "pm"]) {
             const cell = aff[ck(pid, j, d)];
             if (!cell) continue;
-            // Compter 4h si le créneau a des chantiers OU des opérateurs
             if ((cell.cmds?.length || 0) > 0 || (cell.ops?.length || 0) > 0) {
-              affMin += DEMI_MIN;
+              const nbOps = Math.max(1, cell.ops?.length || 1);
+              affMin += DEMI_MIN * nbOps;
             }
           }
         }
@@ -1454,7 +1457,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                   }
                   if (cell.extras?.length) { for (const ext of cell.extras) { const m = ext.match(/\((\d+)h(\d+)?\)/); cellWork += m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : DEMI_MIN; } }
                   if (cellWork === 0) cellWork = DEMI_MIN;
-                  affMin += Math.min(cellWork, DEMI_MIN);
+                  const opShare = Math.max(1, cell.ops?.length || 1);
+                  affMin += Math.min(Math.round(cellWork / opShare), DEMI_MIN);
                 }
                 const restant = Math.max(0, dispoMin - affMin);
                 const full = restant <= 0;
