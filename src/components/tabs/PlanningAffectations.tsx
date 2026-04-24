@@ -838,8 +838,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     }
 
     // ── Ajouter automatiquement les livreurs pour les chargements "nous" ──
-    // Pour chaque commande avec transporteur="nous" livrée cette semaine,
-    // regrouper par (date+zone) puis assigner les opérateurs livreurs
+    // Respecter les livreurs définis manuellement dans Chargements (_livreurs)
+    // Si pas de livreurs manuels, auto-assigner
     const deliveries = new Map<string, { date: string; zone: string; clients: string[] }>();
     const weekDays: string[] = [];
     for (let i = 0; i < 5; i++) {
@@ -847,45 +847,55 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       d.setDate(d.getDate() + i);
       weekDays.push(localStr(d));
     }
-    let _nbTransporteurNous = 0;
-    let _nbDansLaSemaine = 0;
+    // Lire les livreurs manuels depuis les affectations sauvegardées
+    const manualLivreurs: Record<string, string[]> = (aff as any)?._livreurs || {};
+
     for (const cmd of commandes) {
       const livDate = (cmd as any).date_livraison_souhaitee;
       if (!livDate) continue;
       if ((cmd as any).transporteur !== "nous") continue;
-      _nbTransporteurNous++;
       if (!weekDays.includes(livDate)) continue;
-      _nbDansLaSemaine++;
       const zone = (cmd as any).zone || "";
       const dk = `${livDate}|${zone}`;
       if (!deliveries.has(dk)) deliveries.set(dk, { date: livDate, zone, clients: [] });
       deliveries.get(dk)!.clients.push((cmd as any).client || "");
     }
 
-    // Opérateurs compétents pour livraison (LIVR dans leurs postes OU compétence "logistique")
     const livreursDispo = ops.filter(op => {
       if (op.competentPosts.includes("LIVR")) return true;
       const eq = EQUIPE.find(e => e.nom === op.nom);
       return eq?.competences.includes("logistique") || eq?.id === "guillaume" || eq?.id === "momo" || eq?.id === "jf" || eq?.id === "jp" || eq?.id === "bruno";
     });
 
-    let _nbLivreursPlaces = 0;
     for (const del of Array.from(deliveries.values())) {
       const jIdx = weekDays.indexOf(del.date);
       if (jIdx < 0 || jIdx > 4) continue;
 
       const slot = "am";
-      const notAbsent = livreursDispo
-        .filter(op => !(jIdx === 4 && op.vendrediOff))
-        .filter(op => {
-          const eq = EQUIPE.find(e => e.nom === op.nom);
-          const opRH = rhPlan[eq?.id || ""] || {};
-          const dispo = opRH[del.date];
-          return dispo === undefined || dispo > 0;
-        });
-      const notBooked = notAbsent.filter(op => !opBookedPost[`${op.nom}|${jIdx}|${slot}`]);
-      const chosen = (notBooked.length > 0 ? notBooked : notAbsent).slice(0, 2);
-      const livreursNoms = chosen.map(o => o.nom);
+      // Priorité aux livreurs définis manuellement dans l'onglet Chargements
+      const manualKey = `${del.date}|${del.zone}`;
+      const manualOps = manualLivreurs[manualKey];
+      let livreursNoms: string[];
+      if (manualOps && manualOps.length > 0) {
+        // Convertir les IDs en noms
+        livreursNoms = manualOps.map(id => {
+          const eq = EQUIPE.find(e => e.id === id);
+          return eq?.nom || id;
+        }).filter(Boolean);
+      } else {
+        // Auto-assigner si pas de livreurs manuels
+        const notAbsent = livreursDispo
+          .filter(op => !(jIdx === 4 && op.vendrediOff))
+          .filter(op => {
+            const eq = EQUIPE.find(e => e.nom === op.nom);
+            const opRH = rhPlan[eq?.id || ""] || {};
+            const dispo = opRH[del.date];
+            return dispo === undefined || dispo > 0;
+          });
+        const notBooked = notAbsent.filter(op => !opBookedPost[`${op.nom}|${jIdx}|${slot}`]);
+        const chosen = (notBooked.length > 0 ? notBooked : notAbsent).slice(0, 2);
+        livreursNoms = chosen.map(o => o.nom);
+      }
 
       const label = `🚚 Livraison ${del.zone} (${del.clients.join(", ")})`;
       const key = ck("AUT", jIdx, slot);
@@ -897,8 +907,6 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       const combinedOps = [...(existing.ops || [])];
       for (const nm of livreursNoms) if (!combinedOps.includes(nm)) combinedOps.push(nm);
       newAff[key] = { ...existing, ops: combinedOps, extras, livreursByZone };
-
-      if (livreursNoms.length > 0) _nbLivreursPlaces++;
     }
 
     saveAff(newAff);
