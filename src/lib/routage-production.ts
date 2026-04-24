@@ -501,10 +501,10 @@ export function getRoutage(
       const ferrage = 10 * tm.ouvrants * quantite;
       const prep = 5 * quantite;
       const meb = 5 * quantite;
-      const vitFrappe = isPVC ? 0 : 10 * tm.ouvrants * quantite;
+      const vitFrappe = 10 * tm.ouvrants * quantite;
       const controle = (2 + 5) * quantite;
       etapes.push({ postId: "F1", label: "Dorm. frappe", phase: "montage", estimatedMin: Math.round(prep) });
-      etapes.push({ postId: "F2", label: isPVC ? "Ouv.+ferrage" : "Ouv.+ferr.+vitr.", phase: "montage", estimatedMin: Math.round(ferrage + vitFrappe) });
+      etapes.push({ postId: "F2", label: "Ouv.+ferr.+vitr.", phase: "montage", estimatedMin: Math.round(ferrage + vitFrappe) });
       etapes.push({ postId: "F3", label: "Mise bois+CQ", phase: "montage", estimatedMin: Math.round(meb + controle) });
     }
   }
