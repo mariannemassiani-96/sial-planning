@@ -628,7 +628,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   // de routage dans l'ordre (coupe → montage → vitrage → palette) avec tampon.
   const autoAssign = useCallback(() => {
     const newAff: AffMap = {};
-    const MIN_PERS: Record<string, number> = { coupe: 2, montage: 1, vitrage: 1, logistique: 1 };
+    const MIN_PERS: Record<string, number> = { coupe: 2, montage: 2, vitrage: 1, logistique: 1 };
 
     // Construire la liste des chantiers à placer avec leur routage complet
     // Chaque chantier = un objet { label, etapes: [{ pid, phase, minutes }] }
@@ -787,7 +787,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               })
               .map(op => {
                 const postHabits = habits[ei.pid] || {};
-                return { op, score: (brainScores[op.nom]?.[ei.pid] || 0) * 0.5 + (postHabits[op.nom] || 0) * 0.5 };
+                const skill = (op.skillLevels[ei.pid] || 0) / 3;
+                return { op, score: skill * 0.4 + (brainScores[op.nom]?.[ei.pid] || 0) * 0.3 + (postHabits[op.nom] || 0) * 0.3 };
               })
               .sort((a, b) => b.score - a.score);
 
@@ -824,8 +825,14 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           slotsPlaced++;
         }
 
-        // Tampon de 1 demi-journée avant la phase suivante (changement coupe→montage)
-        minSlotIdx = lastSlotIdxUsed + 2;
+        // Tampon entre phases : 1 demi-journée si la phase change (coupe→montage),
+        // pas de tampon si même phase ou petit chantier (< 2h)
+        const nextPhase = ch.phases[ch.phases.indexOf(phaseGrp) + 1];
+        if (nextPhase && nextPhase.phase !== phaseGrp.phase) {
+          minSlotIdx = lastSlotIdxUsed + 2;
+        } else {
+          minSlotIdx = lastSlotIdxUsed + 1;
+        }
       }
     }
 
@@ -1072,9 +1079,49 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       }
     }
 
-    if (issues.length === 0) issues.push("✅ Aucun problème détecté !");
+    // 6. Couverture chantiers : vérifier que chaque chantier actif est placé quelque part
+    let totalChantiers = 0;
+    let chantiersPlaces = 0;
+    for (const cmd of commandes) {
+      const a = cmd as any;
+      if (a.statut === "livre" || a.statut === "terminee" || a.statut === "annulee") continue;
+      const label = a.ref_chantier || a.client;
+      if (!label) continue;
+      totalChantiers++;
+      const placed = Object.values(aff).some(cell => cell?.cmds?.includes(label));
+      if (placed) chantiersPlaces++;
+      else issues.push(`⚪ ${label} : non placé dans le planning`);
+    }
+
+    // 7. Surcharge poste montage : cellules avec beaucoup d'heures par rapport aux opérateurs
+    for (const [key, cell] of Object.entries(aff)) {
+      if (!cell?.cmds?.length) continue;
+      const pid = key.split("|")[0];
+      const grp = POST_GROUPS.find(g => g.ids.includes(pid));
+      if (!grp || grp.phase !== "montage") continue;
+      const pw = postWork[pid];
+      if (!pw) continue;
+      let totalMin = 0;
+      for (const cmdLabel of cell.cmds) {
+        const c = pw.cmds.find(c2 => (c2.chantier || c2.client) === cmdLabel);
+        if (c) totalMin += c.min;
+      }
+      const nbOps = cell.ops?.length || 0;
+      const cap = Math.max(1, nbOps) * DEMI_MIN;
+      if (totalMin > cap * 1.5) {
+        const p = key.split("|");
+        issues.push(`🟠 ${pid} ${JOURS_N[parseInt(p[1])]} ${p[2] === "am" ? "AM" : "PM"} : surcharge montage ${hm(totalMin)} pour ${nbOps} pers (cap. ${hm(cap)})`);
+      }
+    }
+
+    // Résumé en tête
+    const pct = totalChantiers > 0 ? Math.round(chantiersPlaces / totalChantiers * 100) : 100;
+    const summary = `📊 Couverture : ${chantiersPlaces}/${totalChantiers} chantiers placés (${pct}%)`;
+    issues.unshift(summary);
+
+    if (issues.length === 1) issues.push("✅ Aucun problème détecté !");
     setAuditResult(issues);
-  }, [ops, aff, viewWeek, rhPlan]);
+  }, [ops, aff, viewWeek, rhPlan, commandes, postWork]);
 
   // ── Impression fiches par opérateur ──
   const printFiches = useCallback(() => {
