@@ -969,9 +969,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             }
             // Extras comptent comme 4h
             if (cell.extras?.length) { for (const ext of cell.extras) { const m = ext.match(/\((\d+)h(\d+)?\)/); cellWorkMin += m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : DEMI_MIN; } }
-            // Si pas de chantier ni extra mais des ops → travail non spécifié, compter 4h
             if (cellWorkMin === 0 && (cell.cmds?.length || 0) === 0 && (cell.extras?.length || 0) === 0) {
-              cellWorkMin = DEMI_MIN;
+              cellWorkMin = 0;
             }
             // Part de cet opérateur = total / nb opérateurs sur ce créneau
             const cellNbOps = Math.max(1, cell.ops?.length || 1);
@@ -1012,7 +1011,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           }
         }
         if (cell.extras?.length) { for (const ext of cell.extras) { const m = ext.match(/\((\d+)h(\d+)?\)/); cellWorkMin += m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : DEMI_MIN; } }
-        if (cellWorkMin === 0 && (cell.cmds?.length || 0) === 0 && (cell.extras?.length || 0) === 0) cellWorkMin = DEMI_MIN;
+        if (cellWorkMin === 0 && (cell.cmds?.length || 0) === 0 && (cell.extras?.length || 0) === 0) cellWorkMin = 0;
         const wkNbOps = Math.max(1, cell.ops?.length || 1);
         totalAffMin += Math.min(Math.round(cellWorkMin / wkNbOps), DEMI_MIN);
       }
@@ -1474,7 +1473,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                     for (const cl of cell.cmds) { const cm = pw2.cmds.find(c2 => (c2.chantier || c2.client) === cl); if (cm) cellWork += cm.min; }
                   }
                   if (cell.extras?.length) { for (const ext of cell.extras) { const m = ext.match(/\((\d+)h(\d+)?\)/); cellWork += m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : DEMI_MIN; } }
-                  if (cellWork === 0) cellWork = DEMI_MIN;
+                  if (cellWork === 0 && (cell.cmds?.length || 0) === 0 && (cell.extras?.length || 0) === 0) cellWork = 0;
                   const opShare = Math.max(1, cell.ops?.length || 1);
                   affMin += Math.min(Math.round(cellWork / opShare), DEMI_MIN);
                 }
