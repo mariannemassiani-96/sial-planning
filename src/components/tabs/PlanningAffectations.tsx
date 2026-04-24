@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { C, EQUIPE, TYPES_MENUISERIE, hm, CommandeCC } from "@/lib/sial-data";
+import { C, EQUIPE, TYPES_MENUISERIE, hm, CommandeCC, JOURS_FERIES } from "@/lib/sial-data";
 import { getRoutage } from "@/lib/routage-production";
 import { openPrintWindow } from "@/lib/print-utils";
 
@@ -933,10 +933,11 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         const dayDispo = opRH[dayStr];
         const isAbsent = dayDispo !== undefined && dayDispo === 0;
         const isVenOff = j === 4 && eq?.vendrediOff;
+        const isFerie = !!JOURS_FERIES[dayStr];
 
         // Max heures ce jour pour cet opérateur
         let maxDayMin: number;
-        if (isAbsent || isVenOff) {
+        if (isAbsent || isVenOff || isFerie) {
           maxDayMin = 0;
         } else if (j === 4) {
           maxDayMin = eq?.h === 39 ? 420 : eq?.h === 36 ? 240 : eq?.h === 35 ? 420 : 450;
@@ -976,7 +977,9 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           }
         }
 
-        if (isAbsent && hasAnySlot) {
+        if (isFerie && hasAnySlot) {
+          issues.push(`🔴 ${op.nom} ${JOURS_N[j]} : affecté mais JOUR FÉRIÉ (${JOURS_FERIES[dayStr]})`);
+        } else if (isAbsent && hasAnySlot) {
           issues.push(`🔴 ${op.nom} ${JOURS_N[j]} : affecté mais ABSENT (RH)`);
         } else if (isVenOff && hasAnySlot) {
           issues.push(`🔴 ${op.nom} ${JOURS_N[j]} : affecté mais ne travaille pas le vendredi`);
@@ -1015,8 +1018,10 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       let absTotal = 0;
       for (let j = 0; j < 5; j++) {
         const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() + j);
-        const dv = opRH[localStr(d)];
-        if (dv !== undefined && dv === 0) absTotal += j === 4 ? (eq?.h === 39 ? 420 : 420) : 480;
+        const ds = localStr(d);
+        const dv = opRH[ds];
+        const dayMinMax = j === 4 ? (eq?.h === 39 ? 420 : eq?.h === 36 ? 240 : 420) : 480;
+        if ((dv !== undefined && dv === 0) || !!JOURS_FERIES[ds]) absTotal += dayMinMax;
       }
       const dispoMin = Math.max(0, baseMin - absTotal);
       if (totalAffMin > dispoMin && dispoMin > 0) {
@@ -1447,9 +1452,11 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 for (let j = 0; j < 5; j++) {
                   const d = new Date(viewWeek + "T00:00:00");
                   d.setDate(d.getDate() + j);
-                  const dayDispo = opRH[localStr(d)];
-                  if (dayDispo !== undefined && dayDispo === 0) {
-                    absMin += j === 4 ? (eq?.h === 39 ? 420 : eq?.h === 36 ? 240 : eq?.h === 35 ? 420 : 450) : (eq?.h === 39 ? 480 : eq?.h === 36 ? 480 : eq?.h === 35 ? 420 : 450);
+                  const ds = localStr(d);
+                  const dayDispo = opRH[ds];
+                  const dayMax = j === 4 ? (eq?.h === 39 ? 420 : eq?.h === 36 ? 240 : eq?.h === 35 ? 420 : 450) : (eq?.h === 39 ? 480 : eq?.h === 36 ? 480 : eq?.h === 35 ? 420 : 450);
+                  if ((dayDispo !== undefined && dayDispo === 0) || !!JOURS_FERIES[ds]) {
+                    absMin += dayMax;
                   }
                 }
                 const dispoMin = Math.max(0, baseMin - absMin);
@@ -1640,14 +1647,12 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             d.setDate(d.getDate() + i);
             const dayStr = localStr(d);
             const dayDispo = opRH[dayStr];
-            if (dayDispo !== undefined && dayDispo === 0) {
-              // Absent ce jour
-              const isVendredi = i === 4;
-              absMin += isVendredi ? (eq?.h === 39 ? 420 : eq?.h === 36 ? 240 : eq?.h === 35 ? 420 : 450) : (eq?.h === 39 ? 480 : eq?.h === 36 ? 480 : eq?.h === 35 ? 420 : 450);
+            const isVendredi = i === 4;
+            const normalMin = isVendredi ? (eq?.h === 39 ? 420 : eq?.h === 36 ? 240 : eq?.h === 35 ? 420 : 450) : (eq?.h === 39 ? 480 : eq?.h === 36 ? 480 : eq?.h === 35 ? 420 : 450);
+            if ((dayDispo !== undefined && dayDispo === 0) || !!JOURS_FERIES[dayStr]) {
+              absMin += normalMin;
               absentDays++;
             } else if (dayDispo !== undefined && dayDispo < 480) {
-              // Demi-journée ou dispo réduite
-              const normalMin = i === 4 ? (eq?.h === 39 ? 420 : eq?.h === 36 ? 240 : eq?.h === 35 ? 420 : 450) : 480;
               absMin += normalMin - dayDispo;
             }
           }
