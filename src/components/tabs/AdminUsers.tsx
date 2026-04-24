@@ -8,6 +8,7 @@ const ALL_TABS = [
   { id: "planning_fab",    label: "Planning" },
   { id: "dashboard",       label: "Suivi" },
   { id: "livraison",       label: "Livraisons" },
+  { id: "chargements",     label: "Chargements" },
   { id: "saisie",          label: "Commande" },
   { id: "carnet",          label: "Commandes" },
   { id: "rh",              label: "Equipe" },
