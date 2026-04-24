@@ -497,14 +497,14 @@ export function getRoutage(
     } else if (tm.famille === "porte") {
       etapes.push({ postId: "M3", label: "Portes ALU", phase: "montage", estimatedMin: temps.par_poste.frappes });
     } else {
-      // Frappes : répartir entre F1 (dormant), F2 (ouvrants+ferrage), F3 (mise en bois+contrôle)
+      // Frappes : répartir entre F1 (dormant), F2 (ouvrants+ferrage+vitrage), F3 (mise en bois+contrôle)
       const ferrage = 10 * tm.ouvrants * quantite;
       const prep = 5 * quantite;
       const meb = 5 * quantite;
-      const vitFrappe = 10 * tm.ouvrants * quantite;
-      const controle = (2 + 5) * quantite; // contrôle + palette
+      const vitFrappe = isPVC ? 0 : 10 * tm.ouvrants * quantite;
+      const controle = (2 + 5) * quantite;
       etapes.push({ postId: "F1", label: "Dorm. frappe", phase: "montage", estimatedMin: Math.round(prep) });
-      etapes.push({ postId: "F2", label: "Ouv.+ferrage", phase: "montage", estimatedMin: Math.round(ferrage + vitFrappe) });
+      etapes.push({ postId: "F2", label: isPVC ? "Ouv.+ferrage" : "Ouv.+ferr.+vitr.", phase: "montage", estimatedMin: Math.round(ferrage + vitFrappe) });
       etapes.push({ postId: "F3", label: "Mise bois+CQ", phase: "montage", estimatedMin: Math.round(meb + controle) });
     }
   }

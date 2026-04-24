@@ -164,7 +164,7 @@ export function calcTempsType(typeId: string, quantite = 1, hsTemps?: HsTemps | 
   const tFerrage = isFrappe ? T.ferrage_ouvrant * ouvrants * q : 0;
   const tPrepDormant = isFrappe ? T.prep_dormant * q : 0;
   const tMiseEnBois = isFrappe ? T.mise_en_bois * q : 0;
-  const tVitrageFrappe = isFrappe ? T.vitrage_frappe * ouvrants * q : 0;
+  const tVitrageFrappe = (isFrappe && !isPVC) ? T.vitrage_frappe * ouvrants * q : 0;
   const tControle = isFrappe ? T.controle * q : 0;
   const tPaletteFrappe = isFrappe ? T.mise_palette * q : 0;
 
