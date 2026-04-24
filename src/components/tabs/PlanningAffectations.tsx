@@ -532,12 +532,14 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     if (conflictPost) {
       const [conflictKey] = conflictPost;
       const [cPid] = conflictKey.split("|");
-      alert(`⚠ Conflit : ${dragOp} est déjà affecté sur ${cPid} ${["Lun","Mar","Mer","Jeu","Ven"][jIdx]} ${demi.toUpperCase()}.\n\n` +
-        `Un opérateur ne peut pas être sur 2 postes en même temps.\n` +
-        `Retirez-le d'abord de ${cPid}.`);
-      setDragOp(null);
-      setDropTarget(null);
-      return;
+      if (cPid !== "AUT" && pid !== "AUT") {
+        alert(`⚠ Conflit : ${dragOp} est déjà affecté sur ${cPid} ${["Lun","Mar","Mer","Jeu","Ven"][jIdx]} ${demi.toUpperCase()}.\n\n` +
+          `Un opérateur ne peut pas être sur 2 postes en même temps.\n` +
+          `Retirez-le d'abord de ${cPid}.`);
+        setDragOp(null);
+        setDropTarget(null);
+        return;
+      }
     }
     newAff[key] = { ...cell, ops: [...cell.ops, dragOp] };
     saveAff(newAff);
