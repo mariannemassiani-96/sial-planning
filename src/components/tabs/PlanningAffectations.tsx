@@ -2453,6 +2453,54 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 );
               })()}
 
+              {/* V1 — Vitrage frappes + V2 — Vitrage coulissants */}
+              {(() => {
+                const vitrageFields = [
+                  { key: "_nb_vitrages_frappe", postId: "V1", label: "V1 — Vitrage frappes", color: "#26C6DA", minPer: 15 },
+                  { key: "_nb_vitrages_coulissant", postId: "V2", label: "V2 — Vitrage coulissants", color: "#00ACC1", minPer: 25 },
+                ];
+                const saveVitrage = (field: typeof vitrageFields[0], v: number) => {
+                  const mins = v > 0 ? v * field.minPer : 0;
+                  fetch(`/api/planning/affectations?semaine=cmd_temps_${detailCmd.cmdId}`)
+                    .then(r => r.ok ? r.json() : {})
+                    .then(existing => {
+                      const ov: Record<string, number> = (typeof existing === "object" && existing && !Array.isArray(existing)) ? { ...existing } : {};
+                      ov[field.key] = v;
+                      if (mins > 0) ov[field.postId] = mins;
+                      else delete ov[field.postId];
+                      return fetch("/api/planning/affectations", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ semaine: `cmd_temps_${detailCmd.cmdId}`, affectations: ov }) });
+                    }).catch(() => {});
+                  setAllCmdOverrides(prev => ({
+                    ...prev,
+                    [detailCmd.cmdId]: { ...(prev[detailCmd.cmdId] || {}), [field.key]: v, [field.postId]: mins > 0 ? mins : 0 },
+                  }));
+                };
+                return (
+                  <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    {vitrageFields.map(field => {
+                      const nb = cmdOverrides[field.key] || 0;
+                      const mins = nb * field.minPer;
+                      return (
+                        <div key={field.key} style={{ flex: 1, padding: "8px 10px", background: C.bg, borderRadius: 4, border: `1px solid ${field.color}44` }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            <div style={{ flex: 1, fontSize: 11, fontWeight: 700, color: field.color }}>{field.label}</div>
+                            <input type="number" min={0} defaultValue={nb || ""} placeholder="Nb"
+                              onBlur={ev => { const v = parseInt(ev.target.value); if (!isNaN(v)) saveVitrage(field, v); }}
+                              onKeyDown={ev => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }}
+                              style={{ width: 55, padding: "4px 6px", fontSize: 13, fontWeight: 700, background: C.s1, border: `1px solid ${C.border}`, borderRadius: 4, color: field.color, textAlign: "center", outline: "none" }} />
+                          </div>
+                          {nb > 0 && (
+                            <div style={{ fontSize: 9, color: C.sec }}>
+                              <span style={{ color: field.color, fontWeight: 700 }}>{nb}</span> vitrages · {field.minPer} min/pce · <span className="mono" style={{ color: field.color, fontWeight: 700 }}>{hm(mins)}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
               <div style={{ fontSize: 11, color: C.orange, fontWeight: 700, marginBottom: 4 }}>
                 Total : {hm(totalMin)} · {allEtapes.length} étapes
               </div>
