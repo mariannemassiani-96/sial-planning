@@ -483,23 +483,37 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       const newAff = { ...aff };
       const cell = newAff[key] || { ops: [], cmds: [] };
       if (cell.cmds.includes(cmdLabel)) { setDropTarget(null); return; }
-      // Vérifier la surcharge : total minutes des chantiers ≤ nb ops × 240
+
       const pw = postWork[pid];
-      let cellCmdMin = 0;
-      for (const ch of cell.cmds) {
-        const cInfo = pw?.cmds.find(c2 => (c2.chantier || c2.client) === ch);
-        if (cInfo) cellCmdMin += cInfo.min;
-      }
       const newCmdInfo = pw?.cmds.find(c2 => (c2.chantier || c2.client) === cmdLabel);
-      const addedMin = newCmdInfo?.min || 0;
+      const totalMin = newCmdInfo?.min || 0;
       const nbOps = Math.max(1, cell.ops.length);
-      const capacity = nbOps * DEMI_MIN;
-      newAff[key] = { ...cell, cmds: [...cell.cmds, cmdLabel] };
+      const slotCapacity = nbOps * DEMI_MIN;
+      const slotsNeeded = Math.max(1, Math.ceil(totalMin / slotCapacity));
+
+      // Placer le chantier sur ce créneau + les suivants si nécessaire
+      let placed = 0;
+      const startGlobalIdx = jIdx * 2 + (demi === "pm" ? 1 : 0);
+      for (let gi = startGlobalIdx; gi < 10 && placed < slotsNeeded; gi++) {
+        const sj = Math.floor(gi / 2);
+        const sd = gi % 2 === 0 ? "am" : "pm";
+        const sk = ck(pid, sj, sd);
+        const scell = newAff[sk] || { ops: [], cmds: [] };
+        if (!scell.cmds.includes(cmdLabel)) {
+          newAff[sk] = { ...scell, cmds: [...scell.cmds, cmdLabel] };
+        }
+        placed++;
+      }
+
       saveAff(newAff);
-      if (cellCmdMin + addedMin > capacity) {
-        setTimeout(() => alert(`⚠ Attention : charge élevée sur ${pid} ${["Lun","Mar","Mer","Jeu","Ven"][jIdx]} ${demi.toUpperCase()}\n\n` +
-          `Charge totale : ${Math.round((cellCmdMin + addedMin) / 60 * 10) / 10}h — Capacité actuelle : ${nbOps} pers × 4h = ${nbOps * 4}h\n\n` +
-          `Pensez à ajouter des opérateurs sur ce créneau.`), 50);
+      if (slotsNeeded > 1) {
+        const lastGi = Math.min(startGlobalIdx + slotsNeeded - 1, 9);
+        const lastDay = ["Lun","Mar","Mer","Jeu","Ven"][Math.floor(lastGi / 2)];
+        const lastDemi = lastGi % 2 === 0 ? "AM" : "PM";
+        setTimeout(() => alert(
+          `${cmdLabel} : ${Math.round(totalMin / 60 * 10) / 10}h de travail\n\n` +
+          `Placé sur ${slotsNeeded} créneau(x) de ${pid} (${["Lun","Mar","Mer","Jeu","Ven"][jIdx]} ${demi.toUpperCase()} → ${lastDay} ${lastDemi})\n` +
+          `Capacité par créneau : ${nbOps} pers × 4h = ${nbOps * 4}h`), 50);
       }
       setDropTarget(null);
       return;
