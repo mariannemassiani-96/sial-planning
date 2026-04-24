@@ -757,6 +757,11 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           const j = Math.floor(globalIdx / 2);
           const demi = globalIdx % 2 === 0 ? "am" : "pm";
 
+          // Sauter les jours fériés
+          const dayD = new Date(viewWeek + "T12:00:00");
+          dayD.setDate(dayD.getDate() + j);
+          if (JOURS_FERIES[localStr(dayD)]) continue;
+
           // Placer TOUTES les étapes de cette phase en parallèle sur ce créneau
           let canPlace = true;
           for (const ei of etapeInfos) {
@@ -872,6 +877,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     for (const del of Array.from(deliveries.values())) {
       const jIdx = weekDays.indexOf(del.date);
       if (jIdx < 0 || jIdx > 4) continue;
+      if (JOURS_FERIES[del.date]) continue;
 
       const slot = "am";
       // Priorité aux livreurs définis manuellement dans l'onglet Chargements
