@@ -373,6 +373,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         // Vérifier si la commande est planifiée pour cette semaine sur cette phase
         const phaseField = PHASE_FIELD[grp.phase];
         const rawSemaine = (cmd as any)[phaseField]
+          || (cmd as any).semaine_montage
           || (cmd as any).semaine_coupe
           || (cmd as any).semaine_theorique
           || (cmd as any).semaine_atteignable
