@@ -3,6 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { C } from "@/lib/sial-data";
 import { postShortLabel } from "@/lib/work-posts";
+import {
+  type OperatorSchedule, type DayKey, type DaySchedule,
+  buildDefaultScheduleFromWeekHours, computeDayMinutes,
+} from "@/lib/operator-schedule";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +30,8 @@ interface Operator {
   notes: string | null;
   active: boolean;
   skills: Skill[];
+  defaultSchedule?: OperatorSchedule | null;
+  naissance?: string | null;
 }
 
 // ── Constantes postes ─────────────────────────────────────────────────────────
@@ -62,7 +68,7 @@ function levelBadge(level: number): React.ReactNode {
 }
 
 function levelLabel(level: number): string {
-  return ["Aucun", "① Supervision", "② Autonome", "③ Expert"][level] ?? "—";
+  return ["Aucun", "① Apprenti", "② Autonome", "③ Expert"][level] ?? "—";
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -190,6 +196,9 @@ function FicheOperateur({ operator, onClose, onSaved }: FicheProps) {
           <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic" }}>Aucune compétence enregistrée — à configurer via l'étape 0 du guide</div>
         )}
 
+        {/* Horaires détaillés */}
+        <HorairesEditor operator={operator} onSaved={onSaved} />
+
         {/* Historique dernières modifs */}
         {operator.skills.filter((s) => s.updatedBy).length > 0 && (
           <div>
@@ -300,7 +309,7 @@ export default function GestionCompetences() {
   }
 
   const LEVEL_LEGEND = [
-    { level: 1, color: C.muted,  label: "① Supervision" },
+    { level: 1, color: C.muted,  label: "① Apprenti" },
     { level: 2, color: C.orange, label: "② Autonome" },
     { level: 3, color: C.green,  label: "③ Expert" },
   ];
@@ -426,6 +435,169 @@ export default function GestionCompetences() {
             setOperators((prev) => prev.map((o) => o.id === op.id ? op : o));
           }}
         />
+      )}
+    </div>
+  );
+}
+
+// ── Éditeur d'horaires détaillés par jour ────────────────────────────────────
+
+const DAY_KEYS_ORDER: DayKey[] = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const DAY_LABELS: Record<DayKey, string> = {
+  Mon: "Lundi", Tue: "Mardi", Wed: "Mercredi", Thu: "Jeudi", Fri: "Vendredi", Sat: "Samedi", Sun: "Dimanche",
+};
+
+function HorairesEditor({ operator, onSaved }: {
+  operator: Operator;
+  onSaved: (op: Operator) => void;
+}) {
+  const [schedule, setSchedule] = useState<OperatorSchedule>(() => {
+    if (operator.defaultSchedule) return operator.defaultSchedule;
+    const vendrediOff = !operator.workingDays.includes(4);
+    return buildDefaultScheduleFromWeekHours(operator.weekHours, vendrediOff);
+  });
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  const updateDay = (day: DayKey, slots: DaySchedule) => {
+    setSchedule(prev => ({ ...prev, [day]: slots.length > 0 ? slots : undefined }));
+    setDirty(true);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    const res = await fetch(`/api/operators/${operator.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ defaultSchedule: schedule }),
+    });
+    if (res.ok) {
+      const updated = await res.json() as Operator;
+      onSaved(updated);
+      setDirty(false);
+    }
+    setSaving(false);
+  };
+
+  const resetDefault = () => {
+    const vendrediOff = !operator.workingDays.includes(4);
+    setSchedule(buildDefaultScheduleFromWeekHours(operator.weekHours, vendrediOff));
+    setDirty(true);
+  };
+
+  // Total semaine (info)
+  const totalWeekMin = DAY_KEYS_ORDER.reduce((s, d) => {
+    const slots = schedule[d] || [];
+    return s + slots.reduce((acc, sl) => {
+      const [fh, fm] = sl.from.split(":").map(Number);
+      const [th, tm] = sl.to.split(":").map(Number);
+      return acc + Math.max(0, (th * 60 + tm) - (fh * 60 + fm));
+    }, 0);
+  }, 0);
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <div style={{ fontSize: 11, color: C.sec, fontWeight: 700 }}>Horaires détaillés</div>
+        <div style={{ fontSize: 10, color: C.muted }}>
+          Total : {Math.floor(totalWeekMin / 60)}h{String(totalWeekMin % 60).padStart(2, "0")}
+          {operator.weekHours > 0 && totalWeekMin !== operator.weekHours * 60 && (
+            <span style={{ color: C.orange, marginLeft: 6 }}>
+              ⚠ contrat {operator.weekHours}h
+            </span>
+          )}
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {DAY_KEYS_ORDER.map(d => (
+          <DayScheduleRow
+            key={d}
+            label={DAY_LABELS[d]}
+            slots={(schedule[d] as DaySchedule) || []}
+            onChange={(slots) => updateDay(d, slots)}
+          />
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+        <button onClick={save} disabled={!dirty || saving}
+          style={{
+            padding: "6px 14px", fontSize: 11, fontWeight: 700,
+            background: dirty ? C.green : C.s2,
+            color: dirty ? "#000" : C.muted,
+            border: "none", borderRadius: 4, cursor: dirty ? "pointer" : "default",
+          }}>
+          {saving ? "Sauvegarde…" : "Enregistrer"}
+        </button>
+        <button onClick={resetDefault}
+          style={{
+            padding: "6px 12px", fontSize: 11,
+            background: "transparent", border: `1px solid ${C.border}`,
+            borderRadius: 4, color: C.sec, cursor: "pointer",
+          }}>
+          ↺ Défaut
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DayScheduleRow({ label, slots, onChange }: {
+  label: string;
+  slots: DaySchedule;
+  onChange: (slots: DaySchedule) => void;
+}) {
+  const update = (i: number, key: "from" | "to", value: string) => {
+    const next = slots.map((s, idx) => idx === i ? { ...s, [key]: value } : s);
+    onChange(next);
+  };
+  const removeSlot = (i: number) => onChange(slots.filter((_, idx) => idx !== i));
+  const addSlot = () => {
+    if (slots.length === 0) onChange([{ from: "08:00", to: "12:00" }]);
+    else onChange([...slots, { from: "13:00", to: "17:00" }]);
+  };
+  const isDayOff = slots.length === 0;
+
+  // Total minutes pour le jour
+  const dayMin = slots.reduce((acc, sl) => {
+    const [fh, fm] = sl.from.split(":").map(Number);
+    const [th, tm] = sl.to.split(":").map(Number);
+    return acc + Math.max(0, (th * 60 + tm) - (fh * 60 + fm));
+  }, 0);
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+      <div style={{ minWidth: 70, color: isDayOff ? C.muted : C.text, fontWeight: 600 }}>{label}</div>
+      {isDayOff ? (
+        <span style={{ fontSize: 10, color: C.red, fontStyle: "italic", flex: 1 }}>jour off</span>
+      ) : (
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", flex: 1 }}>
+          {slots.map((s, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 3, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, padding: "2px 5px" }}>
+              <input type="time" value={s.from} onChange={e => update(i, "from", e.target.value)}
+                style={{ background: "transparent", border: "none", color: C.text, fontSize: 11, width: 60 }} />
+              <span style={{ color: C.muted }}>→</span>
+              <input type="time" value={s.to} onChange={e => update(i, "to", e.target.value)}
+                style={{ background: "transparent", border: "none", color: C.text, fontSize: 11, width: 60 }} />
+              <button onClick={() => removeSlot(i)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 10, padding: 0 }}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <button onClick={isDayOff ? addSlot : addSlot}
+        title={isDayOff ? "Ajouter un créneau (rendre travaillé)" : "Ajouter un créneau"}
+        style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 3, color: C.sec, cursor: "pointer", fontSize: 10, padding: "2px 6px" }}>
+        +
+      </button>
+      {!isDayOff && (
+        <span style={{ fontSize: 9, color: C.muted, minWidth: 32, textAlign: "right" }}>
+          {Math.floor(dayMin / 60)}h{String(dayMin % 60).padStart(2, "0")}
+        </span>
+      )}
+      {!isDayOff && (
+        <button onClick={() => onChange([])}
+          title="Marquer comme jour off"
+          style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 10 }}>
+          off
+        </button>
       )}
     </div>
   );

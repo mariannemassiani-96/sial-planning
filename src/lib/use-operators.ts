@@ -21,6 +21,10 @@ export interface OperatorFromDB {
   notes?: string | null;
   vendrediOff: boolean;
   competences: string[]; // phases déduites des skills
+  /** Horaires détaillés par jour ({Mon: [...], Tue: [...]}) — voir lib/operator-schedule.ts */
+  defaultSchedule?: Record<string, Array<{ from: string; to: string }>> | null;
+  /** Date de naissance (ISO YYYY-MM-DD). */
+  naissance?: string | null;
   skills: Array<{
     id: string;
     workPostId: string | null;
@@ -70,6 +74,8 @@ function equipeAsOperators(): OperatorFromDB[] {
     notes: (op as any).note ?? null,
     vendrediOff: !!op.vendrediOff,
     competences: op.competences || [],
+    defaultSchedule: null,
+    naissance: null,
     skills: [],
   }));
 }

@@ -79,9 +79,12 @@ const postMaxPers = (pid: string): number | null => postMaxOperators(pid);
 
 // Chaque cellule poste|jour|demi contient : opérateurs + chantiers + tâches extras
 interface CellData {
-  ops: string[];     // noms opérateurs généraux
+  ops: string[];     // noms opérateurs généraux (producteurs, comptés dans le temps machine)
   cmds: string[];    // "client · chantier"
   extras?: string[]; // tâches supplémentaires ("INTERV: SAV Dupont 2h", "SUPERVISION")
+  /** Superviseurs (niveau ≥3) accompagnant un apprenti. NON comptés dans le
+   *  temps machine — c'est du temps de qualité/formation. */
+  supervisors?: string[];
   cmdOps?: Record<string, string[]>; // chantier → liste ops spécifiques (override de ops générales)
   extraOps?: Record<string, string[]>; // extra → liste ops spécifiques
   livreursByZone?: Record<string, string[]>; // zone → liste noms opérateurs (pour livraisons)
@@ -768,14 +771,21 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         const _maxMinutes = Math.max(...phaseGrp.etapes.map(e => e.minutes));
 
         // Pour chaque étape de la phase, identifier les opérateurs compétents
-        // et choisir le nombre optimal selon la stratégie du chantier.
+        // et choisir le nombre optimal selon la stratégie du chantier ET les
+        // niveaux disponibles (apprenti / autonome / expert).
         const etapeInfos = phaseGrp.etapes.map(et => {
           const pid = et.pid;
           const grp = activePosts.find(g => g.posts.includes(pid));
-          // Nombre d'opérateurs disponibles avec la compétence sur ce poste
-          const competentCount = ops.filter(op => op.competentPosts.includes(pid)).length || 2;
-          // Choix autonome : crash / focus / normal
-          let nbPers = chooseNbOps(pid, ch.strategy, competentCount);
+          // Niveaux des opérateurs compétents (triés du meilleur au moins bon)
+          const competentOpsForLevel = ops.filter(op => op.competentPosts.includes(pid));
+          const levels = competentOpsForLevel
+            .map(op => op.skillLevels[pid] || 0)
+            .filter(l => l > 0)
+            .sort((a, b) => b - a);
+          // Choix autonome : crash / focus / normal + supervision si apprenti seul
+          const decision = chooseNbOps(pid, ch.strategy, levels.length > 0 ? levels : 2);
+          let nbPers = decision.nbProducers;
+          const requiresSupervisor = decision.requiresSupervisor;
           // Garde-fou rétrocompat : très grosses charges sur C3 → 3 ops
           if (pid === "C3" && et.minutes > DEMI_MIN * 4 && !postIsMonolithic(pid)) {
             nbPers = Math.max(nbPers, 3);
@@ -802,7 +812,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               return eq?.competences.includes(postCompetence);
             });
           }
-          return { pid, minutes: et.minutes, nbPers, competentOps, grp };
+          return { pid, minutes: et.minutes, nbPers, requiresSupervisor, competentOps, grp };
         });
 
         // Combien de demi-journées pour cette phase (basé sur l'étape la plus longue / le nbPers le plus favorable)
@@ -866,25 +876,35 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               if (!opsToPlace.includes(o.op.nom)) opsToPlace.push(o.op.nom);
             }
 
-            // Supervision si tous débutants
-            const allBeginner = opsToPlace.length > 0 && opsToPlace.every(nm => {
-              const o = ops.find(op => op.nom === nm);
-              return (o?.skillLevels[ei.pid] || 0) === 1;
-            });
-            if (allBeginner) {
+            // Supervision : si chooseNbOps a demandé un superviseur, on
+            // ajoute un opérateur de niveau ≥3 *à part* dans `supervisors`
+            // (pas dans `ops`) — il ne réduit pas le temps machine, il est
+            // là pour la qualité / formation.
+            const supervisorsToPlace: string[] = [];
+            if (ei.requiresSupervisor) {
               const supervisor = availableOps.find(o =>
                 !opsToPlace.includes(o.op.nom) && (o.op.skillLevels[ei.pid] || 0) >= 3
               );
-              if (supervisor) opsToPlace.push(supervisor.op.nom);
+              if (supervisor) supervisorsToPlace.push(supervisor.op.nom);
             }
 
             const existingCell = newAff[key] || { ops: [], cmds: [], extras: [] };
             const newCmds = existingCell.cmds.includes(ch.label) ? existingCell.cmds : [...existingCell.cmds, ch.label];
-            newAff[key] = { ...existingCell, ops: opsToPlace, cmds: newCmds };
+            const existingSupervisors = (existingCell as any).supervisors || [];
+            const mergedSupervisors = [...existingSupervisors];
+            for (const s of supervisorsToPlace) {
+              if (!mergedSupervisors.includes(s)) mergedSupervisors.push(s);
+            }
+            newAff[key] = { ...existingCell, ops: opsToPlace, cmds: newCmds, supervisors: mergedSupervisors };
 
             cellLoad[key] = currentLoad + Math.min(ei.minutes, DEMI_MIN * ei.nbPers);
             for (const opNom of opsToPlace) {
               opBookedPost[`${opNom}|${j}|${demi}`] = ei.pid;
+            }
+            // Bloquer aussi les superviseurs sur ce créneau (ils ne peuvent
+            // pas être ailleurs) mais sans compter dans le temps machine.
+            for (const s of supervisorsToPlace) {
+              opBookedPost[`${s}|${j}|${demi}`] = ei.pid;
             }
           }
 

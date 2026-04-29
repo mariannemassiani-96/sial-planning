@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { C, JOURS_FERIES, isWorkday, getWeekNum as getWeekNumUtil, toSemaineId as toSemaineIdUtil } from "@/lib/sial-data";
 import { useOperators, type OperatorFromDB } from "@/lib/use-operators";
+import { computeDayMinutes } from "@/lib/operator-schedule";
 import { H, Card } from "@/components/ui";
 
 // ── Couleurs par opérateur ────────────────────────────────────────────────────
@@ -252,15 +253,22 @@ export default function PlanningRH({ commandes: _c }: { commandes: any[] }) {
   const equipeSial = useMemo(() => buildEquipeSial(operators), [operators]);
 
   // Résoudre la disponibilité effective d'un membre pour un jour.
+  // On privilégie l'horaire détaillé (defaultSchedule) si défini,
+  // sinon on retombe sur la convention weekHours via equipeSial.
+  const opById = useMemo(() => new Map(operators.map(o => [o.id, o] as const)), [operators]);
   const getDispo = useCallback((p: PlanRH, memberId: string, day: string): number => {
     if (!isWorkday(day)) return 0;
     const override = p[memberId]?.[day];
     if (override !== undefined) return override;
+    const op = opById.get(memberId);
+    if (op?.defaultSchedule) {
+      return computeDayMinutes(op.defaultSchedule as any, op.weekHours, day);
+    }
     const membre = equipeSial.find(m => m.id === memberId);
     if (!membre) return STD_MIN;
     const dow = new Date(day + "T00:00:00").getDay();
     return dow === 5 ? membre.minV : membre.minLJ;
-  }, [equipeSial]);
+  }, [equipeSial, opById]);
 
   const weekDays = Array.from({ length: 5 }, (_, i) => addDays(anchor, i));
   const semaine = semaineId(anchor);

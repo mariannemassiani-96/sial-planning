@@ -227,6 +227,12 @@ model Operator {
   workingDays     Int[]             @default([0, 1, 2, 3, 4])
   notes           String?
   active          Boolean           @default(true)
+  /// Horaires détaillés par jour de la semaine (JSON).
+  /// Format : { "Mon": [{from: "08:00", to: "12:00"}, {from: "13:00", to: "17:00"}], ... }
+  /// Si null, on utilise la convention par défaut basée sur weekHours.
+  defaultSchedule Json?
+  /// Date de naissance (ISO YYYY-MM-DD) pour anniversaires.
+  naissance       String?
   absences        OperatorAbsence[]
   taskAssignments TaskAssignment[]
   skills          OperatorSkill[]

@@ -50,9 +50,31 @@ interface PointageEntry {
 interface ImpreveEntry {
   label: string; postId: string; realMin: number; ops: string[]; raison: string;
 }
-type PointageData = { entries: Record<string, PointageEntry>; imprevu: ImpreveEntry[] };
 
-interface CellData { ops: string[]; cmds: string[]; extras?: string[] }
+/**
+ * Entrée de contrôle / supervision : temps passé par un expert à contrôler
+ * la qualité ou former un apprenti. NON compté dans la production machine,
+ * mais bien comptabilisé dans le total opérateur du jour.
+ */
+interface ControleEntry {
+  id: string;
+  operateur: string;
+  /** Type : "controle_qualite" | "supervision" | "formation" */
+  type: string;
+  /** Chantier ou poste concerné (libre). */
+  cible: string;
+  realMin: number;
+  note?: string;
+}
+
+type PointageData = {
+  entries: Record<string, PointageEntry>;
+  imprevu: ImpreveEntry[];
+  /** Liste des contrôles/supervisions de la journée. */
+  controles?: ControleEntry[];
+};
+
+interface CellData { ops: string[]; cmds: string[]; extras?: string[]; supervisors?: string[] }
 
 // ── Phases & couleurs (cohérent avec PlanningAffectations) ───────────────────
 const PHASES = [
@@ -450,6 +472,12 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
         </div>
       )}
 
+      {/* ══ CONTRÔLES & SUPERVISION (temps expert hors production) ══════════ */}
+      <ControlesPanel
+        controles={pointage.controles || []}
+        onChange={(controles) => savePointage({ ...pointage, controles })}
+      />
+
       {/* ══ TÂCHES DU JOUR PAR PHASE ════════════════════════════════════════ */}
       {tasksByPhase.length === 0 ? (
         !isWeekend && !isFerie && (
@@ -642,6 +670,126 @@ function btnAction(active: boolean, color: string) {
     color: active ? "#000" : C.sec,
     border: "none", borderRadius: 4, cursor: "pointer", whiteSpace: "nowrap" as const,
   };
+}
+
+// ── Panneau Contrôles & Supervision ──────────────────────────────────────────
+// Permet à AJ ou aux experts de pointer le temps passé en contrôle qualité,
+// supervision d'apprenti ou formation. Ces minutes ne sont PAS comptées
+// dans la production machine, mais bien dans le total opérateur.
+
+const CONTROLE_TYPES = [
+  { id: "controle_qualite", label: "Contrôle qualité",   icon: "✓" },
+  { id: "supervision",      label: "Supervision apprenti", icon: "👁" },
+  { id: "formation",        label: "Formation",          icon: "🎓" },
+];
+
+function ControlesPanel({ controles, onChange }: {
+  controles: ControleEntry[];
+  onChange: (controles: ControleEntry[]) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState({ operateur: "", type: "controle_qualite", cible: "", realMin: "", note: "" });
+
+  const totalMin = controles.reduce((s, c) => s + (c.realMin || 0), 0);
+
+  const add = () => {
+    if (!draft.operateur || !draft.realMin) return;
+    const c: ControleEntry = {
+      id: `ctrl_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      operateur: draft.operateur,
+      type: draft.type,
+      cible: draft.cible,
+      realMin: parseInt(draft.realMin) || 0,
+      note: draft.note,
+    };
+    onChange([...controles, c]);
+    setDraft({ operateur: "", type: "controle_qualite", cible: "", realMin: "", note: "" });
+    setAdding(false);
+  };
+
+  const remove = (id: string) => onChange(controles.filter(c => c.id !== id));
+
+  return (
+    <div style={{
+      background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6,
+      padding: "10px 14px", marginBottom: 12,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: controles.length > 0 || adding ? 8 : 0 }}>
+        <span style={{ fontSize: 12, fontWeight: 800, color: C.purple }}>
+          👁 Contrôles & supervision
+        </span>
+        {totalMin > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 700, color: C.purple, padding: "1px 8px", background: C.purple + "22", borderRadius: 3 }}>
+            {Math.floor(totalMin / 60)}h{String(totalMin % 60).padStart(2, "0")} cumulé
+          </span>
+        )}
+        <span style={{ fontSize: 10, color: C.muted, flex: 1 }}>
+          Temps des experts hors production (qualité, formation, supervision)
+        </span>
+        {!adding && (
+          <button onClick={() => setAdding(true)} style={{
+            padding: "4px 10px", fontSize: 11, fontWeight: 700,
+            background: C.purple + "22", border: `1px solid ${C.purple}55`,
+            borderRadius: 4, color: C.purple, cursor: "pointer",
+          }}>
+            + Ajouter
+          </button>
+        )}
+      </div>
+
+      {adding && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", padding: "6px 0", borderTop: `1px solid ${C.border}` }}>
+          <input value={draft.operateur} onChange={e => setDraft(p => ({ ...p, operateur: e.target.value }))}
+            placeholder="Opérateur" style={{ padding: "4px 8px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.text, fontSize: 11, width: 110 }} />
+          <select value={draft.type} onChange={e => setDraft(p => ({ ...p, type: e.target.value }))}
+            style={{ padding: "4px 8px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.text, fontSize: 11 }}>
+            {CONTROLE_TYPES.map(t => <option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+          </select>
+          <input value={draft.cible} onChange={e => setDraft(p => ({ ...p, cible: e.target.value }))}
+            placeholder="Chantier / poste / —" style={{ padding: "4px 8px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.text, fontSize: 11, width: 140 }} />
+          <input type="number" value={draft.realMin} onChange={e => setDraft(p => ({ ...p, realMin: e.target.value }))}
+            placeholder="min" style={{ padding: "4px 8px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.text, fontSize: 11, width: 70 }} />
+          <input value={draft.note} onChange={e => setDraft(p => ({ ...p, note: e.target.value }))}
+            placeholder="Note (optionnel)" style={{ padding: "4px 8px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.text, fontSize: 11, flex: 1, minWidth: 100 }} />
+          <button onClick={add} disabled={!draft.operateur || !draft.realMin} style={{
+            padding: "4px 12px", fontSize: 11, fontWeight: 700,
+            background: !draft.operateur || !draft.realMin ? C.s2 : C.purple,
+            border: "none", borderRadius: 4,
+            color: !draft.operateur || !draft.realMin ? C.muted : "#000",
+            cursor: !draft.operateur || !draft.realMin ? "default" : "pointer",
+          }}>
+            OK
+          </button>
+          <button onClick={() => setAdding(false)} style={{
+            padding: "4px 8px", fontSize: 10, color: C.muted,
+            background: "transparent", border: `1px solid ${C.border}`, borderRadius: 4, cursor: "pointer",
+          }}>
+            ✕
+          </button>
+        </div>
+      )}
+
+      {controles.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: adding ? 6 : 0 }}>
+          {controles.map(c => {
+            const t = CONTROLE_TYPES.find(x => x.id === c.type);
+            return (
+              <div key={c.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11, padding: "3px 6px", background: C.bg, borderRadius: 3 }}>
+                <span style={{ fontWeight: 700, color: C.text, minWidth: 80 }}>{c.operateur}</span>
+                <span style={{ color: C.purple }}>{t?.icon} {t?.label || c.type}</span>
+                {c.cible && <span style={{ color: C.sec }}>· {c.cible}</span>}
+                <span style={{ fontWeight: 700, color: C.purple, marginLeft: "auto" }}>
+                  {c.realMin >= 60 ? `${Math.floor(c.realMin / 60)}h${String(c.realMin % 60).padStart(2, "0")}` : `${c.realMin} min`}
+                </span>
+                {c.note && <span style={{ fontSize: 10, color: C.muted, fontStyle: "italic" }}>{c.note}</span>}
+                <button onClick={() => remove(c.id)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 11 }}>✕</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Éditeur d'heure et durée pour une tâche ───────────────────────────────────

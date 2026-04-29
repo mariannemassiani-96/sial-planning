@@ -212,6 +212,20 @@ export function postParallelGain(id: string, nbOps: number): number {
 }
 
 /**
+ * Décision de placement avec prise en compte des niveaux de compétence.
+ * Niveaux : 0=aucun, 1=apprenti (a besoin d'un expert), 2=autonome, 3=expert.
+ *
+ * Renvoie :
+ *   - `nbProducers` : opérateurs comptés dans le temps machine (vitesse).
+ *   - `requiresSupervisor` : si vrai, 1 expert supplémentaire doit accompagner
+ *     (sans réduire le temps machine — c'est du temps de qualité/formation).
+ */
+export interface NbOpsDecision {
+  nbProducers: number;
+  requiresSupervisor: boolean;
+}
+
+/**
  * Choisit le nombre optimal d'opérateurs pour une tâche selon la stratégie :
  *  - `crash`  : on veut aller le plus vite possible → max parallelism
  *  - `focus`  : on veut la meilleure qualité/efficience → 1 op (sauf si poste interdit)
@@ -219,38 +233,64 @@ export function postParallelGain(id: string, nbOps: number): number {
  *
  * Respecte toujours `monolithic` (renvoie 1) et `maxOperators`.
  *
- * @param availableOps nombre d'ops disponibles sur la cellule. Le résultat
- *   sera plafonné par cette valeur.
+ * @param availableLevels Niveaux des opérateurs disponibles, triés par
+ *   préférence (les meilleurs en premier). Ex: [3, 2, 1] = un expert, un
+ *   autonome, un apprenti.
+ *   Si `requiresSupervisor` est vrai à la sortie, l'appelant doit affecter
+ *   un opérateur de niveau ≥3 en plus, qui n'est PAS compté dans le temps
+ *   machine (formation / contrôle qualité).
  */
 export function chooseNbOps(
   postId: string,
   strategy: "crash" | "focus" | "normal",
-  availableOps: number,
-): number {
+  availableLevels: number[] | number,
+): NbOpsDecision {
   const def = POST_INDEX.get(postId);
-  if (!def) return Math.min(1, availableOps);
-  if (def.monolithic) return Math.min(1, availableOps);
+  const levels = typeof availableLevels === "number"
+    ? Array.from({ length: availableLevels }, () => 2) // tous présumés autonomes
+    : availableLevels;
+  const availableOps = levels.length;
+  if (!def) return { nbProducers: Math.min(1, availableOps), requiresSupervisor: false };
+  if (def.monolithic) {
+    // Sur un poste monolithique, on prend le meilleur niveau dispo. Si seul un
+    // apprenti est dispo, on demande un superviseur.
+    const onlyApprenti = levels.length > 0 && levels[0] === 1;
+    return { nbProducers: Math.min(1, availableOps), requiresSupervisor: onlyApprenti };
+  }
 
   const hardMax = def.maxOperators ?? def.parallelism;
   const softMax = Math.min(def.parallelism, hardMax, availableOps);
-  if (softMax < 1) return 0;
+  if (softMax < 1) return { nbProducers: 0, requiresSupervisor: false };
 
-  if (strategy === "focus") return 1;
-
-  if (strategy === "crash") return softMax;
-
-  // normal : sweet spot — meilleur ratio gain/op
-  let bestN = 1;
-  let bestRatio = def.parallelGain[0] ?? 1; // gain par op à 1 op
-  for (let n = 2; n <= softMax; n++) {
-    const gain = def.parallelGain[Math.min(n - 1, def.parallelGain.length - 1)] ?? 1;
-    const ratio = gain / n;
-    if (ratio > bestRatio + 0.05) { // 5% de marge pour préférer +1 op si vraiment utile
-      bestRatio = ratio;
-      bestN = n;
+  let nbProducers: number;
+  if (strategy === "focus") {
+    nbProducers = 1;
+  } else if (strategy === "crash") {
+    nbProducers = softMax;
+  } else {
+    // normal : sweet spot — meilleur ratio gain/op
+    let bestN = 1;
+    let bestRatio = def.parallelGain[0] ?? 1;
+    for (let n = 2; n <= softMax; n++) {
+      const gain = def.parallelGain[Math.min(n - 1, def.parallelGain.length - 1)] ?? 1;
+      const ratio = gain / n;
+      if (ratio > bestRatio + 0.05) {
+        bestRatio = ratio;
+        bestN = n;
+      }
     }
+    nbProducers = bestN;
   }
-  return bestN;
+
+  // Vérifier si un superviseur est nécessaire : on regarde les niveaux des
+  // `nbProducers` premiers opérateurs (les meilleurs). Si tous sont des
+  // apprentis (niveau 1), on demande un expert en plus.
+  const producers = levels.slice(0, nbProducers);
+  const allApprenti = producers.length > 0 && producers.every(l => l === 1);
+  const noExpertParmi = producers.every(l => l < 3);
+  const requiresSupervisor = allApprenti || (noExpertParmi && nbProducers === 1 && producers[0] === 1);
+
+  return { nbProducers, requiresSupervisor };
 }
 
 /**
