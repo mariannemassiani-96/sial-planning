@@ -143,19 +143,29 @@ export interface EtapeRoutage {
 }
 
 /**
- * Ancienne API compatible : retourne un tableau d'étapes avec temps estimés.
- * Retourne les postIds spécifiques (C3, F1, M1, V1, etc.) attendus par PlanningAffectations.
+ * Retourne un tableau d'étapes avec temps estimés et postIds spécifiques
+ * (C3, F1, M1, V1, etc.) attendus par PlanningAffectations.
+ *
+ * @param specialFactor multiplicateur grand format (1.0 par défaut, voir
+ *   `specialMultiplier(widthMm)` ou `detectSpecialMultiplier(cmd)` pour
+ *   coulissants/galandages > 4m).
  */
 export function getRoutage(
   typeId: string,
   quantite: number = 1,
   hsTemps?: Record<string, unknown> | null,
+  specialFactor: number = 1.0,
 ): EtapeRoutage[] {
   const tm = TYPES_MENUISERIE[typeId];
   if (!tm) return [];
 
-  const temps = calcTempsType(typeId, quantite, hsTemps as any);
+  const temps = calcTempsType(typeId, quantite, hsTemps as any, specialFactor);
   if (!temps) return [];
+
+  // Le multiplicateur grand format ne s'applique qu'au montage et au vitrage
+  // (pas à la coupe ni au contrôle/palette). Voir SPEC section 5.
+  const sfMontage = (tm.famille === "coulissant" || tm.famille === "glandage")
+    ? Math.max(1, specialFactor) : 1;
 
   const etapes: EtapeRoutage[] = [];
   const isPVC = tm.mat === "PVC";
@@ -187,6 +197,7 @@ export function getRoutage(
   }
 
   // ── Montage ──
+  // temps.par_poste.coulissant inclut déjà sfMontage via calcTempsType.
   if (temps.par_poste.coulissant > 0) {
     const pid = isGland ? "M2" : "M1";
     etapes.push({ postId: pid, label: isGland ? "Dorm. galandage" : "Dorm. coulissant", phase: "montage", estimatedMin: temps.par_poste.coulissant });
@@ -198,6 +209,7 @@ export function getRoutage(
       etapes.push({ postId: "M3", label: "Portes ALU", phase: "montage", estimatedMin: temps.par_poste.frappes });
     } else {
       // Frappes : répartir entre F1 (dormant), F2 (ouvrants+ferrage+vitrage), F3 (mise en bois+contrôle)
+      // Note : pas de multiplicateur grand format pour les frappes (voir SPEC).
       const ferrage = 10 * tm.ouvrants * quantite;
       const prep = 5 * quantite;
       const meb = 5 * quantite;
@@ -209,9 +221,13 @@ export function getRoutage(
   }
 
   // ── Vitrage ──
+  // temps.par_poste.vitrage_ov inclut déjà sfMontage pour coul/gland.
   if (temps.par_poste.vitrage_ov > 0) {
     const pid = (isCoul || isGland) ? "V2" : isHS ? "V1" : "V1";
-    etapes.push({ postId: pid, label: (isCoul || isGland) ? "Vitr. Coul/Gal" : "Vitr. Frappe", phase: "vitrage", estimatedMin: temps.par_poste.vitrage_ov });
+    const lbl = (isCoul || isGland)
+      ? (sfMontage > 1 ? `Vitr. Coul/Gal ×${sfMontage}` : "Vitr. Coul/Gal")
+      : "Vitr. Frappe";
+    etapes.push({ postId: pid, label: lbl, phase: "vitrage", estimatedMin: temps.par_poste.vitrage_ov });
   }
 
   return etapes.filter(e => e.estimatedMin > 0);

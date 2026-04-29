@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { C, EQUIPE, TYPES_MENUISERIE, hm, CommandeCC, JOURS_FERIES } from "@/lib/sial-data";
+import { C, EQUIPE, TYPES_MENUISERIE, hm, CommandeCC, JOURS_FERIES, specialMultiplier } from "@/lib/sial-data";
 import { getRoutage } from "@/lib/routage-production";
 import { openPrintWindow } from "@/lib/print-utils";
 
@@ -355,7 +355,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         const lHs = lType === "hors_standard" ? {
           t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage,
         } : (cmd as any).hsTemps;
-        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null);
+        const lSf = specialMultiplier(parseFloat(ligne?.largeur_mm) || parseFloat(ligne?.largeur) || 0);
+        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf);
         for (const e of routage) {
           if (!cmdPostTotals[e.postId]) cmdPostTotals[e.postId] = { min: 0, phase: e.phase };
           cmdPostTotals[e.postId].min += e.estimatedMin;

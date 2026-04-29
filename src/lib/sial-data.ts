@@ -101,7 +101,13 @@ export interface TempsType {
   notes?: string;
 }
 
-export function calcTempsType(typeId: string, quantite = 1, hsTemps?: HsTemps | null): TempsType | null {
+export function calcTempsType(
+  typeId: string,
+  quantite = 1,
+  hsTemps?: HsTemps | null,
+  /** Multiplicateur grand format (1.0 par défaut). Voir `specialMultiplier()`. */
+  specialFactor = 1.0,
+): TempsType | null {
   const tm = TYPES_MENUISERIE[typeId];
   if (!tm) return null;
 
@@ -150,8 +156,13 @@ export function calcTempsType(typeId: string, quantite = 1, hsTemps?: HsTemps | 
     ? T.soudure_cadre * nbCadres * q
     : (!isPVC && isFrappe ? T.poincon_assemblage_alu * nbCadres * q : 0);
 
-  const tMontDormantCoul = isCoul ? (T.pose_rails_accessoires + T.montage_dormant_coul) * q : 0;
-  const tMontDormantGland = isGland ? (T.pose_rails_accessoires + T.montage_dormant_gland) * q : 0;
+  // Spéciaux grand format (coulissants/galandages > 4m) :
+  // applique un multiplicateur sur le montage et le vitrage uniquement.
+  // La coupe et le contrôle/palette ne sont pas amplifiés.
+  const sf = (isCoul || isGland) ? Math.max(1, specialFactor) : 1;
+
+  const tMontDormantCoul = isCoul ? (T.pose_rails_accessoires + T.montage_dormant_coul) * q * sf : 0;
+  const tMontDormantGland = isGland ? (T.pose_rails_accessoires + T.montage_dormant_gland) * q * sf : 0;
 
   const tFerrage = isFrappe ? T.ferrage_ouvrant * ouvrants * q : 0;
   const tPrepDormant = isFrappe ? T.prep_dormant * q : 0;
@@ -160,7 +171,7 @@ export function calcTempsType(typeId: string, quantite = 1, hsTemps?: HsTemps | 
   const tControle = isFrappe ? T.controle * q : 0;
   const tPaletteFrappe = isFrappe ? T.mise_palette * q : 0;
 
-  const tVitrageOuv = (isCoul || isGland) ? T.vitrage_ouvrant_coul * ouvrants * q : 0;
+  const tVitrageOuv = (isCoul || isGland) ? T.vitrage_ouvrant_coul * ouvrants * q * sf : 0;
   const tPaletteCoul = (isCoul || isGland) ? T.mise_palette * q : 0;
 
   const tPosteCoupe = tCoupe + tSoudurePoincon;
@@ -186,6 +197,46 @@ export interface CommandeCalc {
   type: string;
   quantite: number;
   hsTemps?: HsTemps | null;
+}
+
+/**
+ * Multiplicateur grand format pour coulissants et galandages.
+ * Source : SPEC section 5 — pièces > 4m allongent significativement le montage.
+ *   widthMm >= 6000 → ×4
+ *   widthMm >= 5000 → ×3
+ *   widthMm >= 4000 → ×2
+ *   sinon          → ×1
+ */
+export function specialMultiplier(widthMm: number | null | undefined): number {
+  const w = Number(widthMm) || 0;
+  if (w >= 6000) return 4.0;
+  if (w >= 5000) return 3.0;
+  if (w >= 4000) return 2.0;
+  return 1.0;
+}
+
+/**
+ * Détecte si une commande contient une pièce grand format (largeur > 4m
+ * pour coulissant ou galandage). Renvoie le multiplicateur le plus grand.
+ * Cherche dans les `lignes` un champ `largeur_mm`/`widthMm`/`largeur`
+ * applicable à un type coulissant/galandage.
+ */
+export function detectSpecialMultiplier(cmd: { type: string; lignes?: unknown }): number {
+  const tm = TYPES_MENUISERIE[cmd.type];
+  if (!tm) return 1.0;
+  if (tm.famille !== "coulissant" && tm.famille !== "glandage") return 1.0;
+
+  const lignes = Array.isArray(cmd.lignes) ? cmd.lignes : [];
+  let max = 1.0;
+  for (const l of lignes as Array<Record<string, unknown>>) {
+    const lt = String(l?.type || cmd.type);
+    const ltm = TYPES_MENUISERIE[lt];
+    if (!ltm || (ltm.famille !== "coulissant" && ltm.famille !== "glandage")) continue;
+    const w = Number(l?.largeur_mm) || Number(l?.widthMm) || Number(l?.largeur) || 0;
+    const m = specialMultiplier(w);
+    if (m > max) max = m;
+  }
+  return max;
 }
 
 export function calcChargeSemaine(commandes: CommandeCalc[]) {
@@ -392,7 +443,8 @@ export function calcCheminCritique(cmd: CommandeCC) {
   const tm = TYPES_MENUISERIE[cmd.type];
   if (!tm) return null;
   if (tm.famille === "intervention") return null;
-  const t = calcTempsType(cmd.type, cmd.quantite, cmd.hsTemps);
+  const sf = detectSpecialMultiplier(cmd as { type: string; lignes?: unknown });
+  const t = calcTempsType(cmd.type, cmd.quantite, cmd.hsTemps, sf);
   if (!t) return null;
   const dd = dateDemarrage(cmd);
   if (!dd) return null;
