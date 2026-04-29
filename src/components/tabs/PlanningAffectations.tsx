@@ -1,7 +1,7 @@
 "use client";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { C, EQUIPE, TYPES_MENUISERIE, hm, CommandeCC, JOURS_FERIES, specialMultiplier } from "@/lib/sial-data";
-import { getRoutage } from "@/lib/routage-production";
+import { getRoutage, type LearnedTimesMap } from "@/lib/routage-production";
 import { openPrintWindow } from "@/lib/print-utils";
 
 // ── Types opérateurs chargés depuis la base ──────────────────────────────────
@@ -149,6 +149,16 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   useEffect(() => {
     fetch("/api/cerveau").then(r => r.ok ? r.json() : null).then(d => {
       if (d?.opPostScores) setBrainScores(d.opPostScores);
+    }).catch(() => {});
+  }, []);
+
+  // Temps appris (cerveau) : ratio actuel/estime par typeId×phase, basé sur
+  // les pointages réels. Quand >5 mesures sont disponibles, on remplace le
+  // temps théorique par le temps réel observé (voir SPEC §13).
+  const [learnedTimes, setLearnedTimes] = useState<LearnedTimesMap>({});
+  useEffect(() => {
+    fetch("/api/cerveau/learned-times").then(r => r.ok ? r.json() : null).then(d => {
+      if (d && typeof d === "object") setLearnedTimes(d as LearnedTimesMap);
     }).catch(() => {});
   }, []);
 
@@ -356,7 +366,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage,
         } : (cmd as any).hsTemps;
         const lSf = specialMultiplier(parseFloat(ligne?.largeur_mm) || parseFloat(ligne?.largeur) || 0);
-        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf);
+        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf, learnedTimes);
         for (const e of routage) {
           if (!cmdPostTotals[e.postId]) cmdPostTotals[e.postId] = { min: 0, phase: e.phase };
           cmdPostTotals[e.postId].min += e.estimatedMin;
@@ -461,7 +471,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       }
     }
     return work;
-  }, [commandes, viewWeek, allCmdOverrides, aff]);
+  }, [commandes, viewWeek, allCmdOverrides, aff, learnedTimes]);
 
   const activePosts = useMemo(() =>
     POST_GROUPS.map(grp => {
@@ -1420,7 +1430,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         if ((cmd as any)[field] !== viewWeek) continue;
 
         // Vérifier si cette phase a des postes non couverts
-        const routage = getRoutage(cmd.type, cmd.quantite, (cmd as any).hsTemps as Record<string, unknown> | null);
+        const routage = getRoutage(cmd.type, cmd.quantite, (cmd as any).hsTemps as Record<string, unknown> | null, 1.0, learnedTimes);
         const phasePostIds = routage.filter(e => e.phase === ph).map(e => e.postId);
         const hasUncovered = phasePostIds.some(pid => coverage.uncoveredPosts.some(u => u.postId === pid));
 
@@ -2305,7 +2315,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           if (lType === "intervention_chantier") continue;
           const lQte = parseInt(ligne.quantite) || cmd.quantite || 1;
           const lHs = lType === "hors_standard" ? { t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage } : cmd.hsTemps;
-          const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null);
+          const lSf = specialMultiplier(parseFloat(ligne?.largeur_mm) || parseFloat(ligne?.largeur) || 0);
+          const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf, learnedTimes);
           for (const e of routage) {
             if (!postTotals[e.postId]) postTotals[e.postId] = { label: e.label, min: 0, phase: e.phase };
             postTotals[e.postId].min += e.estimatedMin;
