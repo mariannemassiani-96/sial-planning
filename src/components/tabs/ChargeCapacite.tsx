@@ -9,10 +9,11 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { C, CommandeCC, hm, JOURS_FERIES, specialMultiplier, getWeekNum } from "@/lib/sial-data";
 import { getRoutage } from "@/lib/routage-production";
 import { postShortLabel, postCapacityMinDay, WORK_POSTS } from "@/lib/work-posts";
+import { computeAllOEE, type OEEResult } from "@/lib/oee";
 import { H } from "@/components/ui";
 
 const NB_SEMAINES = 8;
@@ -47,6 +48,20 @@ interface ChargeCell {
 
 export default function ChargeCapacite({ commandes }: { commandes: CommandeCC[] }) {
   const [filterPhase, setFilterPhase] = useState<string>("all");
+  const [oeeResults, setOeeResults] = useState<OEEResult[]>([]);
+
+  // Charger les métriques cerveau pour calculer l'OEE par poste
+  useEffect(() => {
+    fetch("/api/cerveau")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        const metrics = d?.metrics || [];
+        if (Array.isArray(metrics) && metrics.length > 0) {
+          setOeeResults(computeAllOEE(metrics));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Semaines à analyser (S+0 à S+7)
   const semaines = useMemo(() => {
@@ -286,6 +301,57 @@ export default function ChargeCapacite({ commandes }: { commandes: CommandeCC[] 
           <span style={{ width: 14, height: 14, background: C.red + "55", border: `1px solid ${C.border}` }} /> &gt; 100% (surcharge)
         </span>
       </div>
+
+      {/* OEE par poste — basé sur les pointages réels (cerveau) */}
+      {oeeResults.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <H c={C.teal}>OEE / TRS par poste — basé sur le réel</H>
+          <div style={{ fontSize: 11, color: C.sec, marginBottom: 8 }}>
+            OEE = Disponibilité × Performance × Qualité (norme AFNOR NF E 60-182).
+            Référence world class = 85%. Industrie standard ~60%.
+          </div>
+          <table style={{ borderCollapse: "collapse", fontSize: 11, width: "100%", maxWidth: 800 }}>
+            <thead>
+              <tr>
+                <th style={{ background: C.s2, border: `1px solid ${C.border}`, padding: "6px 10px", textAlign: "left", fontSize: 10, color: C.sec }}>POSTE</th>
+                <th style={{ background: C.s2, border: `1px solid ${C.border}`, padding: "6px 8px", fontSize: 10, color: C.sec }}>OEE</th>
+                <th style={{ background: C.s2, border: `1px solid ${C.border}`, padding: "6px 8px", fontSize: 10, color: C.sec }}>Dispo</th>
+                <th style={{ background: C.s2, border: `1px solid ${C.border}`, padding: "6px 8px", fontSize: 10, color: C.sec }}>Perf</th>
+                <th style={{ background: C.s2, border: `1px solid ${C.border}`, padding: "6px 8px", fontSize: 10, color: C.sec }}>Qualité</th>
+                <th style={{ background: C.s2, border: `1px solid ${C.border}`, padding: "6px 8px", fontSize: 10, color: C.sec }}>Mesures</th>
+              </tr>
+            </thead>
+            <tbody>
+              {oeeResults.map(r => {
+                const oeeColor = r.rating === "world_class" ? C.green
+                              : r.rating === "good"        ? C.yellow
+                              : r.rating === "average"     ? C.orange
+                                                            : C.red;
+                const ratingLabel = r.rating === "world_class" ? "🏆 World class"
+                                  : r.rating === "good"        ? "✓ Bon"
+                                  : r.rating === "average"     ? "⚠ Moyen"
+                                                                : "🔴 À améliorer";
+                return (
+                  <tr key={r.poste}>
+                    <td style={{ background: C.s1, border: `1px solid ${C.border}`, padding: "6px 10px", verticalAlign: "middle" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{r.poste}</div>
+                      <div style={{ fontSize: 9, color: C.sec }}>{postShortLabel(r.poste)}</div>
+                    </td>
+                    <td style={{ background: oeeColor + "22", border: `1px solid ${C.border}`, padding: "6px 8px", textAlign: "center" }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: oeeColor }}>{r.oee}%</div>
+                      <div style={{ fontSize: 9, color: C.muted }}>{ratingLabel}</div>
+                    </td>
+                    <td style={{ border: `1px solid ${C.border}`, padding: "6px 8px", textAlign: "center", color: C.sec }}>{r.disponibilite}%</td>
+                    <td style={{ border: `1px solid ${C.border}`, padding: "6px 8px", textAlign: "center", color: C.sec }}>{r.performance}%</td>
+                    <td style={{ border: `1px solid ${C.border}`, padding: "6px 8px", textAlign: "center", color: C.sec }}>{r.qualite}%</td>
+                    <td style={{ border: `1px solid ${C.border}`, padding: "6px 8px", textAlign: "center", color: C.muted, fontSize: 10 }}>{r.sampleSize}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

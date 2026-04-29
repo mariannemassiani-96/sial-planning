@@ -5,6 +5,8 @@ import { postShortLabel, type Phase as WorkPostPhase } from "@/lib/work-posts";
 import { getRoutage } from "@/lib/routage-production";
 import { calcCriticalRatio, detectBottleneck, calcTakt } from "@/lib/scheduling-priority";
 import { suggestModeJourSemaine, type ModeJour } from "@/lib/heijunka";
+import AndonPanel from "@/components/AndonPanel";
+import SqdcpPanel from "@/components/SqdcpPanel";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -510,6 +512,10 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
           <div style={{ width: `${pctGlobal}%`, height: "100%", background: pctGlobal >= 100 ? C.green : pctGlobal >= 50 ? C.orange : C.red, transition: "width 0.3s" }} />
         </div>
       )}
+
+      {/* ══ ANDON & SQDCP — management visuel journalier ═══════════════════ */}
+      <AndonPanel />
+      <SqdcpPanel date={date} />
 
       {/* ══ GOULOT + TAKT (pilotage Drum-Buffer-Rope) ═══════════════════════ */}
       {(bottleneck || takt) && totalTasks > 0 && (

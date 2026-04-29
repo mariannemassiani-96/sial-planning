@@ -99,6 +99,8 @@ export async function PATCH(req: Request) {
           "priorite" = COALESCE(${data.priorite ?? null}, "priorite"),
           "assigneA" = COALESCE(${data.assigneA ?? null}, "assigneA"),
           "echeance" = COALESCE(${data.echeance ?? null}, "echeance"),
+          "texte" = COALESCE(${data.texte ?? null}, "texte"),
+          "metadata" = COALESCE(${data.metadata ? JSON.stringify(data.metadata) : null}::jsonb, "metadata"),
           "updatedAt" = NOW()
       WHERE "id" = ${data.id}
       RETURNING *
