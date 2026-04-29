@@ -151,6 +151,19 @@ export interface EtapeRoutage {
 export type LearnedTimesMap = Record<string, { minutes: number; ratio?: number }>;
 
 /**
+ * Vitrage ISULA déclaré sur la commande (depuis cmd.vitrages).
+ * Sert à générer des étapes I1-I4 dans le routage quand au moins un
+ * vitrage `fournisseur="isula"` existe. Sans ces étapes, les opérateurs
+ * ISULA (Momo, Ali, Bruno, Guillaume) n'apparaissent pas dans la charge.
+ */
+export interface IsulaVitrageInfo {
+  /** Nombre de vitrages ISULA. Si fourni, on calcule les étapes I1-I4. */
+  nbVitrages?: number;
+  /** Vrai si au moins un vitrage > 2000mm OU > 3000mm (grand format). */
+  grandFormat?: boolean;
+}
+
+/**
  * Retourne un tableau d'étapes avec temps estimés et postIds spécifiques
  * (C3, F1, M1, V1, etc.) attendus par PlanningAffectations.
  *
@@ -166,6 +179,7 @@ export function getRoutage(
   hsTemps?: Record<string, unknown> | null,
   specialFactor: number = 1.0,
   learned?: LearnedTimesMap,
+  isula?: IsulaVitrageInfo,
 ): EtapeRoutage[] {
   const tm = TYPES_MENUISERIE[typeId];
   if (!tm) return [];
@@ -253,6 +267,27 @@ export function getRoutage(
       etapes.push({ postId: "F2", label: "Ouv.+ferrage", phase: "montage", estimatedMin: Math.round(ferrage) });
       etapes.push({ postId: "F3", label: "Mise bois+CQ", phase: "montage", estimatedMin: Math.round(meb + controle) });
     }
+  }
+
+  // ── ISULA Vitrage isolant ──
+  // Si la commande contient des vitrages ISULA, on génère les étapes I1-I4
+  // pour que les opérateurs ISULA reçoivent du travail dans le planning.
+  // Estimations standard (calibrables) :
+  //   I1 réception : 5 min/vitrage
+  //   I2 coupe verre : 15 min/vitrage standard, 25 min si grand format
+  //   I3 coupe intercalaire : 8 min/vitrage
+  //   I4 assemblage VI : 24 min/vitrage standard, 40 min si grand format
+  if (isula && isula.nbVitrages && isula.nbVitrages > 0) {
+    const n = isula.nbVitrages;
+    const isGF = !!isula.grandFormat;
+    const i1 = n * 5;
+    const i2 = n * (isGF ? 25 : 15);
+    const i3 = n * 8;
+    const i4 = n * (isGF ? 40 : 24);
+    etapes.push({ postId: "I1", label: "Réception verre", phase: "isula", estimatedMin: i1 });
+    etapes.push({ postId: "I2", label: isGF ? "Coupe verre (GF)" : "Coupe verre", phase: "isula", estimatedMin: i2 });
+    etapes.push({ postId: "I3", label: "Coupe intercalaire", phase: "isula", estimatedMin: i3 });
+    etapes.push({ postId: "I4", label: isGF ? "Assemblage VI (GF)" : "Assemblage VI", phase: "isula", estimatedMin: i4 });
   }
 
   // ── Vitrage ──
