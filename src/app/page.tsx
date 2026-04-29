@@ -26,6 +26,7 @@ import PlanningAffectations from "@/components/tabs/PlanningAffectations";
 import Aujourdhui from "@/components/tabs/Aujourdhui";
 import StatsAdmin from "@/components/tabs/StatsAdmin";
 import ChargeCapacite from "@/components/tabs/ChargeCapacite";
+import Chauffeurs from "@/components/tabs/Chauffeurs";
 import AdminUsers from "@/components/tabs/AdminUsers";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
 import TutoAJ from "@/components/TutoAJ";
@@ -178,6 +179,7 @@ export default function HomePage() {
     { id: "pointage",        l: "✅ Pointage" },
     { id: "dashboard",       l: `🏠 Suivi${retards > 0 ? ` ⚠${retards}` : ""}` },
     { id: "charge",          l: "📊 Charge 8sem." },
+    { id: "chauffeurs",      l: "🚚 Chauffeurs" },
     { id: "referentiel",     l: "📐 Référentiel" },
     { id: "import_csv",      l: "📥 Import" },
     { id: "stats_admin",     l: "📊 Stats" },
@@ -282,7 +284,7 @@ export default function HomePage() {
     aujourdhui: "🌅", planning_fab: "📅", carnet: "📂", pointage: "✅", rh: "👥", isula: "🔷",
     dashboard: "🏠", livraison: "🚚", chargements: "📦", saisie: "➕", affichage_atelier: "📺",
     qualite: "✓", stocks: "📦", referentiel: "📐", import_csv: "📥",
-    charge: "📊", stats_admin: "📊", admin_users: "⚙",
+    charge: "📊", chauffeurs: "🚚", stats_admin: "📊", admin_users: "⚙",
   };
 
   return (
@@ -436,6 +438,7 @@ export default function HomePage() {
 
             {ong === "import_csv" && <ImportCSV onRefresh={fetchAll} />}
             {ong === "charge" && <ChargeCapacite commandes={commandes} />}
+            {ong === "chauffeurs" && <Chauffeurs />}
             {ong === "stats_admin" && <StatsAdmin />}
             {ong === "admin_users" && isAdmin && <AdminUsers />}
           </>

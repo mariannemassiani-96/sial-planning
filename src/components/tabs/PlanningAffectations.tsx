@@ -835,6 +835,12 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           dayD.setDate(dayD.getDate() + j);
           if (JOURS_FERIES[localStr(dayD)]) continue;
 
+          // Contrainte ISULA : la chaîne ne tourne que les lundi/mardi/jeudi
+          // (j=0=lun, j=1=mar, j=3=jeu). Mercredi/vendredi → pas d'ISULA.
+          const isIsulaPhase = phaseGrp.phase === "isula";
+          const isIsulaDay = j === 0 || j === 1 || j === 3;
+          if (isIsulaPhase && !isIsulaDay) continue;
+
           // Placer TOUTES les étapes de cette phase en parallèle sur ce créneau
           let canPlace = true;
           for (const ei of etapeInfos) {

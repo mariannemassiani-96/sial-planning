@@ -393,6 +393,59 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
     return detectBottleneck(work, joursOuvres);
   }, [commandes, monday]);
 
+  // ── Total minutes par opérateur (production + contrôle + supervision + livraison) ──
+  // Permet à AJ de voir qui a fait combien dans la journée, toutes activités confondues.
+  const opTotaux = useMemo(() => {
+    const map = new Map<string, { production: number; controle: number; supervision: number; livraison: number; total: number }>();
+    const ensure = (op: string) => {
+      if (!map.has(op)) map.set(op, { production: 0, controle: 0, supervision: 0, livraison: 0, total: 0 });
+      return map.get(op)!;
+    };
+
+    // Production : somme des realMin pointés (réparti par opérateur)
+    for (const t of dayTasks) {
+      const e = pointage.entries[t.key];
+      if (!e || !e.realMin || e.realMin <= 0) continue;
+      const ops = (e.realOps && e.realOps.length > 0) ? e.realOps : t.ops;
+      if (ops.length === 0) continue;
+      // Si livraison (extras avec "Livraison" ou poste AUT), compter en livraison
+      const isLivraison = t.isExtra && (t.chantier.toLowerCase().includes("livraison") || t.chantier.toLowerCase().includes("chargement"));
+      const perOp = Math.round(e.realMin / ops.length);
+      for (const op of ops) {
+        const ent = ensure(op);
+        if (isLivraison) ent.livraison += perOp;
+        else ent.production += perOp;
+      }
+    }
+
+    // Contrôles & supervision (panneau dédié)
+    for (const c of pointage.controles || []) {
+      if (!c.operateur || !c.realMin) continue;
+      const ent = ensure(c.operateur);
+      if (c.type === "supervision" || c.type === "formation") ent.supervision += c.realMin;
+      else ent.controle += c.realMin;
+    }
+
+    // Imprévus (compter en production par défaut)
+    for (const i of pointage.imprevu || []) {
+      if (!i.ops || i.ops.length === 0 || !i.realMin) continue;
+      const perOp = Math.round(i.realMin / i.ops.length);
+      for (const op of i.ops) {
+        const ent = ensure(op);
+        ent.production += perOp;
+      }
+    }
+
+    // Calculer total
+    for (const v of Array.from(map.values())) {
+      v.total = v.production + v.controle + v.supervision + v.livraison;
+    }
+    return Array.from(map.entries())
+      .map(([nom, vals]) => ({ nom, ...vals }))
+      .filter(o => o.total > 0)
+      .sort((a, b) => b.total - a.total);
+  }, [dayTasks, pointage]);
+
   // ── Suggestion Heijunka pour la semaine ──────────────────────────────
   // Calcule le mix idéal Frappes / Coulissants sur les 5 jours et propose
   // une séquence alternée pour lisser la charge.
@@ -813,6 +866,61 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ══ TOTAL OPÉRATEURS DU JOUR ════════════════════════════════════════ */}
+      {opTotaux.length > 0 && (
+        <div style={{
+          background: C.s1, border: `1px solid ${C.border}`, borderRadius: 6,
+          padding: "10px 14px", marginTop: 12,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: C.text }}>
+              👥 Total opérateurs du jour
+            </span>
+            <span style={{ fontSize: 10, color: C.muted, flex: 1 }}>
+              Production + Contrôle + Supervision + Livraison
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {opTotaux.map(o => {
+              const totalH = Math.floor(o.total / 60);
+              const totalM = o.total % 60;
+              const formatLine = (label: string, min: number, color: string) => {
+                if (min === 0) return null;
+                const h = Math.floor(min / 60);
+                const m = min % 60;
+                const txt = h > 0 ? `${h}h${m > 0 ? String(m).padStart(2, "0") : ""}` : `${m} min`;
+                return (
+                  <div style={{ fontSize: 10, color, display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ width: 6, height: 6, background: color, borderRadius: "50%" }} />
+                    <span style={{ flex: 1 }}>{label}</span>
+                    <span>{txt}</span>
+                  </div>
+                );
+              };
+              return (
+                <div key={o.nom} style={{
+                  background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5,
+                  padding: "6px 10px", minWidth: 160,
+                }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{o.nom}</span>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: C.green, marginLeft: "auto" }}>
+                      {totalH}h{totalM > 0 ? String(totalM).padStart(2, "0") : ""}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                    {formatLine("Production",  o.production,  C.blue)}
+                    {formatLine("Livraison",   o.livraison,   "#CE93D8")}
+                    {formatLine("Contrôle",    o.controle,    C.purple)}
+                    {formatLine("Supervision", o.supervision, C.teal)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

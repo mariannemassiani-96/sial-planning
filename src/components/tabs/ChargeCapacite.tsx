@@ -136,7 +136,7 @@ export default function ChargeCapacite({ commandes }: { commandes: CommandeCC[] 
   // Filtrer les postes qui ont au moins 1 charge cette fenêtre
   const visiblePostIds = useMemo(() => {
     const set = new Set<string>();
-    for (const k of Array.from(cells.keys())) set.add(k.split("|")[0]);
+    for (const k of Array.from(cells.keys()) as string[]) set.add(k.split("|")[0]);
     return allPostIds.filter(p => set.has(p));
   }, [cells, allPostIds]);
 
