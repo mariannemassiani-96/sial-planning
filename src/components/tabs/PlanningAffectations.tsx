@@ -6,6 +6,10 @@ import {
   postShortLabel, postCapacityMinDay, postMaxOperators, postTamponAfter,
   chooseNbOps, detectStrategy, postIsMonolithic,
 } from "@/lib/work-posts";
+import {
+  listLivraisonsForWeek, dateChargementPour, nbDemiJourneesLivraison,
+  type LivraisonInfo,
+} from "@/lib/livraison";
 import PlanningTimelineWeek from "@/components/tabs/PlanningTimelineWeek";
 import { openPrintWindow } from "@/lib/print-utils";
 
@@ -928,10 +932,10 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       }
     }
 
-    // ── Ajouter automatiquement les livreurs pour les chargements "nous" ──
-    // Respecter les livreurs définis manuellement dans Chargements (_livreurs)
-    // Si pas de livreurs manuels, auto-assigner
-    const deliveries = new Map<string, { date: string; zone: string; clients: string[] }>();
+    // ── Ajouter automatiquement les livreurs pour les livraisons "nous" ──
+    // Source unique : listLivraisonsForWeek (gère les multi-livraisons).
+    // Compétence : op.competentPosts.includes("LIVR") OU phase "logistique".
+    // Plus de hardcoding sur des IDs.
     const weekDays: string[] = [];
     for (let i = 0; i < 5; i++) {
       const d = new Date(viewWeek + "T12:00:00");
@@ -941,41 +945,43 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     // Lire les livreurs manuels depuis les affectations sauvegardées
     const manualLivreurs: Record<string, string[]> = (aff as any)?._livreurs || {};
 
-    for (const cmd of commandes) {
-      const livDate = (cmd as any).date_livraison_souhaitee;
-      if (!livDate) continue;
-      if ((cmd as any).transporteur !== "nous") continue;
-      if (!weekDays.includes(livDate)) continue;
-      const zone = (cmd as any).zone || "";
-      const dk = `${livDate}|${zone}`;
-      if (!deliveries.has(dk)) deliveries.set(dk, { date: livDate, zone, clients: [] });
-      deliveries.get(dk)!.clients.push((cmd as any).client || "");
+    const livraisons = listLivraisonsForWeek(commandes as any, weekDays).filter(l => l.needsDriver);
+
+    // Regrouper par (date, zone) pour fusionner les clients
+    const grouped = new Map<string, LivraisonInfo & { clients: string[] }>();
+    for (const l of livraisons) {
+      const k = `${l.date}|${l.zone}`;
+      const prev = grouped.get(k);
+      if (prev) prev.clients.push(l.client);
+      else grouped.set(k, { ...l, clients: [l.client] });
     }
 
     const livreursDispo = ops.filter(op => {
-      if (op.competentPosts.includes("LIVR")) return true;
+      // Source unique : compétence sur le poste LIVR (logistique) en BDD,
+      // OU phase logistique dans EQUIPE comme fallback.
+      if (op.competentPosts.includes("LIVR") || op.competentPosts.includes("L7")) return true;
       const eq = EQUIPE.find(e => e.nom === op.nom);
-      return eq?.competences.includes("logistique") || eq?.id === "guillaume" || eq?.id === "momo" || eq?.id === "jf" || eq?.id === "jp" || eq?.id === "bruno";
+      return !!eq?.competences.includes("logistique");
     });
 
-    for (const del of Array.from(deliveries.values())) {
+    for (const del of Array.from(grouped.values())) {
       const jIdx = weekDays.indexOf(del.date);
       if (jIdx < 0 || jIdx > 4) continue;
       if (JOURS_FERIES[del.date]) continue;
 
-      const slot = "am";
+      const nbDemis = nbDemiJourneesLivraison(del.zone);
+      const slotsToBlock: ("am" | "pm")[] = nbDemis >= 2 ? ["am", "pm"] : ["am"];
+
       // Priorité aux livreurs définis manuellement dans l'onglet Chargements
       const manualKey = `${del.date}|${del.zone}`;
       const manualOps = manualLivreurs[manualKey];
       let livreursNoms: string[];
       if (manualOps && manualOps.length > 0) {
-        // Convertir les IDs en noms
         livreursNoms = manualOps.map(id => {
           const eq = EQUIPE.find(e => e.id === id);
           return eq?.nom || id;
         }).filter(Boolean);
       } else {
-        // Auto-assigner si pas de livreurs manuels
         const notAbsent = livreursDispo
           .filter(op => !(jIdx === 4 && op.vendrediOff))
           .filter(op => {
@@ -984,25 +990,33 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             const dispo = opRH[del.date];
             return dispo === undefined || dispo > 0;
           });
-        const notBooked = notAbsent.filter(op => !opBookedPost[`${op.nom}|${jIdx}|${slot}`]);
+        // Préférer les livreurs non bookés sur AUCUN des slots à bloquer
+        const notBooked = notAbsent.filter(op =>
+          slotsToBlock.every(s => !opBookedPost[`${op.nom}|${jIdx}|${s}`])
+        );
         const chosen = (notBooked.length > 0 ? notBooked : notAbsent).slice(0, 2);
         livreursNoms = chosen.map(o => o.nom);
       }
 
       const label = `🚚 Livraison ${del.zone} (${del.clients.join(", ")})`;
-      const key = ck("AUT", jIdx, slot);
-      const existing = newAff[key] || { ops: [], cmds: [], extras: [] };
-      const extras = [...(existing.extras || [])];
-      if (!extras.includes(label)) extras.push(label);
-      const livreursByZone = { ...(existing.livreursByZone || {}) };
-      if (livreursNoms.length > 0) livreursByZone[del.zone] = livreursNoms;
-      const combinedOps = [...(existing.ops || [])];
-      for (const nm of livreursNoms) if (!combinedOps.includes(nm)) combinedOps.push(nm);
-      newAff[key] = { ...existing, ops: combinedOps, extras, livreursByZone };
+      // Placer la livraison sur les bons slots (AM seul ou AM+PM selon zone)
+      for (const slot of slotsToBlock) {
+        const key = ck("AUT", jIdx, slot);
+        const existing = newAff[key] || { ops: [], cmds: [], extras: [] };
+        const extras = [...(existing.extras || [])];
+        if (!extras.includes(label)) extras.push(label);
+        const livreursByZone = { ...(existing.livreursByZone || {}) };
+        if (livreursNoms.length > 0) livreursByZone[del.zone] = livreursNoms;
+        const combinedOps = [...(existing.ops || [])];
+        for (const nm of livreursNoms) if (!combinedOps.includes(nm)) combinedOps.push(nm);
+        newAff[key] = { ...existing, ops: combinedOps, extras, livreursByZone };
+        // Bloquer les livreurs sur ce créneau
+        for (const nm of livreursNoms) opBookedPost[`${nm}|${jIdx}|${slot}`] = "AUT";
+      }
     }
 
     saveAff(newAff);
-  }, [activePosts, postWork, saveAff, ops, habits, brainScores, commandes, viewWeek]);
+  }, [activePosts, postWork, saveAff, ops, habits, brainScores, commandes, viewWeek, aff, rhPlan]);
 
   // ── Tout effacer ──
   const clearAll = useCallback(() => { saveAff({}); }, [saveAff]);
@@ -1356,59 +1370,65 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   }, [aff, postWork, viewWeek]);
 
   // ── Livraisons auto → tâches chargement + livraison ──
+  // Inclut désormais :
+  //   - les multi-livraisons (dates_livraisons[]) en plus de date_livraison_souhaitee
+  //   - le chargement TOUJOURS injecté (sauf transporteur "depot" = client retire)
+  //   - le saut des jours fériés pour le chargement (recule au dernier ouvré)
+  //   - la durée par zone : si AR > 4h, livraison bloque la journée entière
+  //     sinon une seule demi-journée
   const autoDeliveryTasks = useMemo(() => {
     const tasks: Array<{ key: string; label: string; type: "chargement" | "livraison" }> = [];
-    // Grouper les livraisons par (jour, transporteur, zone)
-    const deliveries = new Map<string, { date: string; transporteur: string; zone: string; clients: string[] }>();
+    const weekDays: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(viewWeek + "T00:00:00");
+      d.setDate(d.getDate() + i);
+      weekDays.push(localStr(d));
+    }
+    // Étendre la fenêtre au lundi de la semaine après pour détecter les
+    // chargements à poser cette semaine pour des livraisons la semaine
+    // suivante (ex: livraison lundi prochain → chargement vendredi).
+    const nextWeekDays: string[] = [];
+    for (let i = 5; i < 12; i++) {
+      const d = new Date(viewWeek + "T00:00:00");
+      d.setDate(d.getDate() + i);
+      nextWeekDays.push(localStr(d));
+    }
+    const allRelevantDays = [...weekDays, ...nextWeekDays];
 
-    for (const cmd of commandes) {
-      const dlDate = (cmd as any).date_livraison_souhaitee;
-      if (!dlDate) continue;
-      const transporteur = (cmd as any).transporteur || "";
-      const zone = (cmd as any).zone || "";
-      const dKey = `${dlDate}|${transporteur}|${zone}`;
+    const livraisons: LivraisonInfo[] = listLivraisonsForWeek(commandes as any, allRelevantDays);
 
-      if (!deliveries.has(dKey)) {
-        deliveries.set(dKey, { date: dlDate, transporteur, zone, clients: [] });
-      }
-      deliveries.get(dKey)!.clients.push((cmd as any).client);
+    // Grouper par (date, zone, transporteur) pour fusionner les clients
+    const grouped = new Map<string, LivraisonInfo & { clients: string[] }>();
+    for (const l of livraisons) {
+      const k = `${l.date}|${l.zone}|${l.transporteur}`;
+      const prev = grouped.get(k);
+      if (prev) prev.clients.push(l.client);
+      else grouped.set(k, { ...l, clients: [l.client] });
     }
 
-    // Pour chaque livraison unique dans la semaine courante ou la semaine d'après
-    deliveries.forEach((del) => {
-      const dlDay = new Date(del.date + "T00:00:00");
-      const dlDayStr = localStr(dlDay);
-
-      // Vérifier si la livraison est dans la semaine affichée
-      const weekDays: string[] = [];
-      for (let i = 0; i < 5; i++) {
-        const d = new Date(viewWeek + "T00:00:00");
-        d.setDate(d.getDate() + i);
-        weekDays.push(localStr(d));
-      }
-
-      // Chargement = demi-journée avant la livraison
-      const dayBefore = new Date(dlDay);
-      dayBefore.setDate(dayBefore.getDate() - 1);
-      // Si livraison lundi → chargement vendredi d'avant
-      const chargeDayStr = localStr(dayBefore);
-      const chargeJourIdx = weekDays.indexOf(chargeDayStr);
-
-      if (chargeJourIdx >= 0) {
-        const label = `🚛 Chargement ${del.zone || "livraison"} (${del.clients.length} client${del.clients.length > 1 ? "s" : ""})`;
-        tasks.push({ key: `AUT|${chargeJourIdx}|pm`, label, type: "chargement" });
-      }
-
-      // Livraison = jour de livraison, seulement si transporteur "nous"
-      if (del.transporteur === "nous") {
-        const livrJourIdx = weekDays.indexOf(dlDayStr);
-        if (livrJourIdx >= 0) {
-          const label = `🚚 Livraison ${del.zone || ""} (${del.clients.join(", ")})`;
-          tasks.push({ key: `AUT|${livrJourIdx}|am`, label, type: "livraison" });
-          tasks.push({ key: `AUT|${livrJourIdx}|pm`, label, type: "livraison" });
+    for (const del of Array.from(grouped.values())) {
+      // 1. Tâche de chargement (la veille ouvrée, sur le slot PM)
+      if (del.needsLoading) {
+        const chargeDate = dateChargementPour(del.date);
+        const chargeIdx = weekDays.indexOf(chargeDate);
+        if (chargeIdx >= 0) {
+          const label = `🚛 Chargement ${del.zone || ""} (${del.clients.length} client${del.clients.length > 1 ? "s" : ""})`;
+          tasks.push({ key: `AUT|${chargeIdx}|pm`, label, type: "chargement" });
         }
       }
-    });
+      // 2. Tâche de livraison (le jour J, AM si zone proche, AM+PM sinon)
+      if (del.needsDriver) {
+        const livrIdx = weekDays.indexOf(del.date);
+        if (livrIdx >= 0) {
+          const label = `🚚 Livraison ${del.zone || ""} (${del.clients.join(", ")})`;
+          const nbDemis = nbDemiJourneesLivraison(del.zone);
+          tasks.push({ key: `AUT|${livrIdx}|am`, label, type: "livraison" });
+          if (nbDemis >= 2) {
+            tasks.push({ key: `AUT|${livrIdx}|pm`, label, type: "livraison" });
+          }
+        }
+      }
+    }
     return tasks;
   }, [commandes, viewWeek]);
 
