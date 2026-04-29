@@ -585,20 +585,6 @@ export async function getOperatorScore(
   };
 }
 
-/**
- * Retourne toutes les recommandations actives.
- */
-export async function getRecommendations(): Promise<Recommendation[]> {
-  return readCerveauData<Recommendation[]>(CERVEAU_KEYS.recommendations, []);
-}
-
-/**
- * Retourne toutes les anomalies detectees.
- */
-export async function getAnomalies(): Promise<Anomaly[]> {
-  return readCerveauData<Anomaly[]>(CERVEAU_KEYS.anomalies, []);
-}
-
 // ── Helpers internes pour l'analyse ──────────────────────────────────
 
 /**

@@ -50,14 +50,6 @@ Object.values(TYPES_MENUISERIE).forEach(tm => {
   tm.profils_total = tm.lmt || 0;
 });
 
-export const OPERATEURS_VITRAGE_HS = [
-  { id:"quentin",  label:"Quentin" },
-  { id:"michel",   label:"Michel" },
-  { id:"jf",       label:"Jean-François" },
-  { id:"jp",       label:"Jean-Pierre" },
-  { id:"bruno",    label:"Bruno" },
-];
-
 export const T = {
   coupe_profil:           1,
   ouvrant_coul_prep:      5,
@@ -270,11 +262,6 @@ export const EQUIPE = [
 
 export const ZONES = ["SIAL","Porto-Vecchio","Ajaccio","Bastia","Balagne","Plaine Orientale","Continent","Sur chantier","Autre"];
 
-export const TAMPONS_OFFICIELS = {
-  coupe_livraison: 15,
-  vitrage_livraison: 4,
-};
-
 export const TAMPON_MIN = 4 * 60;
 export const TAMPON_COUPE_LIVRAISON = 15;
 export const TAMPON_VITRAGE_LIVRAISON = 4;
@@ -451,8 +438,11 @@ export function calcCheminCritique(cmd: CommandeCC) {
     ? Math.round(parseFloat(String(cmd.hsTemps?.t_vitrage)) || 0)
     : t.par_poste.vitrage_ov || 0;
   const finVitrage = tVitrageReel > 0 ? addWorkMinutes(cursor, tVitrageReel) : cursor;
+  const opVitrageHsLabel: Record<string, string> = {
+    quentin: "Quentin", michel: "Michel", jf: "Jean-François", jp: "Jean-Pierre", bruno: "Bruno",
+  };
   const quiVitrage = cmd.hsTemps?.operateur_vitrage
-    ? (OPERATEURS_VITRAGE_HS.find(o => o.id === cmd.hsTemps!.operateur_vitrage)?.label || "Quentin")
+    ? (opVitrageHsLabel[String(cmd.hsTemps.operateur_vitrage)] || "Quentin")
     : tm.famille === "coulissant" || tm.famille === "glandage" ? "Quentin" : "Michel / Jean-François";
   etapes.push({ id:"vitrage", label:"Vitrage", debut:cursor, fin:finVitrage, duree_min:tVitrageReel, qui:quiVitrage, couleur:"#26C6DA", cmd_vitrage:dateCmdVitrage });
 
@@ -497,83 +487,6 @@ export const C = {
 
 export const CMAT: Record<string, string> = { PVC: C.blue, ALU: C.cyan };
 export const CFAM: Record<string, string> = { frappe: C.blue, coulissant: C.green, glandage: C.purple, porte: C.orange };
-
-// ── Transporteurs livraison ──────────────────────────────────────────────────
-export const TRANSPORTEURS_LIVRAISON = [
-  { id: "nous",    label: "Livraison par nous-mêmes",           c: "#42A5F5" },
-  { id: "setec",   label: "Livraison par Setec",                c: "#FFA726" },
-  { id: "express", label: "Livraison par transporteur express", c: "#66BB6A" },
-  { id: "poseur",  label: "Livraison par un poseur",            c: "#AB47BC" },
-  { id: "depot",   label: "Client récupère au dépôt",           c: "#26C6DA" },
-];
-
-// ── Tâches de fabrication ────────────────────────────────────────────────────
-export const TACHES_FABRICATION = [
-  // Production menuiserie
-  { id: "deballage_prep",      label: "Déballage et préparation profilés",     categorie: "production", temps_unitaire: 3,   unite: "min/barre",   parallelisable: true,  competences: ["julien","laurent","mateo"] },
-  { id: "coupe_lmt",           label: "Coupe LMT",                              categorie: "production", temps_unitaire: 1,   unite: "min/pièce",   parallelisable: true,  competences: ["julien","laurent","mateo"] },
-  { id: "coupe_dt",            label: "Coupe double tête",                      categorie: "production", temps_unitaire: 1.5, unite: "min/pièce",   parallelisable: false, competences: ["julien"] },
-  { id: "coupe_renfort",       label: "Coupe renfort acier",                    categorie: "production", temps_unitaire: 2,   unite: "min/pièce",   parallelisable: false, competences: ["mateo"] },
-  { id: "soudure_pvc",         label: "Soudure cadre PVC",                      categorie: "production", temps_unitaire: 5,   unite: "min/cadre",   parallelisable: false, competences: ["michel","apprenti"] },
-  { id: "premontage_coul",     label: "Pré-montage ouvrants coulissant/galandage", categorie: "production", temps_unitaire: 5, unite: "min/ouvrant", parallelisable: true, competences: ["alain","jf"] },
-  { id: "montage_dorm_coul",   label: "Montage dormant coulissant",              categorie: "production", temps_unitaire: 30,  unite: "min/dormant", parallelisable: false, competences: ["alain"] },
-  { id: "montage_dorm_gal",    label: "Montage dormant galandage",               categorie: "production", temps_unitaire: 60,  unite: "min/dormant", parallelisable: false, competences: ["alain"] },
-  { id: "assemblage_dorm_alu", label: "Assemblage dormant frappe ALU",           categorie: "production", temps_unitaire: 10,  unite: "min/dormant", parallelisable: true,  competences: ["michel","jf","jp"] },
-  { id: "assemblage_ouv_alu",  label: "Assemblage ouvrant frappe ALU",           categorie: "production", temps_unitaire: 10,  unite: "min/ouvrant", parallelisable: true,  competences: ["michel","jf","jp"] },
-  { id: "ferrage",             label: "Ferrage ouvrant",                         categorie: "production", temps_unitaire: 10,  unite: "min/ouvrant", parallelisable: true,  competences: ["michel","jf","jp"] },
-  { id: "vitrage_frappe",      label: "Vitrage frappes",                         categorie: "production", temps_unitaire: 10,  unite: "min/vantail",  parallelisable: true,  competences: ["jf","apprenti"] },
-  { id: "vitrage_coul",        label: "Vitrage ouvrants coulissants",             categorie: "production", temps_unitaire: 20,  unite: "min/ouvrant", parallelisable: true,  competences: ["quentin","apprenti"] },
-  { id: "palette",             label: "Mise sur palette",                         categorie: "production", temps_unitaire: 5,   unite: "min/pièce",   parallelisable: true,  competences: ["quentin","apprenti","guillaume"] },
-  { id: "controle_qual",       label: "Contrôle qualité",                         categorie: "production", temps_unitaire: 2,   unite: "min/pièce",   parallelisable: true,  competences: [] },
-  // Logistique
-  { id: "dech_profils",        label: "Déchargement camion fournisseur profilés",   categorie: "logistique", temps_unitaire: 60,  unite: "min (fixe)",  parallelisable: false, competences: ["guillaume"] },
-  { id: "dech_access",         label: "Déchargement camion fournisseur accessoires", categorie: "logistique", temps_unitaire: 30,  unite: "min (fixe)",  parallelisable: false, competences: ["guillaume"] },
-  { id: "charg_client",        label: "Chargement camion client",                    categorie: "logistique", temps_unitaire: 120, unite: "min (fixe)",  parallelisable: false, competences: ["guillaume"] },
-  { id: "rangement_stock",     label: "Rangement stock",                             categorie: "logistique", temps_unitaire: 120, unite: "min (fixe)",  parallelisable: false, competences: ["guillaume"] },
-  { id: "prep_accessoires",    label: "Préparation accessoires",                     categorie: "logistique", temps_unitaire: 120, unite: "min (fixe)",  parallelisable: false, competences: ["guillaume"] },
-];
-
-export const TACHES_RITUELLES_DEFAUT = [
-  { id: "nettoyage_soir",  label: "Nettoyage du soir",           fixe: true,  visible: true },
-  { id: "charg_client_r",  label: "Chargement camion client",    fixe: false, visible: true },
-  { id: "dech_fourn_r",    label: "Déchargement camion fournisseur", fixe: false, visible: true },
-  { id: "rangement_r",     label: "Rangement stock",             fixe: false, visible: true },
-  { id: "maintenance",     label: "Maintenance",                  fixe: false, visible: true },
-  { id: "prep_access_r",   label: "Préparation accessoires",     fixe: false, visible: true },
-];
-
-export const TACHES_ISULA = [
-  { id: "dech_vitrage",  label: "Déchargement camion fournisseur vitrage" },
-  { id: "coupe_bottero", label: "Coupe Bottero" },
-  { id: "coupe_lisec",   label: "Coupe Lisec" },
-  { id: "coupe_intercal",label: "Coupe intercalaire" },
-  { id: "pose_intercal", label: "Pose intercalaires" },
-  { id: "but_tammi",     label: "Mise en place but et Tammi" },
-  { id: "laveuse",       label: "Laveuse" },
-  { id: "mise_intercal", label: "Mise intercalaire sur vitrage" },
-  { id: "presse",        label: "Presse" },
-  { id: "gaz",           label: "Gaz" },
-  { id: "enduction",     label: "Enduction" },
-  { id: "controle_isula",label: "Contrôle qualité" },
-  { id: "chariot",       label: "Mise sur chariot" },
-];
-
-// Compétences préférentielles par défaut (configurables depuis l'app)
-export const COMPETENCES_DEFAUT: Record<string, string[]> = {
-  "julien":    ["coupe_lmt", "coupe_dt"],
-  "laurent":   ["coupe_lmt", "coupe_renfort"],
-  "mateo":     ["coupe_lmt", "coupe_renfort"],
-  "alain":     ["montage_dorm_coul", "montage_dorm_gal", "premontage_coul"],
-  "michel":    ["assemblage_dorm_alu", "assemblage_ouv_alu", "soudure_pvc"],
-  "jf":        ["assemblage_dorm_alu", "assemblage_ouv_alu", "vitrage_frappe"],
-  "quentin":   ["vitrage_coul", "palette"],
-  "apprenti":  ["soudure_pvc", "vitrage_frappe", "palette"],
-  "guillaume": ["dech_profils", "dech_access", "charg_client", "rangement_stock", "prep_accessoires"],
-  "ali":       [],
-  "momo":      [],
-  "bruno":     [],
-  "jp":        ["assemblage_dorm_alu", "assemblage_ouv_alu", "vitrage_coul", "montage_dorm_coul"],
-};
 
 // Équipe pour affichage atelier (avec dates naissance pour anniversaires)
 export const EQUIPE_ANNIVERSAIRES: Array<{ id: string; nom: string; naissance: string }> = [

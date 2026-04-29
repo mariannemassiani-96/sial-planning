@@ -4,7 +4,6 @@ import {
   C,
   EQUIPE,
   TYPES_MENUISERIE,
-  TACHES_FABRICATION,
   EQUIPE_ANNIVERSAIRES,
   CommandeCC,
   fmtDate,
@@ -199,10 +198,6 @@ const TV_ROW: React.CSSProperties = {
   padding: "8px 0",
   borderBottom: `1px solid ${C.border}`,
 };
-
-// ─── Éviter l'erreur TS "unused import" sur TACHES_FABRICATION ────────────────
-// TACHES_FABRICATION est importé pour usage futur (extension du module).
-void TACHES_FABRICATION;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPOSANT PRINCIPAL
