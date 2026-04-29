@@ -157,20 +157,25 @@ export default function HomePage() {
   };
 
   // ── Navigation — onglets filtrés par permissions ──────────────────────────
+  // Ordre du quotidien d'Ange-Joseph d'abord, puis outils admin/référentiel.
   const allNav = [
+    // Quotidien atelier (pour AJ et Marianne)
     { id: "aujourdhui",      l: `🌅 Aujourd'hui${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
     { id: "planning_fab",    l: "📅 Planning" },
-    { id: "dashboard",       l: `🏠 Suivi${retards > 0 ? ` ⚠${retards}` : ""}` },
+    { id: "carnet",          l: `📂 Commandes (${commandes.length})` },
+    { id: "affichage_atelier", l: "📺 Atelier" },
+    // Logistique
     { id: "livraison",       l: "🚚 Livraisons" },
     { id: "chargements",     l: "📦 Chargements" },
+    // Saisie et équipe
     { id: "saisie",          l: "➕ Commande" },
-    { id: "carnet",          l: `📂 Commandes (${commandes.length})` },
     { id: "rh",              l: "👥 Équipe" },
-    { id: "pointage",        l: "✅ Pointage" },
-    { id: "affichage_atelier", l: "📺 Atelier" },
     { id: "isula",           l: "🔷 ISULA" },
     { id: "qualite",         l: "✅ Qualité" },
     { id: "stocks",          l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
+    // Outils admin / rétrospective
+    { id: "pointage",        l: "✅ Pointage" },
+    { id: "dashboard",       l: `🏠 Suivi${retards > 0 ? ` ⚠${retards}` : ""}` },
     { id: "referentiel",     l: "📐 Référentiel" },
     { id: "import_csv",      l: "📥 Import" },
     { id: "stats_admin",     l: "📊 Stats" },
