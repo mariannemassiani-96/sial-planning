@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { C, calcCheminCritique, fmtDate, CommandeCC, JOURS_FERIES, getWeekNum, specialMultiplier } from "@/lib/sial-data";
 import { postShortLabel, type Phase as WorkPostPhase } from "@/lib/work-posts";
 import { getRoutage } from "@/lib/routage-production";
+import { calcCriticalRatio, detectBottleneck, calcTakt } from "@/lib/scheduling-priority";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -327,12 +328,80 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
   }, [dayTasks, mode, isIsulaDay]);
 
   // ── Retards & livraisons ──
+  // Critical Ratio par commande (jours dispo / jours besoin) — règle de
+  // dispatching standard. Voir lib/scheduling-priority.ts.
+  const cmdsCritiques = useMemo(() => {
+    return commandes
+      .map(c => ({ cmd: c, cc: calcCheminCritique(c), cr: calcCriticalRatio(c, date) }))
+      .filter(x => {
+        const s = (x.cmd as any).statut;
+        return s !== "livre" && s !== "annulee" && s !== "terminee";
+      })
+      .filter(x => x.cr.level === "impossible" || x.cr.level === "tendu" || x.cc?.enRetard)
+      .sort((a, b) => a.cr.ratio - b.cr.ratio);
+  }, [commandes, date]);
+
   const retards = useMemo(() => {
     return commandes
       .map(c => ({ cmd: c, cc: calcCheminCritique(c) }))
       .filter(x => x.cc?.enRetard && (x.cmd as any).statut !== "livre" && (x.cmd as any).statut !== "annulee" && (x.cmd as any).statut !== "terminee")
       .sort((a, b) => (b.cc?.retardJours || 0) - (a.cc?.retardJours || 0));
   }, [commandes]);
+
+  // ── Détection du goulot de la semaine (Drum-Buffer-Rope) ──────────────
+  // On agrège la charge par poste depuis les chantiers actifs cette semaine,
+  // et on identifie le poste le plus saturé (vs sa capacité × 5j).
+  const bottleneck = useMemo(() => {
+    const work: Record<string, { totalMin: number }> = {};
+    const weekStart = new Date(monday + "T00:00:00");
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 5);
+    for (const cmd of commandes) {
+      const a = cmd as any;
+      if (a.statut === "livre" || a.statut === "annulee" || a.statut === "terminee") continue;
+      // Considérer la commande si sa semaine_coupe ou semaine_montage tombe dans la semaine courante
+      const semCoupe = a.semaine_coupe || a.semaine_montage || a.semaine_vitrage;
+      if (semCoupe !== monday) continue;
+      const lignes = Array.isArray(a.lignes) && a.lignes.length > 0
+        ? a.lignes : [{ type: cmd.type, quantite: cmd.quantite }];
+      for (const ligne of lignes) {
+        const lType = ligne.type || cmd.type;
+        if (lType === "intervention_chantier") continue;
+        const lQte = parseInt(ligne.quantite) || cmd.quantite || 1;
+        const lHs = lType === "hors_standard"
+          ? { t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage }
+          : a.hsTemps;
+        const lSf = specialMultiplier(parseFloat(ligne?.largeur_mm) || parseFloat(ligne?.largeur) || 0);
+        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf);
+        for (const e of routage) {
+          if (!work[e.postId]) work[e.postId] = { totalMin: 0 };
+          work[e.postId].totalMin += e.estimatedMin;
+        }
+      }
+    }
+    // Compter les jours fériés cette semaine pour ajuster la capacité
+    let joursOuvres = 0;
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(monday + "T12:00:00");
+      d.setDate(d.getDate() + i);
+      const ds = localStr(d);
+      if (!JOURS_FERIES[ds]) joursOuvres++;
+    }
+    return detectBottleneck(work, joursOuvres);
+  }, [commandes, monday]);
+
+  // ── Takt time du jour ──────────────────────────────────────────────────
+  // Demande client (= nombre de tâches du jour) vs temps disponible des ops
+  // affectés. Permet de voir en un coup d'œil le rythme à tenir.
+  const takt = useMemo(() => {
+    if (dayTasks.length === 0) return null;
+    const opsToday = new Set<string>();
+    for (const t of dayTasks) for (const o of t.ops) opsToday.add(o);
+    const nbOps = Math.max(1, opsToday.size);
+    // Approximation : 8h × nbOps (sans tenir compte des horaires individuels ici)
+    const totalAvailableMin = 480 * nbOps;
+    return calcTakt(totalAvailableMin, dayTasks.length);
+  }, [dayTasks]);
 
   const livraisonsAuj = useMemo(() => {
     return commandes.filter(c => {
@@ -414,8 +483,62 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
         </div>
       )}
 
-      {/* ══ ALERTES RETARDS ═════════════════════════════════════════════════ */}
-      {retards.length > 0 && (
+      {/* ══ GOULOT + TAKT (pilotage Drum-Buffer-Rope) ═══════════════════════ */}
+      {(bottleneck || takt) && totalTasks > 0 && (
+        <div style={{
+          display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap",
+        }}>
+          {bottleneck && bottleneck.status !== "ok" && (
+            <div style={{
+              flex: 1, minWidth: 240,
+              background: bottleneck.status === "surcharge" ? C.red + "15"
+                        : bottleneck.status === "saturé"   ? C.orange + "15"
+                                                            : C.yellow + "15",
+              border: `1px solid ${bottleneck.status === "surcharge" ? C.red
+                                  : bottleneck.status === "saturé"   ? C.orange
+                                                                      : C.yellow}66`,
+              borderRadius: 6, padding: "10px 14px",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <span style={{ fontSize: 14 }}>🥁</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: C.text }}>
+                  Goulot de la semaine — {postShortLabel(bottleneck.postId)}
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: C.sec }}>
+                Saturation <b style={{ color: bottleneck.status === "surcharge" ? C.red : bottleneck.status === "saturé" ? C.orange : C.text }}>{bottleneck.saturationPct}%</b>{" "}
+                ({Math.round(bottleneck.chargeMin / 60)}h sur {Math.round(bottleneck.capacityMin / 60)}h dispo).
+                {bottleneck.status === "surcharge" && " 🔴 Capacité dépassée — déplacer des chantiers."}
+                {bottleneck.status === "saturé" && " 🟠 Tout retard ici décale toute la semaine."}
+                {bottleneck.status === "tendu" && " 🟡 Surveiller, peu de marge."}
+              </div>
+            </div>
+          )}
+          {takt && takt.status !== "inconnu" && (
+            <div style={{
+              minWidth: 220,
+              background: C.blue + "12", border: `1px solid ${C.blue}55`,
+              borderRadius: 6, padding: "10px 14px",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <span style={{ fontSize: 14 }}>⏱</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: C.text }}>
+                  Takt time
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: C.sec }}>
+                <b style={{ color: C.blue }}>{takt.taktMinPerPiece} min/tâche</b> pour tenir le rythme<br/>
+                <span style={{ fontSize: 10, color: C.muted }}>
+                  ({takt.pieces} tâches · {Math.round(takt.totalAvailableMin / 60)}h dispo)
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══ ALERTES COMMANDES CRITIQUES (Critical Ratio + retards) ══════════ */}
+      {cmdsCritiques.length > 0 && (
         <div style={{
           background: C.red + "10", border: `1px solid ${C.red}55`, borderRadius: 6,
           padding: "10px 14px", marginBottom: 12,
@@ -423,24 +546,36 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
             <span style={{ fontSize: 14 }}>⚠</span>
             <span style={{ fontSize: 12, fontWeight: 800, color: C.red }}>
-              {retards.length} commande{retards.length > 1 ? "s" : ""} en retard
+              {cmdsCritiques.length} commande{cmdsCritiques.length > 1 ? "s" : ""} en alerte
+            </span>
+            <span style={{ fontSize: 10, color: C.muted, fontStyle: "italic" }}>
+              triées par Critical Ratio (jours dispo / jours besoin)
             </span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            {retards.slice(0, 6).map(({ cmd, cc }) => {
+            {cmdsCritiques.slice(0, 8).map(({ cmd, cc, cr }) => {
               const a = cmd as any;
               return (
                 <div key={String(cmd.id)} style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 11 }}>
-                  <span style={{ minWidth: 50, fontWeight: 700, color: C.red }}>+{cc?.retardJours}j</span>
+                  <span style={{
+                    minWidth: 90, padding: "2px 6px", borderRadius: 3,
+                    fontWeight: 700, fontSize: 10,
+                    background: cr.color + "33", color: cr.color, textAlign: "center",
+                  }} title={`${cr.joursDispo}j dispo / ${cr.joursBesoin}j besoin`}>
+                    CR {cr.ratio}× {cr.level === "impossible" ? "🔴" : cr.level === "tendu" ? "🟠" : ""}
+                  </span>
+                  {cc?.enRetard && (
+                    <span style={{ minWidth: 50, fontWeight: 700, color: C.red }}>+{cc.retardJours}j</span>
+                  )}
                   <span style={{ fontWeight: 700, color: C.text }}>{a.client}</span>
                   <span style={{ color: C.sec }}>{a.ref_chantier || "—"}</span>
                   <span style={{ color: C.muted, fontSize: 10 }}>livraison {fmtDate(a.date_livraison_souhaitee)}</span>
                 </div>
               );
             })}
-            {retards.length > 6 && (
+            {cmdsCritiques.length > 8 && (
               <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
-                + {retards.length - 6} autre{retards.length - 6 > 1 ? "s" : ""}
+                + {cmdsCritiques.length - 8} autre{cmdsCritiques.length - 8 > 1 ? "s" : ""}
               </div>
             )}
           </div>
