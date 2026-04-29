@@ -23,6 +23,7 @@ import PointageJour from "@/components/tabs/PointageJour";
 import AffichageAtelier from "@/components/tabs/AffichageAtelier";
 import PlanningCommandes from "@/components/tabs/PlanningCommandes";
 import PlanningAffectations from "@/components/tabs/PlanningAffectations";
+import Aujourdhui from "@/components/tabs/Aujourdhui";
 import StatsAdmin from "@/components/tabs/StatsAdmin";
 import AdminUsers from "@/components/tabs/AdminUsers";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
@@ -67,7 +68,7 @@ export default function HomePage() {
   })();
 
 
-  const [ong, setOng] = useState(initNav.tab || "planning_fab");
+  const [ong, setOng] = useState(initNav.tab || "aujourdhui");
   const [commandes, setCommandes] = useState<CommandeCC[]>([]);
   const [cmdEdit, setCmdEdit] = useState<CommandeCC | null>(null);
   const [editReturnTab, setEditReturnTab] = useState<string>("carnet");
@@ -157,8 +158,9 @@ export default function HomePage() {
 
   // ── Navigation — onglets filtrés par permissions ──────────────────────────
   const allNav = [
+    { id: "aujourdhui",      l: `🌅 Aujourd'hui${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
     { id: "planning_fab",    l: "📅 Planning" },
-    { id: "dashboard",       l: `🏠 Suivi${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
+    { id: "dashboard",       l: `🏠 Suivi${retards > 0 ? ` ⚠${retards}` : ""}` },
     { id: "livraison",       l: "🚚 Livraisons" },
     { id: "chargements",     l: "📦 Chargements" },
     { id: "saisie",          l: "➕ Commande" },
@@ -264,13 +266,13 @@ export default function HomePage() {
   };
 
   // ── Onglets prioritaires pour la bottom nav mobile ──
-  const mobileMainTabs = ["planning_fab", "carnet", "pointage", "rh", "isula"];
+  const mobileMainTabs = ["aujourdhui", "planning_fab", "carnet", "pointage", "rh"];
   const mobileMainNav = nav.filter(o => mobileMainTabs.includes(o.id));
   const mobileMoreNav = nav.filter(o => !mobileMainTabs.includes(o.id));
 
   // Icônes courtes pour mobile bottom nav
   const mobileIcons: Record<string, string> = {
-    planning_fab: "📅", carnet: "📂", pointage: "✅", rh: "👥", isula: "🔷",
+    aujourdhui: "🌅", planning_fab: "📅", carnet: "📂", pointage: "✅", rh: "👥", isula: "🔷",
     dashboard: "🏠", livraison: "🚚", chargements: "📦", saisie: "➕", affichage_atelier: "📺",
     qualite: "✓", stocks: "📦", referentiel: "📐", import_csv: "📥",
     stats_admin: "📊", admin_users: "⚙",
@@ -349,6 +351,7 @@ export default function HomePage() {
                 <button onClick={fetchAll} style={{ marginLeft: 12, padding: "4px 10px", background: C.red, border: "none", borderRadius: 4, color: "#fff", cursor: "pointer", fontSize: 11 }}>Recharger</button>
               </div>
             )}
+            {ong === "aujourdhui" && <Aujourdhui commandes={commandes} stocks={stocks} onNav={setOng} />}
             {ong === "planning_fab" && (
               <>
                 <SubTabs
