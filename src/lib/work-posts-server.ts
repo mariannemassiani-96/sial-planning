@@ -40,6 +40,9 @@ export async function ensureWorkPosts(): Promise<void> {
             color: wp.color,
             visible: wp.visible,
             sortOrder: wp.sortOrder,
+            parallelism: wp.parallelism,
+            parallelGain: wp.parallelGain,
+            monolithic: wp.monolithic,
           } as any,
           create: {
             id: wp.id,
@@ -53,6 +56,9 @@ export async function ensureWorkPosts(): Promise<void> {
             color: wp.color,
             visible: wp.visible,
             sortOrder: wp.sortOrder,
+            parallelism: wp.parallelism,
+            parallelGain: wp.parallelGain,
+            monolithic: wp.monolithic,
             defaultOperators: [],
           } as any,
         });

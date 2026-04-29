@@ -42,6 +42,10 @@ interface PointageEntry {
   reportTo: string;
   reportOps: string[];
   note: string;
+  /** Heure de début manuelle (format décimal, ex 9.5 = 9h30). */
+  manualStart?: number;
+  /** Durée manuelle en minutes (override de l'estimation). */
+  manualDur?: number;
 }
 interface ImpreveEntry {
   label: string; postId: string; realMin: number; ops: string[]; raison: string;
@@ -82,6 +86,7 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
   const [pointage, setPointage] = useState<PointageData>({ entries: {}, imprevu: [] });
   const [saving, setSaving] = useState(false);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [editingHourKey, setEditingHourKey] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const monday = getMondayOf(date);
@@ -237,11 +242,11 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
   }, [affData, jourIdx, timeByChantierPost]);
 
   // ── Calcul des heures de début/fin par tâche ──
-  // On enchaîne les tâches dans la matinée (8h-12h) puis l'après-midi (13h-17h)
-  // par poste, en utilisant leur estimatedMin (avec un minimum 30 min pour ne
-  // pas écraser visuellement les tâches sans estimation).
+  // Si AJ a fixé une heure manuelle (entry.manualStart), on l'utilise.
+  // Sinon on enchaîne automatiquement dans 8h-12h puis 13h-17h en respectant
+  // la durée estimée (divisée par le nombre d'ops travaillant en parallèle).
   const taskTimings = useMemo(() => {
-    const map = new Map<string, { startHour: number; endHour: number; durationMin: number }>();
+    const map = new Map<string, { startHour: number; endHour: number; durationMin: number; manual: boolean }>();
     // Grouper par poste × demi
     const byPostDemi = new Map<string, typeof dayTasks>();
     for (const t of dayTasks) {
@@ -253,24 +258,36 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
       const [, demi] = k.split("|");
       const startBase = demi === "am" ? 8 : 13;
       const endBase = demi === "am" ? 12 : 17;
-      // Si plusieurs ops sur la cellule, on suppose qu'ils traitent en parallèle :
-      // on divise la durée totale par le nombre d'ops. Sinon, séquentiel.
       const nbOps = Math.max(1, ts[0]?.ops.length || 1);
       let cursor = startBase;
       for (const t of ts) {
-        // Durée minimale 30 min pour visibilité ; bornée à la fin du créneau
-        const rawDur = Math.max(30, t.estimatedMin / nbOps);
+        const entry = pointage.entries[t.key];
+        const manualStart = entry?.manualStart;
+        const manualDur = entry?.manualDur;
+        if (manualStart !== undefined) {
+          const dur = manualDur ?? Math.max(30, t.estimatedMin / nbOps);
+          map.set(t.key, {
+            startHour: manualStart,
+            endHour: manualStart + dur / 60,
+            durationMin: Math.round(dur),
+            manual: true,
+          });
+          cursor = manualStart + dur / 60;
+          continue;
+        }
+        // Auto : durée minimale 30 min, bornée par fin de créneau
+        const rawDur = manualDur ?? Math.max(30, t.estimatedMin / nbOps);
         const start = cursor;
         const remaining = (endBase - start) * 60;
         const dur = Math.min(rawDur, remaining);
         const end = start + dur / 60;
-        map.set(t.key, { startHour: start, endHour: end, durationMin: Math.round(dur) });
+        map.set(t.key, { startHour: start, endHour: end, durationMin: Math.round(dur), manual: false });
         cursor = end;
         if (cursor >= endBase) break;
       }
     }
     return map;
-  }, [dayTasks]);
+  }, [dayTasks, pointage.entries]);
 
   // ── Grouper par phase, en respectant le mode du jour ──
   const tasksByPhase = useMemo(() => {
@@ -474,18 +491,43 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
                       opacity: isDone ? 0.75 : 1,
                     }}>
                       <div style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        {/* Créneau horaire */}
+                        {/* Créneau horaire — clic pour fixer manuellement */}
                         {(() => {
                           const t = taskTimings.get(task.key);
                           if (!t) return null;
+                          const isEditingHour = editingHourKey === task.key;
                           return (
-                            <div style={{
-                              minWidth: 70, textAlign: "center", padding: "4px 8px",
-                              background: phase.color + "18", border: `1px solid ${phase.color}55`,
-                              borderRadius: 4, color: phase.color, fontWeight: 700, fontSize: 11,
-                            }}>
-                              <div>{fmtHour(t.startHour)}</div>
-                              <div style={{ fontSize: 9, opacity: 0.8 }}>→ {fmtHour(t.endHour)}</div>
+                            <div style={{ position: "relative" }}>
+                              <button
+                                onClick={() => setEditingHourKey(isEditingHour ? null : task.key)}
+                                title={t.manual ? "Heure fixée manuellement — clic pour modifier" : "Heure auto — clic pour fixer manuellement"}
+                                style={{
+                                  minWidth: 70, textAlign: "center", padding: "4px 8px",
+                                  background: t.manual ? phase.color + "44" : phase.color + "18",
+                                  border: `1px solid ${phase.color}${t.manual ? "" : "55"}`,
+                                  borderRadius: 4, color: phase.color, fontWeight: 700, fontSize: 11,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <div>{fmtHour(t.startHour)}{t.manual ? " ✎" : ""}</div>
+                                <div style={{ fontSize: 9, opacity: 0.8 }}>→ {fmtHour(t.endHour)}</div>
+                              </button>
+                              {isEditingHour && (
+                                <HourEditor
+                                  startHour={t.startHour}
+                                  durationMin={t.durationMin}
+                                  isManual={t.manual}
+                                  color={phase.color}
+                                  onChange={(start, dur) => {
+                                    updateEntry(task.key, { manualStart: start, manualDur: dur });
+                                  }}
+                                  onReset={() => {
+                                    updateEntry(task.key, { manualStart: undefined, manualDur: undefined });
+                                    setEditingHourKey(null);
+                                  }}
+                                  onClose={() => setEditingHourKey(null)}
+                                />
+                              )}
                             </div>
                           );
                         })()}
@@ -600,4 +642,92 @@ function btnAction(active: boolean, color: string) {
     color: active ? "#000" : C.sec,
     border: "none", borderRadius: 4, cursor: "pointer", whiteSpace: "nowrap" as const,
   };
+}
+
+// ── Éditeur d'heure et durée pour une tâche ───────────────────────────────────
+
+function HourEditor({
+  startHour, durationMin, isManual, color, onChange, onReset, onClose,
+}: {
+  startHour: number;
+  durationMin: number;
+  isManual: boolean;
+  color: string;
+  onChange: (start: number, dur: number) => void;
+  onReset: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [hour, setHour] = useState(Math.floor(startHour));
+  const [minute, setMinute] = useState(Math.round((startHour - Math.floor(startHour)) * 60));
+  const [dur, setDur] = useState(durationMin);
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  const apply = () => {
+    const start = hour + minute / 60;
+    onChange(start, dur);
+    onClose();
+  };
+
+  return (
+    <div ref={ref} style={{
+      position: "absolute", zIndex: 100, top: "calc(100% + 4px)", left: 0,
+      background: C.s1, border: `1px solid ${color}`, borderRadius: 6,
+      padding: 10, minWidth: 240, boxShadow: "0 4px 16px #00000080",
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.sec, marginBottom: 6 }}>
+        FIXER L'HEURE MANUELLEMENT
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
+        <span style={{ fontSize: 10, color: C.sec, minWidth: 50 }}>Début</span>
+        <input type="number" min={6} max={20} value={hour}
+          onChange={e => setHour(parseInt(e.target.value) || 8)}
+          style={{ width: 50, padding: "4px 6px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.text, fontSize: 12 }} />
+        <span style={{ fontSize: 11, color: C.sec }}>h</span>
+        <input type="number" min={0} max={59} step={5} value={minute}
+          onChange={e => setMinute(parseInt(e.target.value) || 0)}
+          style={{ width: 50, padding: "4px 6px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.text, fontSize: 12 }} />
+        <span style={{ fontSize: 11, color: C.sec }}>min</span>
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
+        <span style={{ fontSize: 10, color: C.sec, minWidth: 50 }}>Durée</span>
+        <input type="number" min={5} max={480} step={5} value={dur}
+          onChange={e => setDur(parseInt(e.target.value) || 60)}
+          style={{ width: 70, padding: "4px 6px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.text, fontSize: 12 }} />
+        <span style={{ fontSize: 11, color: C.sec }}>min</span>
+        <span style={{ fontSize: 10, color: C.muted, marginLeft: 4 }}>
+          (≈ {(dur / 60).toFixed(1)}h)
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 6, justifyContent: "space-between" }}>
+        <button onClick={apply} style={{
+          padding: "6px 12px", background: color, color: "#000",
+          border: "none", borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: "pointer",
+        }}>
+          OK
+        </button>
+        {isManual && (
+          <button onClick={onReset} style={{
+            padding: "6px 12px", background: "transparent", border: `1px solid ${C.border}`,
+            borderRadius: 4, color: C.sec, fontSize: 11, cursor: "pointer",
+          }}>
+            ↺ Auto
+          </button>
+        )}
+        <button onClick={onClose} style={{
+          padding: "6px 10px", background: "transparent", border: `1px solid ${C.border}`,
+          borderRadius: 4, color: C.muted, fontSize: 11, cursor: "pointer",
+        }}>
+          Annuler
+        </button>
+      </div>
+    </div>
+  );
 }

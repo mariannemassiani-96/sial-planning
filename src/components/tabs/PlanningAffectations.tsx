@@ -2,7 +2,11 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { C, EQUIPE, TYPES_MENUISERIE, hm, CommandeCC, JOURS_FERIES, specialMultiplier } from "@/lib/sial-data";
 import { getRoutage, type LearnedTimesMap } from "@/lib/routage-production";
-import { postShortLabel, postCapacityMinDay, postMaxOperators, postTamponAfter } from "@/lib/work-posts";
+import {
+  postShortLabel, postCapacityMinDay, postMaxOperators, postTamponAfter,
+  chooseNbOps, detectStrategy, postIsMonolithic,
+} from "@/lib/work-posts";
+import PlanningTimelineWeek from "@/components/tabs/PlanningTimelineWeek";
 import { openPrintWindow } from "@/lib/print-utils";
 
 // ── Types opérateurs chargés depuis la base ──────────────────────────────────
@@ -163,6 +167,12 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     try { return localStorage.getItem("sial_aff_transposed") === "1"; } catch { return false; }
   });
   useEffect(() => { try { localStorage.setItem("sial_aff_transposed", transposed ? "1" : "0"); } catch {} }, [transposed]);
+  // Vue horaire (timeline) vs demi-journée (grille). Persisté en localStorage.
+  const [viewMode, setViewMode] = useState<"demi" | "timeline">(() => {
+    if (typeof window === "undefined") return "demi";
+    try { return localStorage.getItem("sial_aff_view") === "timeline" ? "timeline" : "demi"; } catch { return "demi"; }
+  });
+  useEffect(() => { try { localStorage.setItem("sial_aff_view", viewMode); } catch {} }, [viewMode]);
   const [cmdOverrides, setCmdOverrides] = useState<Record<string, number>>({});
   // Overrides par commande pour recalcul postWork : { cmdId: { "C3": 1200 } }
   const [allCmdOverrides, setAllCmdOverrides] = useState<Record<string, Record<string, number>>>({});
@@ -653,9 +663,12 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   // ── Proposition automatique ──
   // Algorithme par chantier (séquentiel) : pour chaque chantier, placer ses étapes
   // de routage dans l'ordre (coupe → montage → vitrage → palette) avec tampon.
+  // Stratégie autonome :
+  //   - crash  → max d'opérateurs sur chaque poste, on rattrape le retard
+  //   - focus  → 1 op par poste, qualité maximale
+  //   - normal → sweet spot (gain par op le meilleur)
   const autoAssign = useCallback(() => {
     const newAff: AffMap = {};
-    const MIN_PERS: Record<string, number> = { coupe: 2, montage: 2, vitrage: 1, logistique: 1 };
 
     // Construire la liste des chantiers à placer avec leur routage complet
     // Chaque chantier = un objet { label, etapes: [{ pid, phase, minutes }] }
@@ -663,6 +676,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       label: string;
       priority: number;
       deadline: string;
+      strategy: "crash" | "focus" | "normal";
       etapes: Array<{ pid: string; phase: string; minutes: number }>;
       phases: Array<{ phase: string; etapes: Array<{ pid: string; minutes: number }> }>;
     }
@@ -708,10 +722,22 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         }
       }
 
+      // Détecter la stratégie selon l'urgence : on calcule les jours
+      // ouvrés disponibles entre aujourd'hui et la deadline, vs le besoin
+      // en jours-personne (charge totale / 8h/jour).
+      const deadline = (cmd as any).date_livraison_souhaitee || "9999-12-31";
+      const today = new Date();
+      const dl = new Date(deadline + "T12:00:00");
+      const joursDispo = Math.max(1, Math.round((dl.getTime() - today.getTime()) / 86400000 * 5 / 7));
+      const totalMinChantier = etapes.reduce((s, e) => s + e.minutes, 0);
+      const joursBesoin = Math.max(0.5, totalMinChantier / 480);
+      const strategy = detectStrategy(joursDispo, joursBesoin);
+
       chantiers.push({
         label,
         priority: prioMap[(cmd as any).priorite] ?? 2,
-        deadline: (cmd as any).date_livraison_souhaitee || "9999-12-31",
+        deadline,
+        strategy,
         etapes,
         phases,
       });
@@ -742,13 +768,22 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         const _maxMinutes = Math.max(...phaseGrp.etapes.map(e => e.minutes));
 
         // Pour chaque étape de la phase, identifier les opérateurs compétents
+        // et choisir le nombre optimal selon la stratégie du chantier.
         const etapeInfos = phaseGrp.etapes.map(et => {
           const pid = et.pid;
           const grp = activePosts.find(g => g.posts.includes(pid));
-          const minPers = MIN_PERS[phaseGrp.phase] || 1;
-          const maxPersPoste = grp ? postMaxPers(pid) : null;
-          let nbPers = maxPersPoste ? Math.min(minPers, maxPersPoste) : minPers;
-          if (pid === "C3" && et.minutes > DEMI_MIN * 4) nbPers = 3;
+          // Nombre d'opérateurs disponibles avec la compétence sur ce poste
+          const competentCount = ops.filter(op => op.competentPosts.includes(pid)).length || 2;
+          // Choix autonome : crash / focus / normal
+          let nbPers = chooseNbOps(pid, ch.strategy, competentCount);
+          // Garde-fou rétrocompat : très grosses charges sur C3 → 3 ops
+          if (pid === "C3" && et.minutes > DEMI_MIN * 4 && !postIsMonolithic(pid)) {
+            nbPers = Math.max(nbPers, 3);
+          }
+          // Plafonner par maxOperators du poste
+          const maxPersPoste = postMaxPers(pid);
+          if (maxPersPoste) nbPers = Math.min(nbPers, maxPersPoste);
+          nbPers = Math.max(1, nbPers);
 
           const postCompetence = (() => {
             if (pid === "M1" || pid === "M2" || pid === "V2") return "coulissant";
@@ -1482,9 +1517,24 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           <button onClick={() => { const d = new Date(); const day = d.getDay(); d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); onWeekChange(localStr(d)); }} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, padding: "6px 10px", cursor: "pointer", fontSize: 11 }}>Auj.</button>
           <button onClick={() => { const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() + 7); onWeekChange(localStr(d)); }} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, padding: "6px 12px", cursor: "pointer", fontSize: 14 }}>→</button>
           <div style={{ fontSize: 16, fontWeight: 800 }}>Affectations {weekId(viewWeek)}</div>
-          <button onClick={() => setTransposed(p => !p)} style={{ marginLeft: "auto", background: transposed ? C.orange + "22" : C.s2, border: `1px solid ${transposed ? C.orange : C.border}`, borderRadius: 4, color: transposed ? C.orange : C.sec, padding: "6px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
-            ⇄ {transposed ? "Vue : Jours × Postes" : "Vue : Postes × Jours"}
-          </button>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            {/* Toggle vue demi-journée vs timeline horaire */}
+            <button onClick={() => setViewMode(viewMode === "demi" ? "timeline" : "demi")}
+              title={viewMode === "demi" ? "Passer en vue horaire (timeline 8h-17h)" : "Revenir en vue demi-journée"}
+              style={{
+                background: viewMode === "timeline" ? C.teal + "22" : C.s2,
+                border: `1px solid ${viewMode === "timeline" ? C.teal : C.border}`,
+                borderRadius: 4, color: viewMode === "timeline" ? C.teal : C.sec,
+                padding: "6px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700,
+              }}>
+              ⏱ {viewMode === "timeline" ? "Vue : Timeline horaire" : "Vue : Demi-journée"}
+            </button>
+            {viewMode === "demi" && (
+              <button onClick={() => setTransposed(p => !p)} style={{ background: transposed ? C.orange + "22" : C.s2, border: `1px solid ${transposed ? C.orange : C.border}`, borderRadius: 4, color: transposed ? C.orange : C.sec, padding: "6px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+                ⇄ {transposed ? "Jours × Postes" : "Postes × Jours"}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1802,8 +1852,19 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         );
       })()}
 
-      {/* ── Grille ── */}
-      {(() => {
+      {/* ── Vue Timeline horaire (alternative à la grille demi-journée) ── */}
+      {viewMode === "timeline" && (
+        <PlanningTimelineWeek
+          aff={affWithAuto}
+          monday={viewWeek}
+          postIds={activePosts.flatMap(g => g.visiblePosts)}
+          commandes={commandes}
+          todayIdx={todayIdx}
+        />
+      )}
+
+      {/* ── Grille (vue demi-journée) ── */}
+      {viewMode === "demi" && (() => {
         // Rendu d'une cellule (commun aux deux vues)
         const renderCell = (pid: string, jIdx: number, demi: string, grp: typeof activePosts[0]) => {
           const key = ck(pid, jIdx, demi);

@@ -29,6 +29,26 @@ export interface WorkPostDef {
   visible: boolean;
   /** Ordre d'affichage dans la phase. */
   sortOrder: number;
+
+  // ── Planification autonome ─────────────────────────────────────────────
+  /**
+   * Nombre maximum d'opérateurs **utiles** simultanément sur ce poste.
+   * Au-delà, ajouter des personnes ne va pas plus vite (gêne, machine unique).
+   * Différent de `maxOperators` qui est une contrainte dure.
+   */
+  parallelism: number;
+  /**
+   * Courbe d'efficacité : gain de vitesse selon le nombre d'opérateurs.
+   * Index = nb_ops - 1. Ex: [1.0, 1.8, 2.4] = 1op→×1, 2ops→×1.8, 3ops→×2.4.
+   * La longueur doit correspondre à `parallelism`.
+   */
+  parallelGain: number[];
+  /**
+   * Si vrai, **un seul opérateur** doit faire la tâche du début à la fin
+   * (qualité, complexité, sur-mesure). L'algorithme ne forcera jamais
+   * plusieurs opérateurs sur ce poste, même en mode crash.
+   */
+  monolithic: boolean;
 }
 
 const COLOR_COUPE = "#42A5F5";
@@ -40,63 +60,83 @@ const COLOR_AUTRE = "#78909C";
 
 const T_DEFAULT = 240;
 
+// ── Helpers défauts planification autonome ──────────────────────────────
+// Valeurs INITIALES — à ajuster avec l'expérience terrain. Le cerveau
+// peut aussi les apprendre à terme à partir des pointages réels.
+const PARALLEL_LINEAIRE_3 = [1.0, 1.8, 2.4];   // poste partageable (LMT, prépa)
+const PARALLEL_LINEAIRE_2 = [1.0, 1.7];        // 2 ops sont utiles, 3+ inutile
+const PARALLEL_FAIBLE_2   = [1.0, 1.5];        // 2 ops en parallèle = +50 % seulement
+const PARALLEL_MONO       = [1.0];             // 1 op = pas de gain à ajouter d'ops
+
+// Helper pour rester lisible dans la liste plus bas.
+function P(id: string, label: string, shortLabel: string, atelier: "SIAL" | "ISULA", phase: Phase,
+  capacityMinDay: number, maxOperators: number | null, tampon: number,
+  color: string, visible: boolean, sortOrder: number,
+  parallelism: number, parallelGain: number[], monolithic: boolean,
+): WorkPostDef {
+  return { id, label, shortLabel, atelier, phase, capacityMinDay, maxOperators,
+    tamponMinAfter: tampon, color, visible, sortOrder, parallelism, parallelGain, monolithic };
+}
+
 export const WORK_POSTS: WorkPostDef[] = [
   // ── SIAL Coupe & Prépa ─────────────────────────────────────────────────
-  { id: "C1", label: "Déchargement + déballage", shortLabel: "Déballage",   atelier: "SIAL", phase: "coupe", capacityMinDay: 1620, maxOperators: 3, tamponMinAfter: T_DEFAULT, color: COLOR_COUPE, visible: false, sortOrder: 1 },
-  { id: "C2", label: "Préparation barres",       shortLabel: "Prépa barres", atelier: "SIAL", phase: "coupe", capacityMinDay: 1620, maxOperators: 3, tamponMinAfter: T_DEFAULT, color: COLOR_COUPE, visible: true,  sortOrder: 2 },
-  { id: "C3", label: "Coupe LMT 65",             shortLabel: "Coupe LMT",   atelier: "SIAL", phase: "coupe", capacityMinDay: 1620, maxOperators: 3, tamponMinAfter: T_DEFAULT, color: COLOR_COUPE, visible: true,  sortOrder: 3 },
-  { id: "C4", label: "Coupe double tête",        shortLabel: "Coupe 2 têtes", atelier: "SIAL", phase: "coupe", capacityMinDay: 540, maxOperators: 1, tamponMinAfter: T_DEFAULT, color: COLOR_COUPE, visible: true,  sortOrder: 4 },
-  { id: "C5", label: "Coupe renfort acier",      shortLabel: "Renfort acier", atelier: "SIAL", phase: "coupe", capacityMinDay: 540, maxOperators: 1, tamponMinAfter: T_DEFAULT, color: COLOR_COUPE, visible: true,  sortOrder: 5 },
-  { id: "C6", label: "Soudure PVC",              shortLabel: "Soudure PVC", atelier: "SIAL", phase: "coupe", capacityMinDay: 540,  maxOperators: 1, tamponMinAfter: T_DEFAULT, color: COLOR_COUPE, visible: true,  sortOrder: 6 },
+  P("C1", "Déchargement + déballage", "Déballage",   "SIAL", "coupe", 1620, 3, T_DEFAULT, COLOR_COUPE, false, 1, 3, PARALLEL_LINEAIRE_3, false),
+  P("C2", "Préparation barres",       "Prépa barres", "SIAL", "coupe", 1620, 3, T_DEFAULT, COLOR_COUPE, true,  2, 3, PARALLEL_LINEAIRE_3, false),
+  P("C3", "Coupe LMT 65",             "Coupe LMT",   "SIAL", "coupe", 1620, 3, T_DEFAULT, COLOR_COUPE, true,  3, 3, PARALLEL_LINEAIRE_3, false),
+  // C4/C5/C6 : machines uniques → 1 op du début à fin (monolithique).
+  P("C4", "Coupe double tête",        "Coupe 2 têtes", "SIAL", "coupe", 540, 1, T_DEFAULT, COLOR_COUPE, true,  4, 1, PARALLEL_MONO, true),
+  P("C5", "Coupe renfort acier",      "Renfort acier", "SIAL", "coupe", 540, 1, T_DEFAULT, COLOR_COUPE, true,  5, 1, PARALLEL_MONO, true),
+  P("C6", "Soudure PVC",              "Soudure PVC", "SIAL", "coupe", 540, 1, T_DEFAULT, COLOR_COUPE, true,  6, 1, PARALLEL_MONO, true),
 
   // ── SIAL Montage Coulissants/Galandages/Portes ─────────────────────────
-  { id: "M1", label: "Dormants coulissants",     shortLabel: "Dorm. couliss.", atelier: "SIAL", phase: "montage", capacityMinDay: 1080, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_MONTAGE, visible: true, sortOrder: 1 },
-  { id: "M2", label: "Dormants galandage",       shortLabel: "Dorm. galand.", atelier: "SIAL", phase: "montage", capacityMinDay: 1080, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_MONTAGE, visible: true, sortOrder: 2 },
-  { id: "M3", label: "Portes ALU",               shortLabel: "Portes ALU",  atelier: "SIAL", phase: "montage", capacityMinDay: 1080, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_MONTAGE, visible: true, sortOrder: 3 },
+  // M1/M3 : 2 ops utiles (un dormant + un ouvrant en parallèle).
+  P("M1", "Dormants coulissants",     "Dorm. couliss.", "SIAL", "montage", 1080, 2, T_DEFAULT, COLOR_MONTAGE, true, 1, 2, PARALLEL_LINEAIRE_2, false),
+  // M2 : galandage = grand format, qualité critique → 1 op du début à fin (Alain).
+  P("M2", "Dormants galandage",       "Dorm. galand.", "SIAL", "montage", 1080, 1, T_DEFAULT, COLOR_MONTAGE, true, 2, 1, PARALLEL_MONO, true),
+  P("M3", "Portes ALU",               "Portes ALU",    "SIAL", "montage", 1080, 2, T_DEFAULT, COLOR_MONTAGE, true, 3, 2, PARALLEL_LINEAIRE_2, false),
   // ── SIAL Montage Frappes ───────────────────────────────────────────────
-  { id: "F1", label: "Dormants frappe ALU",      shortLabel: "Dorm. frappe", atelier: "SIAL", phase: "montage", capacityMinDay: 1080, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_MONTAGE, visible: true, sortOrder: 4 },
-  { id: "F2", label: "Ouvrants frappe + ferrage", shortLabel: "Ouv.+ferrage", atelier: "SIAL", phase: "montage", capacityMinDay: 1080, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_MONTAGE, visible: true, sortOrder: 5 },
-  { id: "F3", label: "Mise en bois + contrôle",  shortLabel: "Mise bois+CQ", atelier: "SIAL", phase: "montage", capacityMinDay: 1080, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_MONTAGE, visible: true, sortOrder: 6 },
-  { id: "MHS", label: "Montage Hors Standard",   shortLabel: "Montage HS",  atelier: "SIAL", phase: "montage", capacityMinDay: 480,  maxOperators: 1, tamponMinAfter: T_DEFAULT, color: COLOR_MONTAGE, visible: true, sortOrder: 7 },
+  // F1 : préparation dormants — parallélisable.
+  P("F1", "Dormants frappe ALU",      "Dorm. frappe",  "SIAL", "montage", 1080, 2, T_DEFAULT, COLOR_MONTAGE, true, 4, 2, PARALLEL_LINEAIRE_2, false),
+  // F2 : ferrage = qualité critique, ergonomique → 1 op à la fois par cadre.
+  P("F2", "Ouvrants frappe + ferrage", "Ouv.+ferrage", "SIAL", "montage", 1080, 2, T_DEFAULT, COLOR_MONTAGE, true, 5, 2, PARALLEL_FAIBLE_2, false),
+  // F3 : contrôle final + mise en bois — peut paralléliser légèrement.
+  P("F3", "Mise en bois + contrôle",  "Mise bois+CQ",  "SIAL", "montage", 1080, 2, T_DEFAULT, COLOR_MONTAGE, true, 6, 2, PARALLEL_FAIBLE_2, false),
+  // MHS : sur-mesure, JP seul → monolithique.
+  P("MHS", "Montage Hors Standard",   "Montage HS",   "SIAL", "montage", 480, 1, T_DEFAULT, COLOR_MONTAGE, true, 7, 1, PARALLEL_MONO, true),
 
   // ── SIAL Vitrage & Expédition ──────────────────────────────────────────
-  { id: "V1", label: "Vitrage menuiserie frappes", shortLabel: "Vitr. Frappe",  atelier: "SIAL", phase: "vitrage", capacityMinDay: 480, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_VITRAGE, visible: true, sortOrder: 1 },
-  { id: "V2", label: "Vitrage coulissant/galandage", shortLabel: "Vitr. Coul/Gal", atelier: "SIAL", phase: "vitrage", capacityMinDay: 480, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_VITRAGE, visible: true, sortOrder: 2 },
-  { id: "V3", label: "Emballage + expédition",     shortLabel: "Emballage",   atelier: "SIAL", phase: "vitrage", capacityMinDay: 480,  maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_VITRAGE, visible: true, sortOrder: 3 },
+  P("V1", "Vitrage menuiserie frappes", "Vitr. Frappe",   "SIAL", "vitrage", 480, 2, T_DEFAULT, COLOR_VITRAGE, true, 1, 2, PARALLEL_FAIBLE_2, false),
+  P("V2", "Vitrage coulissant/galandage", "Vitr. Coul/Gal", "SIAL", "vitrage", 480, 2, T_DEFAULT, COLOR_VITRAGE, true, 2, 2, PARALLEL_FAIBLE_2, false),
+  P("V3", "Emballage + expédition",     "Emballage",     "SIAL", "vitrage", 480, 2, T_DEFAULT, COLOR_VITRAGE, true, 3, 2, PARALLEL_LINEAIRE_2, false),
 
   // ── ISULA Vitrage isolant (lun, mar, jeu uniquement) ───────────────────
-  // Note : numérotation rétro-compatible avec les planning sauvegardés du
-  // projet (I3=intercalaire, I4=assemblage). Ordre du flux SPEC respecté
-  // via `sortOrder`.
-  { id: "I1", label: "Réception verre",                    shortLabel: "Réception",  atelier: "ISULA", phase: "isula", capacityMinDay: 840, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_ISULA, visible: true, sortOrder: 1 },
-  { id: "I2", label: "Coupe float / feuilleté / formes",   shortLabel: "Coupe verre", atelier: "ISULA", phase: "isula", capacityMinDay: 840, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_ISULA, visible: true, sortOrder: 2 },
-  { id: "I3", label: "Coupe intercalaire",                 shortLabel: "Coupe interc.", atelier: "ISULA", phase: "isula", capacityMinDay: 420, maxOperators: 1, tamponMinAfter: T_DEFAULT, color: COLOR_ISULA, visible: true, sortOrder: 3 },
-  { id: "I4", label: "Assemblage VI",                      shortLabel: "Assemblage VI", atelier: "ISULA", phase: "isula", capacityMinDay: 840, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_ISULA, visible: true, sortOrder: 5 },
-  { id: "I5", label: "Butyle",                             shortLabel: "Butyle",     atelier: "ISULA", phase: "isula", capacityMinDay: 420, maxOperators: 1, tamponMinAfter: T_DEFAULT, color: COLOR_ISULA, visible: false, sortOrder: 4 },
-  { id: "I6", label: "Gaz + scellement",                   shortLabel: "Gaz+scell.", atelier: "ISULA", phase: "isula", capacityMinDay: 840, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_ISULA, visible: false, sortOrder: 6 },
-  { id: "I7", label: "Contrôle final CEKAL",               shortLabel: "Ctrl CEKAL", atelier: "ISULA", phase: "isula", capacityMinDay: 420, maxOperators: 1, tamponMinAfter: T_DEFAULT, color: COLOR_ISULA, visible: false, sortOrder: 7 },
-  { id: "I8", label: "Sortie chaîne + rangement",          shortLabel: "Sortie+rang.", atelier: "ISULA", phase: "isula", capacityMinDay: 1050, maxOperators: 3, tamponMinAfter: T_DEFAULT, color: COLOR_ISULA, visible: false, sortOrder: 8 },
+  P("I1", "Réception verre",                  "Réception",  "ISULA", "isula", 840, 2, T_DEFAULT, COLOR_ISULA, true,  1, 2, PARALLEL_LINEAIRE_2, false),
+  P("I2", "Coupe float / feuilleté / formes", "Coupe verre","ISULA", "isula", 840, 2, T_DEFAULT, COLOR_ISULA, true,  2, 2, PARALLEL_FAIBLE_2,   false),
+  P("I3", "Coupe intercalaire",               "Coupe interc.", "ISULA", "isula", 420, 1, T_DEFAULT, COLOR_ISULA, true,  3, 1, PARALLEL_MONO,       true),
+  P("I4", "Assemblage VI",                    "Assemblage VI","ISULA", "isula", 840, 2, T_DEFAULT, COLOR_ISULA, true,  5, 2, PARALLEL_FAIBLE_2,   false),
+  P("I5", "Butyle",                           "Butyle",      "ISULA", "isula", 420, 1, T_DEFAULT, COLOR_ISULA, false, 4, 1, PARALLEL_MONO,       true),
+  P("I6", "Gaz + scellement",                 "Gaz+scell.",  "ISULA", "isula", 840, 2, T_DEFAULT, COLOR_ISULA, false, 6, 2, PARALLEL_FAIBLE_2,   false),
+  P("I7", "Contrôle final CEKAL",             "Ctrl CEKAL",  "ISULA", "isula", 420, 1, T_DEFAULT, COLOR_ISULA, false, 7, 1, PARALLEL_MONO,       true),
+  P("I8", "Sortie chaîne + rangement",        "Sortie+rang.","ISULA", "isula", 1050, 3, T_DEFAULT, COLOR_ISULA, false, 8, 3, PARALLEL_LINEAIRE_3, false),
 
   // ── Logistique ─────────────────────────────────────────────────────────
-  { id: "L4", label: "Prépa accessoires fabrication", shortLabel: "Prépa acc.", atelier: "SIAL", phase: "logistique", capacityMinDay: 480, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_LOG, visible: true, sortOrder: 1 },
-  { id: "L6", label: "Réalisation des palettes",      shortLabel: "Palettes",   atelier: "SIAL", phase: "logistique", capacityMinDay: 480, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_LOG, visible: true, sortOrder: 2 },
-  { id: "L7", label: "Chargement camion",             shortLabel: "Chargement", atelier: "SIAL", phase: "logistique", capacityMinDay: 480, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_LOG, visible: true, sortOrder: 3 },
-  { id: "L1", label: "Déchargement fournisseur",      shortLabel: "Déch. fourn.", atelier: "SIAL", phase: "logistique", capacityMinDay: 480, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_LOG, visible: false, sortOrder: 4 },
-  { id: "L2", label: "Rangement stock profilés",      shortLabel: "Stock prof.", atelier: "SIAL", phase: "logistique", capacityMinDay: 480, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_LOG, visible: false, sortOrder: 5 },
-  { id: "L3", label: "Rangement stock accessoires",   shortLabel: "Stock acc.", atelier: "SIAL", phase: "logistique", capacityMinDay: 480, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_LOG, visible: false, sortOrder: 6 },
-  { id: "L5", label: "Prépa accessoires livraison",   shortLabel: "Acc. livr.", atelier: "SIAL", phase: "logistique", capacityMinDay: 480, maxOperators: 2, tamponMinAfter: T_DEFAULT, color: COLOR_LOG, visible: false, sortOrder: 7 },
+  P("L4", "Prépa accessoires fabrication", "Prépa acc.",   "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, true,  1, 2, PARALLEL_LINEAIRE_2, false),
+  P("L6", "Réalisation des palettes",      "Palettes",     "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, true,  2, 2, PARALLEL_LINEAIRE_2, false),
+  P("L7", "Chargement camion",             "Chargement",   "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, true,  3, 2, PARALLEL_LINEAIRE_2, false),
+  P("L1", "Déchargement fournisseur",      "Déch. fourn.", "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, false, 4, 2, PARALLEL_LINEAIRE_2, false),
+  P("L2", "Rangement stock profilés",      "Stock prof.",  "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, false, 5, 2, PARALLEL_LINEAIRE_2, false),
+  P("L3", "Rangement stock accessoires",   "Stock acc.",   "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, false, 6, 2, PARALLEL_LINEAIRE_2, false),
+  P("L5", "Prépa accessoires livraison",   "Acc. livr.",   "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, false, 7, 2, PARALLEL_LINEAIRE_2, false),
 
   // ── Autre / Back-office ────────────────────────────────────────────────
-  { id: "AUT",   label: "Autre",       shortLabel: "Autre",      atelier: "SIAL", phase: "autre", capacityMinDay: 480, maxOperators: null, tamponMinAfter: 0, color: COLOR_AUTRE, visible: true,  sortOrder: 1 },
-  { id: "MAINT", label: "Maintenance", shortLabel: "Maint.",     atelier: "SIAL", phase: "autre", capacityMinDay: 480, maxOperators: null, tamponMinAfter: 0, color: COLOR_AUTRE, visible: false, sortOrder: 2 },
-  { id: "FORM",  label: "Formation",   shortLabel: "Formation",  atelier: "SIAL", phase: "autre", capacityMinDay: 480, maxOperators: null, tamponMinAfter: 0, color: COLOR_AUTRE, visible: false, sortOrder: 3 },
-  { id: "SUPERV", label: "Supervision", shortLabel: "Supervision", atelier: "SIAL", phase: "autre", capacityMinDay: 480, maxOperators: null, tamponMinAfter: 0, color: COLOR_AUTRE, visible: false, sortOrder: 4 },
+  P("AUT",    "Autre",       "Autre",       "SIAL", "autre", 480, null, 0, COLOR_AUTRE, true,  1, 3, PARALLEL_LINEAIRE_3, false),
+  P("MAINT",  "Maintenance", "Maint.",      "SIAL", "autre", 480, null, 0, COLOR_AUTRE, false, 2, 2, PARALLEL_LINEAIRE_2, false),
+  P("FORM",   "Formation",   "Formation",   "SIAL", "autre", 480, null, 0, COLOR_AUTRE, false, 3, 1, PARALLEL_MONO,       true),
+  P("SUPERV", "Supervision", "Supervision", "SIAL", "autre", 480, null, 0, COLOR_AUTRE, false, 4, 1, PARALLEL_MONO,       true),
 
   // ── Aliases historiques (rétro-compat planning sauvegardés) ────────────
-  // Anciens IDs ISULA utilisés par les vues avant l'alignement SPEC.
-  // À supprimer quand tous les planning existants seront migrés vers I1-I8.
-  { id: "IL", label: "Coupe Lisec (legacy)", shortLabel: "Coupe Lisec",  atelier: "ISULA", phase: "isula", capacityMinDay: 420, maxOperators: 1, tamponMinAfter: T_DEFAULT, color: COLOR_ISULA, visible: true, sortOrder: 90 },
-  { id: "IB", label: "Coupe Bottero (legacy)", shortLabel: "Coupe Bottero", atelier: "ISULA", phase: "isula", capacityMinDay: 420, maxOperators: 1, tamponMinAfter: T_DEFAULT, color: COLOR_ISULA, visible: true, sortOrder: 91 },
+  P("IL", "Coupe Lisec (legacy)",   "Coupe Lisec",   "ISULA", "isula", 420, 1, T_DEFAULT, COLOR_ISULA, true, 90, 1, PARALLEL_MONO, true),
+  P("IB", "Coupe Bottero (legacy)", "Coupe Bottero", "ISULA", "isula", 420, 1, T_DEFAULT, COLOR_ISULA, true, 91, 1, PARALLEL_MONO, true),
 ];
 
 const POST_INDEX = new Map(WORK_POSTS.map(p => [p.id, p] as const));
@@ -143,6 +183,91 @@ export function postMaxOperators(id: string): number | null {
 /** Capacité en minutes par jour (machine × opérateurs nominaux). */
 export function postCapacityMinDay(id: string): number {
   return POST_INDEX.get(id)?.capacityMinDay ?? 480;
+}
+
+/** Nombre d'opérateurs utiles maximum (au-delà, ajouter des ops ne va pas plus vite). */
+export function postParallelism(id: string): number {
+  return POST_INDEX.get(id)?.parallelism ?? 1;
+}
+
+/** Le poste exige-t-il un seul opérateur du début à la fin ? (qualité critique) */
+export function postIsMonolithic(id: string): boolean {
+  return POST_INDEX.get(id)?.monolithic ?? false;
+}
+
+/**
+ * Renvoie le gain de vitesse pour `nbOps` opérateurs sur ce poste.
+ *  1 op  → 1.0
+ *  2 ops → ex. 1.7 (×1.7 plus vite que 1 op)
+ *  3 ops → ex. 2.4
+ * Au-delà de la `parallelism`, ne dépasse pas le maximum de la courbe.
+ */
+export function postParallelGain(id: string, nbOps: number): number {
+  const def = POST_INDEX.get(id);
+  if (!def || nbOps < 1) return 1;
+  const curve = def.parallelGain;
+  if (curve.length === 0) return 1;
+  const idx = Math.min(nbOps - 1, curve.length - 1);
+  return curve[idx];
+}
+
+/**
+ * Choisit le nombre optimal d'opérateurs pour une tâche selon la stratégie :
+ *  - `crash`  : on veut aller le plus vite possible → max parallelism
+ *  - `focus`  : on veut la meilleure qualité/efficience → 1 op (sauf si poste interdit)
+ *  - `normal` : sweet spot, gain par op le meilleur (pas de gaspillage)
+ *
+ * Respecte toujours `monolithic` (renvoie 1) et `maxOperators`.
+ *
+ * @param availableOps nombre d'ops disponibles sur la cellule. Le résultat
+ *   sera plafonné par cette valeur.
+ */
+export function chooseNbOps(
+  postId: string,
+  strategy: "crash" | "focus" | "normal",
+  availableOps: number,
+): number {
+  const def = POST_INDEX.get(postId);
+  if (!def) return Math.min(1, availableOps);
+  if (def.monolithic) return Math.min(1, availableOps);
+
+  const hardMax = def.maxOperators ?? def.parallelism;
+  const softMax = Math.min(def.parallelism, hardMax, availableOps);
+  if (softMax < 1) return 0;
+
+  if (strategy === "focus") return 1;
+
+  if (strategy === "crash") return softMax;
+
+  // normal : sweet spot — meilleur ratio gain/op
+  let bestN = 1;
+  let bestRatio = def.parallelGain[0] ?? 1; // gain par op à 1 op
+  for (let n = 2; n <= softMax; n++) {
+    const gain = def.parallelGain[Math.min(n - 1, def.parallelGain.length - 1)] ?? 1;
+    const ratio = gain / n;
+    if (ratio > bestRatio + 0.05) { // 5% de marge pour préférer +1 op si vraiment utile
+      bestRatio = ratio;
+      bestN = n;
+    }
+  }
+  return bestN;
+}
+
+/**
+ * Détermine la stratégie pour un chantier en fonction de l'urgence.
+ *  - dispoJours / besoinJours < 1.2 → "crash" (manque de temps, il faut accélérer)
+ *  - > 2.0 → "focus" (on a tout le temps, qualité d'abord)
+ *  - sinon → "normal"
+ */
+export function detectStrategy(
+  joursDispo: number,
+  joursBesoin: number,
+): "crash" | "focus" | "normal" {
+  if (joursBesoin <= 0) return "normal";
+  const ratio = joursDispo / joursBesoin;
+  if (ratio < 1.2) return "crash";
+  if (ratio > 2.0) return "focus";
+  return "normal";
 }
 
 /** Phases dans l'ordre du flux de production. */

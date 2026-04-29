@@ -272,6 +272,13 @@ model WorkPost {
   visible          Boolean          @default(true)
   /// Ordre d'affichage dans la phase
   sortOrder        Int              @default(0)
+  /// Planification autonome : nombre d'opérateurs utiles max (au-delà, gêne)
+  parallelism      Int?             @default(1)
+  /// Courbe d'efficacité — gain de vitesse selon nb_ops (JSON: number[]).
+  /// Ex: [1.0, 1.8, 2.4] = 1op→×1, 2ops→×1.8, 3ops→×2.4
+  parallelGain     Json?
+  /// Si vrai, 1 seul opérateur du début à la fin (qualité, sur-mesure)
+  monolithic       Boolean          @default(false)
   defaultOperators String[]
   tasks            ProductionTask[]
   skills           OperatorSkill[]
