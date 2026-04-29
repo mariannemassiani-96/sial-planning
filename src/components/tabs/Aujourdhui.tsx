@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { C, calcCheminCritique, fmtDate, CommandeCC, JOURS_FERIES, getWeekNum } from "@/lib/sial-data";
+import { C, calcCheminCritique, fmtDate, CommandeCC, JOURS_FERIES, getWeekNum, specialMultiplier } from "@/lib/sial-data";
+import { postShortLabel, type Phase as WorkPostPhase } from "@/lib/work-posts";
+import { getRoutage } from "@/lib/routage-production";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -54,18 +56,16 @@ const PHASES = [
   { id: "montage_f",   label: "Montage Frappes", color: "#FFA726", postIds: ["F1","F2","F3","M3"] },
   { id: "montage_c",   label: "Montage Coul./Gal.", color: "#FFA726", postIds: ["M1","M2","MHS"] },
   { id: "vitrage",     label: "Vitrage",       color: "#26C6DA", postIds: ["V1","V2","V3"] },
-  { id: "isula",       label: "ISULA",         color: "#4DB6AC", postIds: ["IL","IB","I3","I4"] },
+  { id: "isula",       label: "ISULA",         color: "#4DB6AC", postIds: ["I1","I2","I3","I4","I5","I6","I7","I8","IL","IB"] },
   { id: "logistique",  label: "Logistique",    color: "#CE93D8", postIds: ["L4","L6","L7","AUT"] },
 ];
-const POST_LABELS: Record<string, string> = {
-  C2:"Prépa barres",C3:"Coupe LMT",C4:"Coupe 2 têtes",C5:"Renfort acier",C6:"Soudure PVC",
-  M1:"Dorm. couliss.",M2:"Dorm. galand.",M3:"Portes ALU",F1:"Dorm. frappe ALU",F2:"Ouv.+ferrage",F3:"Mise bois+CQ",
-  MHS:"Montage HS",
-  V1:"Vitr. Frappe",V2:"Vitr. Coul/Gal",V3:"Emballage",
-  L4:"Prépa acc.",L6:"Palettes",L7:"Chargement",
-  IL:"Coupe Lisec",IB:"Coupe Bottero",I3:"Coupe interc.",I4:"Assemblage VI",
-  AUT:"Autre",
-};
+
+// ── Format heure ─────────────────────────────────────────────────────────────
+function fmtHour(decimalHour: number): string {
+  const h = Math.floor(decimalHour);
+  const m = Math.round((decimalHour - h) * 60);
+  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}`;
+}
 
 const ISULA_DAYS = [1, 2, 4]; // lun, mar, jeu
 
@@ -164,16 +164,52 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
     }).catch(() => {});
   };
 
-  // ── Tâches du jour à partir des affectations ──
+  // ── Index estimation par chantier × poste (pour la timeline horaire) ──
+  // On précalcule depuis getRoutage(type, qty, hsTemps) les minutes
+  // attendues pour chaque commande, indexées par "chantier|postId".
+  const timeByChantierPost = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const cmd of commandes) {
+      const a = cmd as any;
+      const ch = a.ref_chantier || a.client || "";
+      if (!ch) continue;
+      const lignes = Array.isArray(a.lignes) && a.lignes.length > 0
+        ? a.lignes
+        : [{ type: cmd.type, quantite: cmd.quantite }];
+      for (const ligne of lignes) {
+        const lType = ligne.type || cmd.type;
+        if (lType === "intervention_chantier") continue;
+        const lQte = parseInt(ligne.quantite) || cmd.quantite || 1;
+        const lHs = lType === "hors_standard"
+          ? { t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage }
+          : a.hsTemps;
+        const lSf = specialMultiplier(parseFloat(ligne?.largeur_mm) || parseFloat(ligne?.largeur) || 0);
+        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf);
+        for (const e of routage) {
+          const k = `${ch}|${e.postId}`;
+          map.set(k, (map.get(k) || 0) + e.estimatedMin);
+        }
+      }
+    }
+    return map;
+  }, [commandes]);
+
+  // ── Tâches du jour à partir des affectations, enrichies avec la durée ──
   const dayTasks = useMemo(() => {
     if (jourIdx < 0) return [];
-    interface Task { postId: string; chantier: string; ops: string[]; key: string; isExtra: boolean }
+    interface Task {
+      postId: string; chantier: string; ops: string[]; key: string;
+      isExtra: boolean;
+      demi: "am" | "pm";          // créneau d'origine (depuis aff key)
+      estimatedMin: number;       // depuis le routage de la commande
+    }
     const tasks: Task[] = [];
     const seen = new Set<string>();
     for (const [k, cellRaw] of Object.entries(affData)) {
       const parts = k.split("|");
       if (parseInt(parts[1]) !== jourIdx) continue;
       const postId = parts[0];
+      const demi = (parts[2] === "pm" ? "pm" : "am") as "am" | "pm";
       const cell = cellRaw as CellData;
 
       for (const ch of (cell.cmds || [])) {
@@ -181,20 +217,60 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
         if (seen.has(key)) {
           const ex = tasks.find(t => t.key === key)!;
           for (const o of (cell.ops || [])) if (!ex.ops.includes(o)) ex.ops.push(o);
-        } else {
-          seen.add(key);
-          tasks.push({ postId, chantier: ch, ops: [...(cell.ops || [])], key, isExtra: false });
+          continue;
         }
+        seen.add(key);
+        const est = timeByChantierPost.get(`${ch}|${postId}`) || 0;
+        tasks.push({ postId, chantier: ch, ops: [...(cell.ops || [])], key, isExtra: false, demi, estimatedMin: est });
       }
       for (const ext of (cell.extras || [])) {
         const key = `${postId}|${ext}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        tasks.push({ postId, chantier: ext, ops: [...(cell.ops || [])], key, isExtra: true });
+        // Extras : pas d'estimation routage, on parse "(2h)" / "(1h30)" du label si présent.
+        const m = ext.match(/\((\d+)h(\d+)?\)/);
+        const est = m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : 0;
+        tasks.push({ postId, chantier: ext, ops: [...(cell.ops || [])], key, isExtra: true, demi, estimatedMin: est });
       }
     }
     return tasks;
-  }, [affData, jourIdx]);
+  }, [affData, jourIdx, timeByChantierPost]);
+
+  // ── Calcul des heures de début/fin par tâche ──
+  // On enchaîne les tâches dans la matinée (8h-12h) puis l'après-midi (13h-17h)
+  // par poste, en utilisant leur estimatedMin (avec un minimum 30 min pour ne
+  // pas écraser visuellement les tâches sans estimation).
+  const taskTimings = useMemo(() => {
+    const map = new Map<string, { startHour: number; endHour: number; durationMin: number }>();
+    // Grouper par poste × demi
+    const byPostDemi = new Map<string, typeof dayTasks>();
+    for (const t of dayTasks) {
+      const k = `${t.postId}|${t.demi}`;
+      if (!byPostDemi.has(k)) byPostDemi.set(k, []);
+      byPostDemi.get(k)!.push(t);
+    }
+    for (const [k, ts] of Array.from(byPostDemi.entries())) {
+      const [, demi] = k.split("|");
+      const startBase = demi === "am" ? 8 : 13;
+      const endBase = demi === "am" ? 12 : 17;
+      // Si plusieurs ops sur la cellule, on suppose qu'ils traitent en parallèle :
+      // on divise la durée totale par le nombre d'ops. Sinon, séquentiel.
+      const nbOps = Math.max(1, ts[0]?.ops.length || 1);
+      let cursor = startBase;
+      for (const t of ts) {
+        // Durée minimale 30 min pour visibilité ; bornée à la fin du créneau
+        const rawDur = Math.max(30, t.estimatedMin / nbOps);
+        const start = cursor;
+        const remaining = (endBase - start) * 60;
+        const dur = Math.min(rawDur, remaining);
+        const end = start + dur / 60;
+        map.set(t.key, { startHour: start, endHour: end, durationMin: Math.round(dur) });
+        cursor = end;
+        if (cursor >= endBase) break;
+      }
+    }
+    return map;
+  }, [dayTasks]);
 
   // ── Grouper par phase, en respectant le mode du jour ──
   const tasksByPhase = useMemo(() => {
@@ -398,10 +474,30 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
                       opacity: isDone ? 0.75 : 1,
                     }}>
                       <div style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        {/* Créneau horaire */}
+                        {(() => {
+                          const t = taskTimings.get(task.key);
+                          if (!t) return null;
+                          return (
+                            <div style={{
+                              minWidth: 70, textAlign: "center", padding: "4px 8px",
+                              background: phase.color + "18", border: `1px solid ${phase.color}55`,
+                              borderRadius: 4, color: phase.color, fontWeight: 700, fontSize: 11,
+                            }}>
+                              <div>{fmtHour(t.startHour)}</div>
+                              <div style={{ fontSize: 9, opacity: 0.8 }}>→ {fmtHour(t.endHour)}</div>
+                            </div>
+                          );
+                        })()}
                         <div style={{ minWidth: 200, flex: 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <span style={{ fontSize: 10, fontWeight: 800, color: phase.color, padding: "1px 6px", background: phase.color + "22", borderRadius: 3 }}>{task.postId}</span>
-                            <span style={{ fontSize: 10, color: C.muted }}>{POST_LABELS[task.postId] || task.postId}</span>
+                            <span style={{ fontSize: 10, color: C.muted }}>{postShortLabel(task.postId)}</span>
+                            {task.estimatedMin > 0 && (
+                              <span style={{ fontSize: 9, color: C.muted }}>
+                                · estimé {task.estimatedMin >= 60 ? `${Math.round(task.estimatedMin / 6) / 10}h` : `${task.estimatedMin} min`}
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginTop: 2 }}>{task.chantier}</div>
                           {task.ops.length > 0 && (

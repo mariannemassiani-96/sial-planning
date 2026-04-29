@@ -257,8 +257,21 @@ model OperatorAbsence {
 model WorkPost {
   id               String           @id
   label            String
+  shortLabel       String?          // libellé court pour les vues compactes (ex: "Coupe LMT")
   atelier          Atelier
   capacityMinDay   Int
+  /// Phase de fabrication : coupe / montage / vitrage / isula / logistique / autre
+  phase            String?
+  /// Nombre maximum d'opérateurs simultanés (1 = exclusif, null = pas de limite)
+  maxOperators     Int?
+  /// Tampon en minutes après cette étape avant la suivante (par défaut 240 = 4h)
+  tamponMinAfter   Int?
+  /// Couleur d'affichage (hex). Pour cohérence des vues.
+  color            String?
+  /// Visible par défaut dans les vues utilisateur (Aujourd'hui, PlanningAffectations)
+  visible          Boolean          @default(true)
+  /// Ordre d'affichage dans la phase
+  sortOrder        Int              @default(0)
   defaultOperators String[]
   tasks            ProductionTask[]
   skills           OperatorSkill[]

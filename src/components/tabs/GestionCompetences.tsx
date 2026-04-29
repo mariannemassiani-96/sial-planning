@@ -2,6 +2,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { C } from "@/lib/sial-data";
+import { postShortLabel } from "@/lib/work-posts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -359,17 +360,8 @@ export default function GestionCompetences() {
     </div>
   );
 
-  const POST_LABELS: Record<string, string> = {
-    C1:"Déchargement",C2:"Prép. barres",C3:"Coupe LMT 65",C4:"Coupe 2 têtes",C5:"Coupe acier",C6:"Soudure PVC",
-    M1:"Dorm. couliss.",M2:"Dorm. galand.",M3:"Portes ALU",F1:"Dorm. frappe",F2:"Ouv. frappe",F3:"Mise en bois",
-    MHS:"Montage HS",
-    V1:"Vitr. Frappe",V2:"Vitr. Coul/Gal",V3:"Emballage",
-    L1:"Décharg. fourn.",L2:"Rang. profilés",L3:"Rang. access.",L4:"Prépa acc. fab.",L5:"Prépa acc. livr.",L6:"Réal. palettes",L7:"Charg. palettes",
-    IL:"Coupe Lisec",IB:"Coupe Bottero",I3:"Coupe interc.",I4:"Assemblage VI",
-    LIVR:"Livraison",CHRG:"Chargement",DECH:"Déchargement",RANG:"Rangement",
-    NETT:"Nettoyage",MAINT:"Maintenance",FORM:"Formation",SUPERV:"Supervision",
-  };
-  const postKeys = ALL_POST_IDS.map((id) => ({ id, label: POST_LABELS[id] ?? id }));
+  // Labels via la source unique work-posts.ts.
+  const postKeys = ALL_POST_IDS.map((id) => ({ id, label: postShortLabel(id) }));
 
 
   return (

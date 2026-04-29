@@ -2,6 +2,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { C, EQUIPE, TYPES_MENUISERIE, hm, CommandeCC, JOURS_FERIES, specialMultiplier } from "@/lib/sial-data";
 import { getRoutage, type LearnedTimesMap } from "@/lib/routage-production";
+import { postShortLabel, postCapacityMinDay, postMaxOperators, postTamponAfter } from "@/lib/work-posts";
 import { openPrintWindow } from "@/lib/print-utils";
 
 // ── Types opérateurs chargés depuis la base ──────────────────────────────────
@@ -38,25 +39,22 @@ function weekId(mondayStr: string): string {
 }
 
 const JOURS = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
+// Postes affichés par phase (alignés sur le SPEC + WORK_POSTS).
+// L'ISULA a été migré IL/IB → I1-I8 (cf. lib/work-posts.ts).
 const POST_GROUPS = [
   { label: "Coupe & Prépa", color: "#42A5F5", phase: "coupe", competence: "coupe", ids: ["C2","C3","C4","C5","C6"] },
   { label: "Montage",       color: "#FFA726", phase: "montage", competence: "frappes", ids: ["M1","M2","M3","F1","F2","F3","MHS"] },
   { label: "Vitrage",       color: "#26C6DA", phase: "vitrage", competence: "vitrage", ids: ["V1","V2","V3"] },
   { label: "Logistique",    color: "#CE93D8", phase: "logistique", competence: "logistique", ids: ["L4","L6","L7"] },
-  { label: "ISULA",         color: "#4DB6AC", phase: "isula", competence: "isula", ids: ["IL","IB","I3","I4"] },
+  { label: "ISULA",         color: "#4DB6AC", phase: "isula", competence: "isula", ids: ["I1","I2","I3","I4","I5","I6","I7","I8"] },
   { label: "Autre",         color: "#78909C", phase: "autre", competence: "", ids: ["AUT"] },
 ];
-const POST_LABELS: Record<string, string> = {
-  C2:"Prépa barres",C3:"Coupe LMT",C4:"Coupe 2 têtes",C5:"Renfort acier",C6:"Soudure PVC",
-  M1:"Dorm. couliss.",M2:"Dorm. galand.",M3:"Portes ALU",F1:"Dorm. frappe ALU",F2:"Ouv.+ferrage",F3:"Mise bois+CQ",
-  MHS:"Montage HS",
-  V1:"Vitr. Frappe",V2:"Vitr. Coul/Gal",V3:"Emballage",
-  L4:"Prépa acc.",L6:"Palettes",L7:"Chargement",
-  IL:"Coupe Lisec",IB:"Coupe Bottero",I3:"Coupe interc.",I4:"Assemblage VI",
-  AUT:"Autre",
-};
+// Labels courts via la source unique work-posts.ts.
+const POST_LABELS = new Proxy({} as Record<string, string>, {
+  get: (_t, key: string) => postShortLabel(key),
+});
 const PHASE_FIELD: Record<string, string> = {
-  coupe: "semaine_coupe", montage: "semaine_montage", vitrage: "semaine_vitrage", logistique: "semaine_logistique", isula: "semaine_vitrage",
+  coupe: "semaine_coupe", montage: "semaine_montage", vitrage: "semaine_vitrage", logistique: "semaine_logistique", isula: "semaine_isula",
 };
 // Fallback statique (utilisé seulement si l'API ne répond pas)
 const OPS_FALLBACK = EQUIPE.map(op => ({
@@ -69,14 +67,9 @@ const OP_COLORS: Record<string, string> = {
 };
 const DEMI_MIN = 240;
 
-// Capacité max par poste en minutes par semaine (contrainte machine)
-// Si pas listé → pas de plafond (limité seulement par les opérateurs)
-// Contraintes par poste : max personnes
-const POST_MAX_PERS: Record<string, number> = {
-  C4: 1, // Coupe double tête : 1 seule personne
-  C5: 1, // Coupe renfort : 1 seule personne
-  C6: 1, // Soudure PVC : 1 seule personne (séquentiel)
-};
+// Max opérateurs simultanés sur un poste : récupéré depuis WORK_POSTS.
+// (postMaxOperators("C4") = 1, etc.) — voir lib/work-posts.ts
+const postMaxPers = (pid: string): number | null => postMaxOperators(pid);
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -753,7 +746,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           const pid = et.pid;
           const grp = activePosts.find(g => g.posts.includes(pid));
           const minPers = MIN_PERS[phaseGrp.phase] || 1;
-          const maxPersPoste = grp ? POST_MAX_PERS[pid] : undefined;
+          const maxPersPoste = grp ? postMaxPers(pid) : null;
           let nbPers = maxPersPoste ? Math.min(minPers, maxPersPoste) : minPers;
           if (pid === "C3" && et.minutes > DEMI_MIN * 4) nbPers = 3;
 
@@ -864,11 +857,16 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           slotsPlaced++;
         }
 
-        // Tampon entre phases : 1 demi-journée si la phase change (coupe→montage),
-        // pas de tampon si même phase ou petit chantier (< 2h)
+        // Tampon entre phases : utilise le tamponMinAfter du dernier poste
+        // de la phase courante (issu de WORK_POSTS). Converti en demi-
+        // journées (1 demi = 240 min). Si la phase ne change pas, on
+        // enchaîne au créneau suivant.
         const nextPhase = ch.phases[ch.phases.indexOf(phaseGrp) + 1];
         if (nextPhase && nextPhase.phase !== phaseGrp.phase) {
-          minSlotIdx = lastSlotIdxUsed + 2;
+          // Trouver le tampon max parmi les postes de la phase qui se termine
+          const tamponMax = Math.max(0, ...phaseGrp.etapes.map(e => postTamponAfter(e.pid)));
+          const tamponDemi = Math.max(1, Math.ceil(tamponMax / DEMI_MIN));
+          minSlotIdx = lastSlotIdxUsed + 1 + tamponDemi;
         } else {
           minSlotIdx = lastSlotIdxUsed + 1;
         }
@@ -1373,10 +1371,14 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   }, [aff, autoDeliveryTasks]);
 
   // ── Calcul de couverture globale ──
+  // Deux dimensions :
+  //   - coverage = besoin commande couvert par les affectations (opérateurs)
+  //   - saturation = charge affectée vs capacité machine (capacityMinDay × 5j)
   const coverage = useMemo(() => {
     let totalNeeded = 0;
     let totalAffected = 0;
     const uncoveredPosts: Array<{ postId: string; label: string; needed: number; affected: number; deficit: number }> = [];
+    const overloaded: Array<{ postId: string; label: string; needed: number; capacity: number; saturationPct: number }> = [];
 
     for (const grp of activePosts) {
       for (const pid of grp.visiblePosts) {
@@ -1405,12 +1407,24 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         totalNeeded += pw.totalMin;
         totalAffected += Math.min(affMin, pw.totalMin);
         if (affMin < pw.totalMin) {
-          uncoveredPosts.push({ postId: pid, label: POST_LABELS[pid] || pid, needed: pw.totalMin, affected: affMin, deficit: pw.totalMin - affMin });
+          uncoveredPosts.push({ postId: pid, label: postShortLabel(pid), needed: pw.totalMin, affected: affMin, deficit: pw.totalMin - affMin });
+        }
+
+        // Saturation machine : besoin vs capacityMinDay × 5j (capacité hebdomadaire).
+        // Si le besoin dépasse la capacité, c'est physiquement impossible cette
+        // semaine — il faut découper sur 2 semaines ou ajouter des ressources.
+        const capWeek = postCapacityMinDay(pid) * 5;
+        if (capWeek > 0 && pw.totalMin > capWeek) {
+          overloaded.push({
+            postId: pid, label: postShortLabel(pid),
+            needed: pw.totalMin, capacity: capWeek,
+            saturationPct: Math.round(pw.totalMin / capWeek * 100),
+          });
         }
       }
     }
     const pct = totalNeeded > 0 ? Math.round(totalAffected / totalNeeded * 100) : 0;
-    return { pct, totalNeeded, totalAffected, uncoveredPosts, complete: pct >= 100 };
+    return { pct, totalNeeded, totalAffected, uncoveredPosts, overloaded, complete: pct >= 100 };
   }, [activePosts, postWork, aff, hiddenTasks]);
 
   // ── Reporter les tâches non couvertes à la semaine suivante ──
@@ -1650,6 +1664,24 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           </button>
         )}
       </div>
+
+      {/* ── Alerte saturation machine ── */}
+      {coverage.overloaded.length > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", marginBottom: 10,
+          background: C.red + "12", border: `1px solid ${C.red}55`, borderRadius: 6,
+        }}>
+          <span style={{ fontSize: 14 }}>⚠</span>
+          <div style={{ flex: 1, fontSize: 11, color: C.text }}>
+            <span style={{ fontWeight: 700, color: C.red }}>Capacité dépassée</span> — la charge demandée excède la capacité hebdomadaire :{" "}
+            {coverage.overloaded.map(o => (
+              <span key={o.postId} style={{ marginRight: 8, padding: "2px 6px", background: C.red + "22", borderRadius: 3, fontWeight: 700 }}>
+                {o.label} ({o.saturationPct}% — {hm(o.needed)} pour {hm(o.capacity)} dispo)
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Résultat audit ── */}
       {auditResult && (
@@ -1986,7 +2018,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 const pw = postWork[pid] || { totalMin: 0, cmds: [] };
                 const minPers = grp.phase === "coupe" ? 2 : 1;
                 const persNeeded = pw.totalMin > 0 ? Math.max(minPers, Math.ceil(pw.totalMin / DEMI_MIN / 10)) : 0;
-                const maxPers = POST_MAX_PERS[pid];
+                const maxPers = postMaxPers(pid);
                 const overCapacity = false; // plus de plafond hebdo
                 let affMin = 0;
                 for (let j = 0; j < 5; j++) for (const d of ["am", "pm"]) affMin += (aff[ck(pid, j, d)]?.ops?.length || 0) * DEMI_MIN;
