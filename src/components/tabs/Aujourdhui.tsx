@@ -4,6 +4,7 @@ import { C, calcCheminCritique, fmtDate, CommandeCC, JOURS_FERIES, getWeekNum, s
 import { postShortLabel, type Phase as WorkPostPhase } from "@/lib/work-posts";
 import { getRoutage } from "@/lib/routage-production";
 import { calcCriticalRatio, detectBottleneck, calcTakt } from "@/lib/scheduling-priority";
+import { suggestModeJourSemaine, type ModeJour } from "@/lib/heijunka";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -390,6 +391,13 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
     return detectBottleneck(work, joursOuvres);
   }, [commandes, monday]);
 
+  // ── Suggestion Heijunka pour la semaine ──────────────────────────────
+  // Calcule le mix idéal Frappes / Coulissants sur les 5 jours et propose
+  // une séquence alternée pour lisser la charge.
+  const heijunka = useMemo(() => suggestModeJourSemaine(commandes, monday), [commandes, monday]);
+  const modeAuj = jourIdx >= 0 && jourIdx < 5 ? heijunka.modesByDay[jourIdx] : null;
+  const suggestedDifferent = modeAuj !== null && modeAuj !== mode;
+
   // ── Takt time du jour ──────────────────────────────────────────────────
   // Demande client (= nombre de tâches du jour) vs temps disponible des ops
   // affectés. Permet de voir en un coup d'œil le rythme à tenir.
@@ -465,15 +473,35 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
               {pctGlobal}%
             </div>
           )}
-          <button onClick={toggleMode} title="Bascule mode du jour" style={{
-            padding: "8px 14px",
-            background: mode === "FRAPPES" ? "#FFA72622" : "#66BB6A22",
-            border: `2px solid ${mode === "FRAPPES" ? "#FFA726" : "#66BB6A"}`,
-            borderRadius: 6, color: mode === "FRAPPES" ? "#FFA726" : "#66BB6A",
-            fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
-          }}>
-            Mode : {mode === "FRAPPES" ? "Frappes" : "Coulissants"}
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
+            <button onClick={toggleMode} title="Bascule mode du jour" style={{
+              padding: "8px 14px",
+              background: mode === "FRAPPES" ? "#FFA72622" : "#66BB6A22",
+              border: `2px solid ${mode === "FRAPPES" ? "#FFA726" : "#66BB6A"}`,
+              borderRadius: 6, color: mode === "FRAPPES" ? "#FFA726" : "#66BB6A",
+              fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
+            }}>
+              Mode : {mode === "FRAPPES" ? "Frappes" : "Coulissants"}
+            </button>
+            {suggestedDifferent && modeAuj && (
+              <button
+                onClick={async () => {
+                  setMode(modeAuj);
+                  await fetch("/api/planning/mode-jour", {
+                    method: "PUT", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ mode: modeAuj }),
+                  }).catch(() => {});
+                }}
+                title={heijunka.raison}
+                style={{
+                  padding: "3px 8px", fontSize: 9, fontWeight: 700,
+                  background: C.purple + "22", border: `1px solid ${C.purple}66`,
+                  borderRadius: 3, color: C.purple, cursor: "pointer", whiteSpace: "nowrap",
+                }}>
+                💡 Heijunka suggère : {modeAuj === "FRAPPES" ? "Frappes" : "Coul."}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

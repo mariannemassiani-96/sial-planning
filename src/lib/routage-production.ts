@@ -220,6 +220,15 @@ export function getRoutage(
     if (isHS && etapes.length === 0) {
       etapes.push({ postId: "C3", label: "Coupe HS", phase: "coupe", estimatedMin: Math.round(temps.par_poste.coupe * rCoupe) });
     }
+
+    // QC dimensionnel post-coupe : contrôle des cotes avant assemblage.
+    // Référence : best practice menuiserie alu/PVC — la cote est sacrée,
+    // un défaut détecté à ce stade coûte 10× moins qu'à l'assemblage.
+    // Estimation : 1 min/pièce coupée, plafonné à 30 min par chantier.
+    const qcCoupeMin = Math.min(30, Math.round(quantite * 1));
+    if (qcCoupeMin > 0 && !isHS) {
+      etapes.push({ postId: "C3", label: "✓ Contrôle cotes", phase: "coupe", estimatedMin: qcCoupeMin });
+    }
   }
 
   // ── Montage ──
