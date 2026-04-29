@@ -1,9 +1,11 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
-import { C, JOURS_FERIES, isWorkday, EQUIPE, getWeekNum as getWeekNumUtil, toSemaineId as toSemaineIdUtil } from "@/lib/sial-data";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { C, JOURS_FERIES, isWorkday, getWeekNum as getWeekNumUtil, toSemaineId as toSemaineIdUtil } from "@/lib/sial-data";
+import { useOperators, type OperatorFromDB } from "@/lib/use-operators";
 import { H, Card } from "@/components/ui";
 
 // ── Couleurs par opérateur ────────────────────────────────────────────────────
+// Conservé localement parce que la BDD ne stocke pas (encore) une couleur d'op.
 const OP_COLORS: Record<string, string> = {
   guillaume: "#CE93D8", momo: "#4DB6AC", bruno: "#FFA726",
   ali: "#26C6DA", jp: "#FF7043", jf: "#66BB6A",
@@ -17,39 +19,54 @@ const POSTES_LABELS: Record<string, string> = {
   frappes: "Frappes", coulissant: "Coulissant", coupe: "Coupe", vitrage: "Vitrage",
 };
 
-// Build EQUIPE_SIAL from central EQUIPE config
-const EQUIPE_SIAL = EQUIPE.map(op => {
-  // Calculer les minutes par jour normal et vendredi
-  // h = heures/semaine, vendrediOff = absent vendredi
-  const jours = op.vendrediOff ? 4 : 5;
-  const totalMin = op.h * 60;
-  // Pour ceux à 39h : 4×8h + 7h = 39h → L-J=480, V=420
-  // Pour ceux à 35h : 5×7h → tous les jours=420
-  // Pour ceux à 36h (JP) : 4×8h + 4h → L-J=480, V=240
-  // Pour ceux à 30h (Alain) : 4×7.5h → L-J=450, V=0
-  let minLJ: number, minV: number;
-  if (op.vendrediOff) {
-    minLJ = Math.round(totalMin / jours);
-    minV = 0;
-  } else if (op.h === 39) {
-    minLJ = 480; minV = 420; // 8h L-J, 7h V
-  } else if (op.h === 36) {
-    minLJ = 480; minV = 240; // 8h L-J, 4h V (vendredi matin)
-  } else {
-    // 35h → 7h/jour uniformes
-    minLJ = Math.round(totalMin / 5);
-    minV = Math.round(totalMin / 5);
-  }
-  return {
-    id: op.id,
-    nom: op.nom,
-    poste: POSTES_LABELS[op.poste] || op.poste,
-    c: OP_COLORS[op.id] || C.sec,
-    competences: op.competences,
-    minLJ,
-    minV,
-  };
-});
+interface MembreSIAL {
+  id: string;
+  nom: string;
+  poste: string;
+  c: string;
+  competences: string[];
+  minLJ: number;
+  minV: number;
+}
+
+/**
+ * Construit la vue affichage à partir de la liste BDD des opérateurs.
+ * Convention horaire (rétro-compatible avec EQUIPE) :
+ *   - vendrediOff      → 0 le vendredi, total réparti sur 4 jours
+ *   - 39h sans v.off   → 8h L-J + 7h V
+ *   - 36h sans v.off   → 8h L-J + 4h V (Jean-Pierre)
+ *   - autres           → uniforme (h/5 par jour)
+ */
+function buildEquipeSial(operators: OperatorFromDB[]): MembreSIAL[] {
+  return operators.map(op => {
+    const totalMin = op.weekHours * 60;
+    let minLJ: number, minV: number;
+    if (op.vendrediOff) {
+      minLJ = Math.round(totalMin / 4);
+      minV = 0;
+    } else if (op.weekHours === 39) {
+      minLJ = 480; minV = 420;
+    } else if (op.weekHours === 36) {
+      minLJ = 480; minV = 240;
+    } else {
+      minLJ = Math.round(totalMin / 5);
+      minV = Math.round(totalMin / 5);
+    }
+    // Le poste affiché est dérivé de la première compétence (ordre stable
+    // grâce au tri serveur). Permet de continuer à afficher "Coulissant",
+    // "Frappes" etc. sans dépendre de la constante EQUIPE.
+    const phasePrincipale = op.competences[0] || "";
+    return {
+      id: op.id,
+      nom: op.name,
+      poste: POSTES_LABELS[phasePrincipale] || phasePrincipale || "—",
+      c: OP_COLORS[op.id] || OP_COLORS[op.name.toLowerCase().replace(/[^a-z]/g, "")] || C.sec,
+      competences: op.competences,
+      minLJ,
+      minV,
+    };
+  });
+}
 
 const STD_MIN = 480; // référence 8h (pour la colorimétrie)
 
@@ -78,18 +95,6 @@ function hm(min: number): string {
 }
 function semaineId(mondayStr: string): string {
   return toSemaineIdUtil(mondayStr);
-}
-
-// ── Résoudre la disponibilité effective d'un membre pour un jour ──────────────
-function getDispo(plan: PlanRH, memberId: string, day: string): number {
-  if (!isWorkday(day)) return 0;
-  const override = plan[memberId]?.[day];
-  if (override !== undefined) return override;
-  // Minutes par défaut selon le jour (vendredi = 4 = index du jour)
-  const membre = EQUIPE_SIAL.find(m => m.id === memberId);
-  if (!membre) return STD_MIN;
-  const dow = new Date(day + "T00:00:00").getDay(); // 0=dim, 5=ven
-  return dow === 5 ? membre.minV : membre.minLJ;
 }
 
 // ── Cell color based on minutes ───────────────────────────────────────────────
@@ -242,6 +247,21 @@ export default function PlanningRH({ commandes: _c }: { commandes: any[] }) {
   const [editing, setEditing] = useState<{ memberId: string; day: string } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Source de vérité : la BDD (avec fallback EQUIPE en cas de fetch KO).
+  const { operators, loaded: operatorsLoaded } = useOperators();
+  const equipeSial = useMemo(() => buildEquipeSial(operators), [operators]);
+
+  // Résoudre la disponibilité effective d'un membre pour un jour.
+  const getDispo = useCallback((p: PlanRH, memberId: string, day: string): number => {
+    if (!isWorkday(day)) return 0;
+    const override = p[memberId]?.[day];
+    if (override !== undefined) return override;
+    const membre = equipeSial.find(m => m.id === memberId);
+    if (!membre) return STD_MIN;
+    const dow = new Date(day + "T00:00:00").getDay();
+    return dow === 5 ? membre.minV : membre.minLJ;
+  }, [equipeSial]);
+
   const weekDays = Array.from({ length: 5 }, (_, i) => addDays(anchor, i));
   const semaine = semaineId(anchor);
 
@@ -331,7 +351,7 @@ export default function PlanningRH({ commandes: _c }: { commandes: any[] }) {
 
   // ── Column totals (per day) ────────────────────────────────────────────────
   function dayTotal(day: string): number {
-    return EQUIPE_SIAL.reduce((sum, m) => sum + getDispo(plan, m.id, day), 0);
+    return equipeSial.reduce((sum, m) => sum + getDispo(plan, m.id, day), 0);
   }
 
   // ── Row totals (per member) ────────────────────────────────────────────────
@@ -341,7 +361,7 @@ export default function PlanningRH({ commandes: _c }: { commandes: any[] }) {
 
   const JOURS_FR = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
 
-  if (loading) return (
+  if (loading || !operatorsLoaded) return (
     <div style={{ textAlign: "center", padding: 60, color: C.sec }}>Chargement…</div>
   );
 
@@ -443,7 +463,7 @@ export default function PlanningRH({ commandes: _c }: { commandes: any[] }) {
             </tr>
           </thead>
           <tbody>
-            {EQUIPE_SIAL.map((membre) => (
+            {equipeSial.map((membre) => (
               <tr key={membre.id}>
                 {/* Membre label */}
                 <td style={{ padding: "8px 10px", background: C.s1, border: `1px solid ${C.border}`, verticalAlign: "middle" }}>
