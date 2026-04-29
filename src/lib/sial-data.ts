@@ -295,6 +295,14 @@ export const POSTES_COMPETENCES = [
   { id:"isula",       label:"ISULA",       c:"#4DB6AC" },
 ];
 
+/**
+ * Liste statique de l'équipe — utilisée comme **fallback** quand
+ * /api/operators n'est pas disponible. La source de vérité doit être
+ * la table Prisma `Operator` (lue via `useOperators()` dans `lib/use-operators.ts`).
+ *
+ * Ne pas ajouter de logique métier ici : préférer l'enrichissement de
+ * /api/operators et l'usage du hook côté composant.
+ */
 export const EQUIPE = [
   { id:"guillaume", nom:"Guillaume",     poste:"logistique", h:39, vendrediOff:false, remplace:["isula_op","vitrage"], competences:["logistique","vitrage","isula"],      note:"Réceptions · Rangement · Prépa accessoires · Chargements · 8h L-J, 7h V" },
   { id:"momo",      nom:"Momo",          poste:"isula",      h:39, vendrediOff:false, remplace:["vitrage"],            competences:["isula","vitrage"],                   note:"Opérateur ISULA A→Z · Remplace vitrage · 8h L-J, 7h V" },
