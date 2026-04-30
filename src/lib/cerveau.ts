@@ -543,6 +543,40 @@ export async function getLearnedTime(
 }
 
 /**
+ * Retourne tous les temps appris sous forme de map { "typeId|poste": minutes }.
+ * Utilisé côté client pour réinjecter les temps réels dans le routage.
+ */
+export interface LearnedTimesEntry {
+  minutes: number;
+  sampleSize: number;
+  ratio: number; // ratio actuel/estime moyen (1.0 = identique)
+}
+
+export async function getAllLearnedTimes(): Promise<Record<string, LearnedTimesEntry>> {
+  const metrics = await readCerveauData<TaskMetric[]>(CERVEAU_KEYS.metrics, []);
+  const byKey = new Map<string, TaskMetric[]>();
+  for (const m of metrics) {
+    const k = `${m.typeId}|${m.poste}`;
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k)!.push(m);
+  }
+  const out: Record<string, LearnedTimesEntry> = {};
+  for (const [k, arr] of Array.from(byKey.entries())) {
+    if (arr.length < MIN_SAMPLE_SIZE) continue;
+    const actuals = arr.map(m => m.actualMinutes);
+    const estimates = arr.map(m => m.estimatedMinutes).filter(v => v > 0);
+    const avgActual = trimmedMean(actuals);
+    const avgEstimate = estimates.length > 0 ? mean(estimates) : 0;
+    out[k] = {
+      minutes: Math.round(avgActual),
+      sampleSize: arr.length,
+      ratio: avgEstimate > 0 ? Math.round((avgActual / avgEstimate) * 100) / 100 : 1,
+    };
+  }
+  return out;
+}
+
+/**
  * Score de performance d'un operateur sur un poste.
  * avgTimeRatio < 1 = plus rapide que l'estime, > 1 = plus lent.
  * qualityScore = % de taches sans anomalie.
@@ -583,20 +617,6 @@ export async function getOperatorScore(
     taskCount: relevant.length,
     qualityScore,
   };
-}
-
-/**
- * Retourne toutes les recommandations actives.
- */
-export async function getRecommendations(): Promise<Recommendation[]> {
-  return readCerveauData<Recommendation[]>(CERVEAU_KEYS.recommendations, []);
-}
-
-/**
- * Retourne toutes les anomalies detectees.
- */
-export async function getAnomalies(): Promise<Anomaly[]> {
-  return readCerveauData<Anomaly[]>(CERVEAU_KEYS.anomalies, []);
 }
 
 // ── Helpers internes pour l'analyse ──────────────────────────────────

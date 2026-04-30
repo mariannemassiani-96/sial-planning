@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { computeAutoSemaines, AUTO_PLANNING_TRIGGERS, AUTO_PLANNING_OUTPUTS } from "@/lib/auto-planning";
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -49,6 +50,32 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       else if (key === "montant_ht" || key === "acompte_montant") val = val != null ? parseFloat(val) || null : null;
       else if (key === "avancement") val = parseInt(val) || 0;
       partial[key] = val;
+    }
+  }
+
+  // Auto-planning : si l'un des déclencheurs change ET qu'aucune semaine
+  // n'est explicitement saisie dans ce patch, on recalcule les semaines
+  // à partir de l'état combiné (existant + patch).
+  const triggerChanged = AUTO_PLANNING_TRIGGERS.some(k => data[k] !== undefined);
+  const userSetSemaines = AUTO_PLANNING_OUTPUTS.some(k => data[k] !== undefined);
+  if (triggerChanged && !userSetSemaines) {
+    try {
+      const existing = await prisma.commande.findUnique({ where: { id: params.id } });
+      if (existing) {
+        const merged = { ...existing, ...partial };
+        const autoSem = computeAutoSemaines({
+          date_livraison_souhaitee: merged.date_livraison_souhaitee,
+          dates_livraisons: merged.dates_livraisons,
+          aucune_menuiserie: (merged as any).aucune_menuiserie,
+          aucun_vitrage: merged.aucun_vitrage,
+          vitrages: merged.vitrages,
+        });
+        for (const k of AUTO_PLANNING_OUTPUTS) {
+          partial[k] = autoSem[k];
+        }
+      }
+    } catch (e) {
+      console.error("Auto-planning recompute error:", e instanceof Error ? e.message : e);
     }
   }
 

@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { C, EQUIPE, hm, CommandeCC } from "@/lib/sial-data";
+import { postColor } from "@/lib/work-posts";
 
 function localStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -55,13 +56,7 @@ interface ImpreveEntry {
 }
 type PointageData = { entries: Record<string, PointageEntry>; imprevu: ImpreveEntry[] };
 
-const POST_COLORS: Record<string, string> = {
-  C2:"#42A5F5",C3:"#42A5F5",C4:"#42A5F5",C5:"#42A5F5",C6:"#42A5F5",
-  M1:"#FFA726",M2:"#FFA726",M3:"#FFA726",F1:"#FFA726",F2:"#FFA726",F3:"#FFA726",MHS:"#FFA726",
-  V1:"#26C6DA",V2:"#26C6DA",V3:"#26C6DA",
-  IL:"#4DB6AC",IB:"#4DB6AC",I3:"#4DB6AC",I4:"#4DB6AC",
-  AUT:"#78909C",L4:"#CE93D8",L6:"#CE93D8",L7:"#CE93D8",
-};
+// Couleurs via la source unique work-posts.ts (postColor).
 
 export default function PointageJour({ commandes: _commandes, onPatch: _onPatch }: {
   commandes: CommandeCC[];
@@ -211,7 +206,7 @@ export default function PointageJour({ commandes: _commandes, onPatch: _onPatch 
             if (!entry.realOps) entry.realOps = [...task.ops];
             const isDone = entry.status === "fait";
             const isPartial = entry.status === "partiel";
-            const color = POST_COLORS[task.postId] || C.sec;
+            const color = postColor(task.postId);
 
             return (
               <div key={task.key} style={{

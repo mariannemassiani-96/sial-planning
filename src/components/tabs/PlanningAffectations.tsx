@@ -1,7 +1,16 @@
 "use client";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { C, EQUIPE, TYPES_MENUISERIE, hm, CommandeCC, JOURS_FERIES } from "@/lib/sial-data";
-import { getRoutage } from "@/lib/routage-production";
+import { C, EQUIPE, TYPES_MENUISERIE, hm, CommandeCC, JOURS_FERIES, specialMultiplier } from "@/lib/sial-data";
+import { getRoutage, isulaInfoFromCmd, type LearnedTimesMap } from "@/lib/routage-production";
+import {
+  postShortLabel, postCapacityMinDay, postMaxOperators, postTamponAfter,
+  chooseNbOps, detectStrategy, postIsMonolithic,
+} from "@/lib/work-posts";
+import {
+  listLivraisonsForWeek, dateChargementPour, nbDemiJourneesLivraison,
+  type LivraisonInfo,
+} from "@/lib/livraison";
+import PlanningTimelineWeek from "@/components/tabs/PlanningTimelineWeek";
 import { openPrintWindow } from "@/lib/print-utils";
 
 // ── Types opérateurs chargés depuis la base ──────────────────────────────────
@@ -38,25 +47,22 @@ function weekId(mondayStr: string): string {
 }
 
 const JOURS = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
+// Postes affichés par phase (alignés sur le SPEC + WORK_POSTS).
+// L'ISULA a été migré IL/IB → I1-I8 (cf. lib/work-posts.ts).
 const POST_GROUPS = [
   { label: "Coupe & Prépa", color: "#42A5F5", phase: "coupe", competence: "coupe", ids: ["C2","C3","C4","C5","C6"] },
   { label: "Montage",       color: "#FFA726", phase: "montage", competence: "frappes", ids: ["M1","M2","M3","F1","F2","F3","MHS"] },
   { label: "Vitrage",       color: "#26C6DA", phase: "vitrage", competence: "vitrage", ids: ["V1","V2","V3"] },
   { label: "Logistique",    color: "#CE93D8", phase: "logistique", competence: "logistique", ids: ["L4","L6","L7"] },
-  { label: "ISULA",         color: "#4DB6AC", phase: "isula", competence: "isula", ids: ["IL","IB","I3","I4"] },
+  { label: "ISULA",         color: "#4DB6AC", phase: "isula", competence: "isula", ids: ["I1","I2","I3","I4","I5","I6","I7","I8"] },
   { label: "Autre",         color: "#78909C", phase: "autre", competence: "", ids: ["AUT"] },
 ];
-const POST_LABELS: Record<string, string> = {
-  C2:"Prépa barres",C3:"Coupe LMT",C4:"Coupe 2 têtes",C5:"Renfort acier",C6:"Soudure PVC",
-  M1:"Dorm. couliss.",M2:"Dorm. galand.",M3:"Portes ALU",F1:"Dorm. frappe ALU",F2:"Ouv.+ferrage",F3:"Mise bois+CQ",
-  MHS:"Montage HS",
-  V1:"Vitr. Frappe",V2:"Vitr. Coul/Gal",V3:"Emballage",
-  L4:"Prépa acc.",L6:"Palettes",L7:"Chargement",
-  IL:"Coupe Lisec",IB:"Coupe Bottero",I3:"Coupe interc.",I4:"Assemblage VI",
-  AUT:"Autre",
-};
+// Labels courts via la source unique work-posts.ts.
+const POST_LABELS = new Proxy({} as Record<string, string>, {
+  get: (_t, key: string) => postShortLabel(key),
+});
 const PHASE_FIELD: Record<string, string> = {
-  coupe: "semaine_coupe", montage: "semaine_montage", vitrage: "semaine_vitrage", logistique: "semaine_logistique", isula: "semaine_vitrage",
+  coupe: "semaine_coupe", montage: "semaine_montage", vitrage: "semaine_vitrage", logistique: "semaine_logistique", isula: "semaine_isula",
 };
 // Fallback statique (utilisé seulement si l'API ne répond pas)
 const OPS_FALLBACK = EQUIPE.map(op => ({
@@ -69,22 +75,20 @@ const OP_COLORS: Record<string, string> = {
 };
 const DEMI_MIN = 240;
 
-// Capacité max par poste en minutes par semaine (contrainte machine)
-// Si pas listé → pas de plafond (limité seulement par les opérateurs)
-// Contraintes par poste : max personnes
-const POST_MAX_PERS: Record<string, number> = {
-  C4: 1, // Coupe double tête : 1 seule personne
-  C5: 1, // Coupe renfort : 1 seule personne
-  C6: 1, // Soudure PVC : 1 seule personne (séquentiel)
-};
+// Max opérateurs simultanés sur un poste : récupéré depuis WORK_POSTS.
+// (postMaxOperators("C4") = 1, etc.) — voir lib/work-posts.ts
+const postMaxPers = (pid: string): number | null => postMaxOperators(pid);
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 // Chaque cellule poste|jour|demi contient : opérateurs + chantiers + tâches extras
 interface CellData {
-  ops: string[];     // noms opérateurs généraux
+  ops: string[];     // noms opérateurs généraux (producteurs, comptés dans le temps machine)
   cmds: string[];    // "client · chantier"
   extras?: string[]; // tâches supplémentaires ("INTERV: SAV Dupont 2h", "SUPERVISION")
+  /** Superviseurs (niveau ≥3) accompagnant un apprenti. NON comptés dans le
+   *  temps machine — c'est du temps de qualité/formation. */
+  supervisors?: string[];
   cmdOps?: Record<string, string[]>; // chantier → liste ops spécifiques (override de ops générales)
   extraOps?: Record<string, string[]>; // extra → liste ops spécifiques
   livreursByZone?: Record<string, string[]>; // zone → liste noms opérateurs (pour livraisons)
@@ -152,6 +156,16 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     }).catch(() => {});
   }, []);
 
+  // Temps appris (cerveau) : ratio actuel/estime par typeId×phase, basé sur
+  // les pointages réels. Quand >5 mesures sont disponibles, on remplace le
+  // temps théorique par le temps réel observé (voir SPEC §13).
+  const [learnedTimes, setLearnedTimes] = useState<LearnedTimesMap>({});
+  useEffect(() => {
+    fetch("/api/cerveau/learned-times").then(r => r.ok ? r.json() : null).then(d => {
+      if (d && typeof d === "object") setLearnedTimes(d as LearnedTimesMap);
+    }).catch(() => {});
+  }, []);
+
   // Popup détail chantier
   const [detailCmd, setDetailCmd] = useState<{ chantier: string; cmdId: string; cmd: any } | null>(null);
   const [showOccupation, setShowOccupation] = useState(false);
@@ -160,6 +174,12 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     try { return localStorage.getItem("sial_aff_transposed") === "1"; } catch { return false; }
   });
   useEffect(() => { try { localStorage.setItem("sial_aff_transposed", transposed ? "1" : "0"); } catch {} }, [transposed]);
+  // Vue horaire (timeline) vs demi-journée (grille). Persisté en localStorage.
+  const [viewMode, setViewMode] = useState<"demi" | "timeline">(() => {
+    if (typeof window === "undefined") return "demi";
+    try { return localStorage.getItem("sial_aff_view") === "timeline" ? "timeline" : "demi"; } catch { return "demi"; }
+  });
+  useEffect(() => { try { localStorage.setItem("sial_aff_view", viewMode); } catch {} }, [viewMode]);
   const [cmdOverrides, setCmdOverrides] = useState<Record<string, number>>({});
   // Overrides par commande pour recalcul postWork : { cmdId: { "C3": 1200 } }
   const [allCmdOverrides, setAllCmdOverrides] = useState<Record<string, Record<string, number>>>({});
@@ -348,14 +368,20 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
 
       // Agréger les temps par poste pour cette commande
       const cmdPostTotals: Record<string, { min: number; phase: string }> = {};
-      for (const ligne of lignes) {
+      const isulaInfo = isulaInfoFromCmd(cmd as any);
+      for (let li = 0; li < lignes.length; li++) {
+        const ligne = lignes[li];
         const lType = ligne.type || cmd.type;
         if (lType === "intervention_chantier") continue;
         const lQte = parseInt(ligne.quantite) || cmd.quantite || 1;
         const lHs = lType === "hors_standard" ? {
           t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage,
         } : (cmd as any).hsTemps;
-        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null);
+        const lSf = specialMultiplier(parseFloat(ligne?.largeur_mm) || parseFloat(ligne?.largeur) || 0);
+        // L'info ISULA est globale au chantier — passée à la 1re ligne uniquement
+        // pour ne pas dupliquer les étapes I1-I4.
+        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf, learnedTimes,
+          li === 0 ? isulaInfo : undefined);
         for (const e of routage) {
           if (!cmdPostTotals[e.postId]) cmdPostTotals[e.postId] = { min: 0, phase: e.phase };
           cmdPostTotals[e.postId].min += e.estimatedMin;
@@ -460,7 +486,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       }
     }
     return work;
-  }, [commandes, viewWeek, allCmdOverrides, aff]);
+  }, [commandes, viewWeek, allCmdOverrides, aff, learnedTimes]);
 
   const activePosts = useMemo(() =>
     POST_GROUPS.map(grp => {
@@ -649,9 +675,12 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   // ── Proposition automatique ──
   // Algorithme par chantier (séquentiel) : pour chaque chantier, placer ses étapes
   // de routage dans l'ordre (coupe → montage → vitrage → palette) avec tampon.
+  // Stratégie autonome :
+  //   - crash  → max d'opérateurs sur chaque poste, on rattrape le retard
+  //   - focus  → 1 op par poste, qualité maximale
+  //   - normal → sweet spot (gain par op le meilleur)
   const autoAssign = useCallback(() => {
     const newAff: AffMap = {};
-    const MIN_PERS: Record<string, number> = { coupe: 2, montage: 2, vitrage: 1, logistique: 1 };
 
     // Construire la liste des chantiers à placer avec leur routage complet
     // Chaque chantier = un objet { label, etapes: [{ pid, phase, minutes }] }
@@ -659,6 +688,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       label: string;
       priority: number;
       deadline: string;
+      strategy: "crash" | "focus" | "normal";
       etapes: Array<{ pid: string; phase: string; minutes: number }>;
       phases: Array<{ phase: string; etapes: Array<{ pid: string; minutes: number }> }>;
     }
@@ -704,10 +734,22 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         }
       }
 
+      // Détecter la stratégie selon l'urgence : on calcule les jours
+      // ouvrés disponibles entre aujourd'hui et la deadline, vs le besoin
+      // en jours-personne (charge totale / 8h/jour).
+      const deadline = (cmd as any).date_livraison_souhaitee || "9999-12-31";
+      const today = new Date();
+      const dl = new Date(deadline + "T12:00:00");
+      const joursDispo = Math.max(1, Math.round((dl.getTime() - today.getTime()) / 86400000 * 5 / 7));
+      const totalMinChantier = etapes.reduce((s, e) => s + e.minutes, 0);
+      const joursBesoin = Math.max(0.5, totalMinChantier / 480);
+      const strategy = detectStrategy(joursDispo, joursBesoin);
+
       chantiers.push({
         label,
         priority: prioMap[(cmd as any).priorite] ?? 2,
-        deadline: (cmd as any).date_livraison_souhaitee || "9999-12-31",
+        deadline,
+        strategy,
         etapes,
         phases,
       });
@@ -738,13 +780,29 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         const _maxMinutes = Math.max(...phaseGrp.etapes.map(e => e.minutes));
 
         // Pour chaque étape de la phase, identifier les opérateurs compétents
+        // et choisir le nombre optimal selon la stratégie du chantier ET les
+        // niveaux disponibles (apprenti / autonome / expert).
         const etapeInfos = phaseGrp.etapes.map(et => {
           const pid = et.pid;
           const grp = activePosts.find(g => g.posts.includes(pid));
-          const minPers = MIN_PERS[phaseGrp.phase] || 1;
-          const maxPersPoste = grp ? POST_MAX_PERS[pid] : undefined;
-          let nbPers = maxPersPoste ? Math.min(minPers, maxPersPoste) : minPers;
-          if (pid === "C3" && et.minutes > DEMI_MIN * 4) nbPers = 3;
+          // Niveaux des opérateurs compétents (triés du meilleur au moins bon)
+          const competentOpsForLevel = ops.filter(op => op.competentPosts.includes(pid));
+          const levels = competentOpsForLevel
+            .map(op => op.skillLevels[pid] || 0)
+            .filter(l => l > 0)
+            .sort((a, b) => b - a);
+          // Choix autonome : crash / focus / normal + supervision si apprenti seul
+          const decision = chooseNbOps(pid, ch.strategy, levels.length > 0 ? levels : 2);
+          let nbPers = decision.nbProducers;
+          const requiresSupervisor = decision.requiresSupervisor;
+          // Garde-fou rétrocompat : très grosses charges sur C3 → 3 ops
+          if (pid === "C3" && et.minutes > DEMI_MIN * 4 && !postIsMonolithic(pid)) {
+            nbPers = Math.max(nbPers, 3);
+          }
+          // Plafonner par maxOperators du poste
+          const maxPersPoste = postMaxPers(pid);
+          if (maxPersPoste) nbPers = Math.min(nbPers, maxPersPoste);
+          nbPers = Math.max(1, nbPers);
 
           const postCompetence = (() => {
             if (pid === "M1" || pid === "M2" || pid === "V2") return "coulissant";
@@ -763,7 +821,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               return eq?.competences.includes(postCompetence);
             });
           }
-          return { pid, minutes: et.minutes, nbPers, competentOps, grp };
+          return { pid, minutes: et.minutes, nbPers, requiresSupervisor, competentOps, grp };
         });
 
         // Combien de demi-journées pour cette phase (basé sur l'étape la plus longue / le nbPers le plus favorable)
@@ -781,6 +839,12 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           const dayD = new Date(viewWeek + "T12:00:00");
           dayD.setDate(dayD.getDate() + j);
           if (JOURS_FERIES[localStr(dayD)]) continue;
+
+          // Contrainte ISULA : la chaîne ne tourne que les lundi/mardi/jeudi
+          // (j=0=lun, j=1=mar, j=3=jeu). Mercredi/vendredi → pas d'ISULA.
+          const isIsulaPhase = phaseGrp.phase === "isula";
+          const isIsulaDay = j === 0 || j === 1 || j === 3;
+          if (isIsulaPhase && !isIsulaDay) continue;
 
           // Placer TOUTES les étapes de cette phase en parallèle sur ce créneau
           let canPlace = true;
@@ -827,25 +891,35 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               if (!opsToPlace.includes(o.op.nom)) opsToPlace.push(o.op.nom);
             }
 
-            // Supervision si tous débutants
-            const allBeginner = opsToPlace.length > 0 && opsToPlace.every(nm => {
-              const o = ops.find(op => op.nom === nm);
-              return (o?.skillLevels[ei.pid] || 0) === 1;
-            });
-            if (allBeginner) {
+            // Supervision : si chooseNbOps a demandé un superviseur, on
+            // ajoute un opérateur de niveau ≥3 *à part* dans `supervisors`
+            // (pas dans `ops`) — il ne réduit pas le temps machine, il est
+            // là pour la qualité / formation.
+            const supervisorsToPlace: string[] = [];
+            if (ei.requiresSupervisor) {
               const supervisor = availableOps.find(o =>
                 !opsToPlace.includes(o.op.nom) && (o.op.skillLevels[ei.pid] || 0) >= 3
               );
-              if (supervisor) opsToPlace.push(supervisor.op.nom);
+              if (supervisor) supervisorsToPlace.push(supervisor.op.nom);
             }
 
             const existingCell = newAff[key] || { ops: [], cmds: [], extras: [] };
             const newCmds = existingCell.cmds.includes(ch.label) ? existingCell.cmds : [...existingCell.cmds, ch.label];
-            newAff[key] = { ...existingCell, ops: opsToPlace, cmds: newCmds };
+            const existingSupervisors = (existingCell as any).supervisors || [];
+            const mergedSupervisors = [...existingSupervisors];
+            for (const s of supervisorsToPlace) {
+              if (!mergedSupervisors.includes(s)) mergedSupervisors.push(s);
+            }
+            newAff[key] = { ...existingCell, ops: opsToPlace, cmds: newCmds, supervisors: mergedSupervisors };
 
             cellLoad[key] = currentLoad + Math.min(ei.minutes, DEMI_MIN * ei.nbPers);
             for (const opNom of opsToPlace) {
               opBookedPost[`${opNom}|${j}|${demi}`] = ei.pid;
+            }
+            // Bloquer aussi les superviseurs sur ce créneau (ils ne peuvent
+            // pas être ailleurs) mais sans compter dans le temps machine.
+            for (const s of supervisorsToPlace) {
+              opBookedPost[`${s}|${j}|${demi}`] = ei.pid;
             }
           }
 
@@ -853,21 +927,26 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           slotsPlaced++;
         }
 
-        // Tampon entre phases : 1 demi-journée si la phase change (coupe→montage),
-        // pas de tampon si même phase ou petit chantier (< 2h)
+        // Tampon entre phases : utilise le tamponMinAfter du dernier poste
+        // de la phase courante (issu de WORK_POSTS). Converti en demi-
+        // journées (1 demi = 240 min). Si la phase ne change pas, on
+        // enchaîne au créneau suivant.
         const nextPhase = ch.phases[ch.phases.indexOf(phaseGrp) + 1];
         if (nextPhase && nextPhase.phase !== phaseGrp.phase) {
-          minSlotIdx = lastSlotIdxUsed + 2;
+          // Trouver le tampon max parmi les postes de la phase qui se termine
+          const tamponMax = Math.max(0, ...phaseGrp.etapes.map(e => postTamponAfter(e.pid)));
+          const tamponDemi = Math.max(1, Math.ceil(tamponMax / DEMI_MIN));
+          minSlotIdx = lastSlotIdxUsed + 1 + tamponDemi;
         } else {
           minSlotIdx = lastSlotIdxUsed + 1;
         }
       }
     }
 
-    // ── Ajouter automatiquement les livreurs pour les chargements "nous" ──
-    // Respecter les livreurs définis manuellement dans Chargements (_livreurs)
-    // Si pas de livreurs manuels, auto-assigner
-    const deliveries = new Map<string, { date: string; zone: string; clients: string[] }>();
+    // ── Ajouter automatiquement les livreurs pour les livraisons "nous" ──
+    // Source unique : listLivraisonsForWeek (gère les multi-livraisons).
+    // Compétence : op.competentPosts.includes("LIVR") OU phase "logistique".
+    // Plus de hardcoding sur des IDs.
     const weekDays: string[] = [];
     for (let i = 0; i < 5; i++) {
       const d = new Date(viewWeek + "T12:00:00");
@@ -877,41 +956,43 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     // Lire les livreurs manuels depuis les affectations sauvegardées
     const manualLivreurs: Record<string, string[]> = (aff as any)?._livreurs || {};
 
-    for (const cmd of commandes) {
-      const livDate = (cmd as any).date_livraison_souhaitee;
-      if (!livDate) continue;
-      if ((cmd as any).transporteur !== "nous") continue;
-      if (!weekDays.includes(livDate)) continue;
-      const zone = (cmd as any).zone || "";
-      const dk = `${livDate}|${zone}`;
-      if (!deliveries.has(dk)) deliveries.set(dk, { date: livDate, zone, clients: [] });
-      deliveries.get(dk)!.clients.push((cmd as any).client || "");
+    const livraisons = listLivraisonsForWeek(commandes as any, weekDays).filter(l => l.needsDriver);
+
+    // Regrouper par (date, zone) pour fusionner les clients
+    const grouped = new Map<string, LivraisonInfo & { clients: string[] }>();
+    for (const l of livraisons) {
+      const k = `${l.date}|${l.zone}`;
+      const prev = grouped.get(k);
+      if (prev) prev.clients.push(l.client);
+      else grouped.set(k, { ...l, clients: [l.client] });
     }
 
     const livreursDispo = ops.filter(op => {
-      if (op.competentPosts.includes("LIVR")) return true;
+      // Source unique : compétence sur le poste LIVR (logistique) en BDD,
+      // OU phase logistique dans EQUIPE comme fallback.
+      if (op.competentPosts.includes("LIVR") || op.competentPosts.includes("L7")) return true;
       const eq = EQUIPE.find(e => e.nom === op.nom);
-      return eq?.competences.includes("logistique") || eq?.id === "guillaume" || eq?.id === "momo" || eq?.id === "jf" || eq?.id === "jp" || eq?.id === "bruno";
+      return !!eq?.competences.includes("logistique");
     });
 
-    for (const del of Array.from(deliveries.values())) {
+    for (const del of Array.from(grouped.values())) {
       const jIdx = weekDays.indexOf(del.date);
       if (jIdx < 0 || jIdx > 4) continue;
       if (JOURS_FERIES[del.date]) continue;
 
-      const slot = "am";
+      const nbDemis = nbDemiJourneesLivraison(del.zone);
+      const slotsToBlock: ("am" | "pm")[] = nbDemis >= 2 ? ["am", "pm"] : ["am"];
+
       // Priorité aux livreurs définis manuellement dans l'onglet Chargements
       const manualKey = `${del.date}|${del.zone}`;
       const manualOps = manualLivreurs[manualKey];
       let livreursNoms: string[];
       if (manualOps && manualOps.length > 0) {
-        // Convertir les IDs en noms
         livreursNoms = manualOps.map(id => {
           const eq = EQUIPE.find(e => e.id === id);
           return eq?.nom || id;
         }).filter(Boolean);
       } else {
-        // Auto-assigner si pas de livreurs manuels
         const notAbsent = livreursDispo
           .filter(op => !(jIdx === 4 && op.vendrediOff))
           .filter(op => {
@@ -920,25 +1001,33 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             const dispo = opRH[del.date];
             return dispo === undefined || dispo > 0;
           });
-        const notBooked = notAbsent.filter(op => !opBookedPost[`${op.nom}|${jIdx}|${slot}`]);
+        // Préférer les livreurs non bookés sur AUCUN des slots à bloquer
+        const notBooked = notAbsent.filter(op =>
+          slotsToBlock.every(s => !opBookedPost[`${op.nom}|${jIdx}|${s}`])
+        );
         const chosen = (notBooked.length > 0 ? notBooked : notAbsent).slice(0, 2);
         livreursNoms = chosen.map(o => o.nom);
       }
 
       const label = `🚚 Livraison ${del.zone} (${del.clients.join(", ")})`;
-      const key = ck("AUT", jIdx, slot);
-      const existing = newAff[key] || { ops: [], cmds: [], extras: [] };
-      const extras = [...(existing.extras || [])];
-      if (!extras.includes(label)) extras.push(label);
-      const livreursByZone = { ...(existing.livreursByZone || {}) };
-      if (livreursNoms.length > 0) livreursByZone[del.zone] = livreursNoms;
-      const combinedOps = [...(existing.ops || [])];
-      for (const nm of livreursNoms) if (!combinedOps.includes(nm)) combinedOps.push(nm);
-      newAff[key] = { ...existing, ops: combinedOps, extras, livreursByZone };
+      // Placer la livraison sur les bons slots (AM seul ou AM+PM selon zone)
+      for (const slot of slotsToBlock) {
+        const key = ck("AUT", jIdx, slot);
+        const existing = newAff[key] || { ops: [], cmds: [], extras: [] };
+        const extras = [...(existing.extras || [])];
+        if (!extras.includes(label)) extras.push(label);
+        const livreursByZone = { ...(existing.livreursByZone || {}) };
+        if (livreursNoms.length > 0) livreursByZone[del.zone] = livreursNoms;
+        const combinedOps = [...(existing.ops || [])];
+        for (const nm of livreursNoms) if (!combinedOps.includes(nm)) combinedOps.push(nm);
+        newAff[key] = { ...existing, ops: combinedOps, extras, livreursByZone };
+        // Bloquer les livreurs sur ce créneau
+        for (const nm of livreursNoms) opBookedPost[`${nm}|${jIdx}|${slot}`] = "AUT";
+      }
     }
 
     saveAff(newAff);
-  }, [activePosts, postWork, saveAff, ops, habits, brainScores, commandes, viewWeek]);
+  }, [activePosts, postWork, saveAff, ops, habits, brainScores, commandes, viewWeek, aff, rhPlan]);
 
   // ── Tout effacer ──
   const clearAll = useCallback(() => { saveAff({}); }, [saveAff]);
@@ -1292,59 +1381,65 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   }, [aff, postWork, viewWeek]);
 
   // ── Livraisons auto → tâches chargement + livraison ──
+  // Inclut désormais :
+  //   - les multi-livraisons (dates_livraisons[]) en plus de date_livraison_souhaitee
+  //   - le chargement TOUJOURS injecté (sauf transporteur "depot" = client retire)
+  //   - le saut des jours fériés pour le chargement (recule au dernier ouvré)
+  //   - la durée par zone : si AR > 4h, livraison bloque la journée entière
+  //     sinon une seule demi-journée
   const autoDeliveryTasks = useMemo(() => {
     const tasks: Array<{ key: string; label: string; type: "chargement" | "livraison" }> = [];
-    // Grouper les livraisons par (jour, transporteur, zone)
-    const deliveries = new Map<string, { date: string; transporteur: string; zone: string; clients: string[] }>();
+    const weekDays: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(viewWeek + "T00:00:00");
+      d.setDate(d.getDate() + i);
+      weekDays.push(localStr(d));
+    }
+    // Étendre la fenêtre au lundi de la semaine après pour détecter les
+    // chargements à poser cette semaine pour des livraisons la semaine
+    // suivante (ex: livraison lundi prochain → chargement vendredi).
+    const nextWeekDays: string[] = [];
+    for (let i = 5; i < 12; i++) {
+      const d = new Date(viewWeek + "T00:00:00");
+      d.setDate(d.getDate() + i);
+      nextWeekDays.push(localStr(d));
+    }
+    const allRelevantDays = [...weekDays, ...nextWeekDays];
 
-    for (const cmd of commandes) {
-      const dlDate = (cmd as any).date_livraison_souhaitee;
-      if (!dlDate) continue;
-      const transporteur = (cmd as any).transporteur || "";
-      const zone = (cmd as any).zone || "";
-      const dKey = `${dlDate}|${transporteur}|${zone}`;
+    const livraisons: LivraisonInfo[] = listLivraisonsForWeek(commandes as any, allRelevantDays);
 
-      if (!deliveries.has(dKey)) {
-        deliveries.set(dKey, { date: dlDate, transporteur, zone, clients: [] });
-      }
-      deliveries.get(dKey)!.clients.push((cmd as any).client);
+    // Grouper par (date, zone, transporteur) pour fusionner les clients
+    const grouped = new Map<string, LivraisonInfo & { clients: string[] }>();
+    for (const l of livraisons) {
+      const k = `${l.date}|${l.zone}|${l.transporteur}`;
+      const prev = grouped.get(k);
+      if (prev) prev.clients.push(l.client);
+      else grouped.set(k, { ...l, clients: [l.client] });
     }
 
-    // Pour chaque livraison unique dans la semaine courante ou la semaine d'après
-    deliveries.forEach((del) => {
-      const dlDay = new Date(del.date + "T00:00:00");
-      const dlDayStr = localStr(dlDay);
-
-      // Vérifier si la livraison est dans la semaine affichée
-      const weekDays: string[] = [];
-      for (let i = 0; i < 5; i++) {
-        const d = new Date(viewWeek + "T00:00:00");
-        d.setDate(d.getDate() + i);
-        weekDays.push(localStr(d));
-      }
-
-      // Chargement = demi-journée avant la livraison
-      const dayBefore = new Date(dlDay);
-      dayBefore.setDate(dayBefore.getDate() - 1);
-      // Si livraison lundi → chargement vendredi d'avant
-      const chargeDayStr = localStr(dayBefore);
-      const chargeJourIdx = weekDays.indexOf(chargeDayStr);
-
-      if (chargeJourIdx >= 0) {
-        const label = `🚛 Chargement ${del.zone || "livraison"} (${del.clients.length} client${del.clients.length > 1 ? "s" : ""})`;
-        tasks.push({ key: `AUT|${chargeJourIdx}|pm`, label, type: "chargement" });
-      }
-
-      // Livraison = jour de livraison, seulement si transporteur "nous"
-      if (del.transporteur === "nous") {
-        const livrJourIdx = weekDays.indexOf(dlDayStr);
-        if (livrJourIdx >= 0) {
-          const label = `🚚 Livraison ${del.zone || ""} (${del.clients.join(", ")})`;
-          tasks.push({ key: `AUT|${livrJourIdx}|am`, label, type: "livraison" });
-          tasks.push({ key: `AUT|${livrJourIdx}|pm`, label, type: "livraison" });
+    for (const del of Array.from(grouped.values())) {
+      // 1. Tâche de chargement (la veille ouvrée, sur le slot PM)
+      if (del.needsLoading) {
+        const chargeDate = dateChargementPour(del.date);
+        const chargeIdx = weekDays.indexOf(chargeDate);
+        if (chargeIdx >= 0) {
+          const label = `🚛 Chargement ${del.zone || ""} (${del.clients.length} client${del.clients.length > 1 ? "s" : ""})`;
+          tasks.push({ key: `AUT|${chargeIdx}|pm`, label, type: "chargement" });
         }
       }
-    });
+      // 2. Tâche de livraison (le jour J, AM si zone proche, AM+PM sinon)
+      if (del.needsDriver) {
+        const livrIdx = weekDays.indexOf(del.date);
+        if (livrIdx >= 0) {
+          const label = `🚚 Livraison ${del.zone || ""} (${del.clients.join(", ")})`;
+          const nbDemis = nbDemiJourneesLivraison(del.zone);
+          tasks.push({ key: `AUT|${livrIdx}|am`, label, type: "livraison" });
+          if (nbDemis >= 2) {
+            tasks.push({ key: `AUT|${livrIdx}|pm`, label, type: "livraison" });
+          }
+        }
+      }
+    }
     return tasks;
   }, [commandes, viewWeek]);
 
@@ -1362,10 +1457,14 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   }, [aff, autoDeliveryTasks]);
 
   // ── Calcul de couverture globale ──
+  // Deux dimensions :
+  //   - coverage = besoin commande couvert par les affectations (opérateurs)
+  //   - saturation = charge affectée vs capacité machine (capacityMinDay × 5j)
   const coverage = useMemo(() => {
     let totalNeeded = 0;
     let totalAffected = 0;
     const uncoveredPosts: Array<{ postId: string; label: string; needed: number; affected: number; deficit: number }> = [];
+    const overloaded: Array<{ postId: string; label: string; needed: number; capacity: number; saturationPct: number }> = [];
 
     for (const grp of activePosts) {
       for (const pid of grp.visiblePosts) {
@@ -1394,12 +1493,24 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         totalNeeded += pw.totalMin;
         totalAffected += Math.min(affMin, pw.totalMin);
         if (affMin < pw.totalMin) {
-          uncoveredPosts.push({ postId: pid, label: POST_LABELS[pid] || pid, needed: pw.totalMin, affected: affMin, deficit: pw.totalMin - affMin });
+          uncoveredPosts.push({ postId: pid, label: postShortLabel(pid), needed: pw.totalMin, affected: affMin, deficit: pw.totalMin - affMin });
+        }
+
+        // Saturation machine : besoin vs capacityMinDay × 5j (capacité hebdomadaire).
+        // Si le besoin dépasse la capacité, c'est physiquement impossible cette
+        // semaine — il faut découper sur 2 semaines ou ajouter des ressources.
+        const capWeek = postCapacityMinDay(pid) * 5;
+        if (capWeek > 0 && pw.totalMin > capWeek) {
+          overloaded.push({
+            postId: pid, label: postShortLabel(pid),
+            needed: pw.totalMin, capacity: capWeek,
+            saturationPct: Math.round(pw.totalMin / capWeek * 100),
+          });
         }
       }
     }
     const pct = totalNeeded > 0 ? Math.round(totalAffected / totalNeeded * 100) : 0;
-    return { pct, totalNeeded, totalAffected, uncoveredPosts, complete: pct >= 100 };
+    return { pct, totalNeeded, totalAffected, uncoveredPosts, overloaded, complete: pct >= 100 };
   }, [activePosts, postWork, aff, hiddenTasks]);
 
   // ── Reporter les tâches non couvertes à la semaine suivante ──
@@ -1419,7 +1530,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         if ((cmd as any)[field] !== viewWeek) continue;
 
         // Vérifier si cette phase a des postes non couverts
-        const routage = getRoutage(cmd.type, cmd.quantite, (cmd as any).hsTemps as Record<string, unknown> | null);
+        const routage = getRoutage(cmd.type, cmd.quantite, (cmd as any).hsTemps as Record<string, unknown> | null, 1.0, learnedTimes, isulaInfoFromCmd(cmd as any));
         const phasePostIds = routage.filter(e => e.phase === ph).map(e => e.postId);
         const hasUncovered = phasePostIds.some(pid => coverage.uncoveredPosts.some(u => u.postId === pid));
 
@@ -1457,9 +1568,24 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           <button onClick={() => { const d = new Date(); const day = d.getDay(); d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); onWeekChange(localStr(d)); }} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, padding: "6px 10px", cursor: "pointer", fontSize: 11 }}>Auj.</button>
           <button onClick={() => { const d = new Date(viewWeek + "T00:00:00"); d.setDate(d.getDate() + 7); onWeekChange(localStr(d)); }} style={{ background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, padding: "6px 12px", cursor: "pointer", fontSize: 14 }}>→</button>
           <div style={{ fontSize: 16, fontWeight: 800 }}>Affectations {weekId(viewWeek)}</div>
-          <button onClick={() => setTransposed(p => !p)} style={{ marginLeft: "auto", background: transposed ? C.orange + "22" : C.s2, border: `1px solid ${transposed ? C.orange : C.border}`, borderRadius: 4, color: transposed ? C.orange : C.sec, padding: "6px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
-            ⇄ {transposed ? "Vue : Jours × Postes" : "Vue : Postes × Jours"}
-          </button>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            {/* Toggle vue demi-journée vs timeline horaire */}
+            <button onClick={() => setViewMode(viewMode === "demi" ? "timeline" : "demi")}
+              title={viewMode === "demi" ? "Passer en vue horaire (timeline 8h-17h)" : "Revenir en vue demi-journée"}
+              style={{
+                background: viewMode === "timeline" ? C.teal + "22" : C.s2,
+                border: `1px solid ${viewMode === "timeline" ? C.teal : C.border}`,
+                borderRadius: 4, color: viewMode === "timeline" ? C.teal : C.sec,
+                padding: "6px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700,
+              }}>
+              ⏱ {viewMode === "timeline" ? "Vue : Timeline horaire" : "Vue : Demi-journée"}
+            </button>
+            {viewMode === "demi" && (
+              <button onClick={() => setTransposed(p => !p)} style={{ background: transposed ? C.orange + "22" : C.s2, border: `1px solid ${transposed ? C.orange : C.border}`, borderRadius: 4, color: transposed ? C.orange : C.sec, padding: "6px 12px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+                ⇄ {transposed ? "Jours × Postes" : "Postes × Jours"}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1640,6 +1766,24 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         )}
       </div>
 
+      {/* ── Alerte saturation machine ── */}
+      {coverage.overloaded.length > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", marginBottom: 10,
+          background: C.red + "12", border: `1px solid ${C.red}55`, borderRadius: 6,
+        }}>
+          <span style={{ fontSize: 14 }}>⚠</span>
+          <div style={{ flex: 1, fontSize: 11, color: C.text }}>
+            <span style={{ fontWeight: 700, color: C.red }}>Capacité dépassée</span> — la charge demandée excède la capacité hebdomadaire :{" "}
+            {coverage.overloaded.map(o => (
+              <span key={o.postId} style={{ marginRight: 8, padding: "2px 6px", background: C.red + "22", borderRadius: 3, fontWeight: 700 }}>
+                {o.label} ({o.saturationPct}% — {hm(o.needed)} pour {hm(o.capacity)} dispo)
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Résultat audit ── */}
       {auditResult && (
         <div style={{ background: C.s1, border: `1px solid ${C.blue}`, borderRadius: 6, padding: "10px 14px", marginBottom: 12 }}>
@@ -1759,8 +1903,19 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         );
       })()}
 
-      {/* ── Grille ── */}
-      {(() => {
+      {/* ── Vue Timeline horaire (alternative à la grille demi-journée) ── */}
+      {viewMode === "timeline" && (
+        <PlanningTimelineWeek
+          aff={affWithAuto}
+          monday={viewWeek}
+          postIds={activePosts.flatMap(g => g.visiblePosts)}
+          commandes={commandes}
+          todayIdx={todayIdx}
+        />
+      )}
+
+      {/* ── Grille (vue demi-journée) ── */}
+      {viewMode === "demi" && (() => {
         // Rendu d'une cellule (commun aux deux vues)
         const renderCell = (pid: string, jIdx: number, demi: string, grp: typeof activePosts[0]) => {
           const key = ck(pid, jIdx, demi);
@@ -1975,7 +2130,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 const pw = postWork[pid] || { totalMin: 0, cmds: [] };
                 const minPers = grp.phase === "coupe" ? 2 : 1;
                 const persNeeded = pw.totalMin > 0 ? Math.max(minPers, Math.ceil(pw.totalMin / DEMI_MIN / 10)) : 0;
-                const maxPers = POST_MAX_PERS[pid];
+                const maxPers = postMaxPers(pid);
                 const overCapacity = false; // plus de plafond hebdo
                 let affMin = 0;
                 for (let j = 0; j < 5; j++) for (const d of ["am", "pm"]) affMin += (aff[ck(pid, j, d)]?.ops?.length || 0) * DEMI_MIN;
@@ -2299,12 +2454,16 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         const lignes = Array.isArray(cmd.lignes) && cmd.lignes.length > 0 ? cmd.lignes : [{ type: cmd.type, quantite: cmd.quantite }];
         // Agréger par poste (une seule ligne par poste)
         const postTotals: Record<string, { label: string; min: number; phase: string }> = {};
-        for (const ligne of lignes) {
+        const detailIsulaInfo = isulaInfoFromCmd(cmd);
+        for (let li = 0; li < lignes.length; li++) {
+          const ligne = lignes[li];
           const lType = ligne.type || cmd.type;
           if (lType === "intervention_chantier") continue;
           const lQte = parseInt(ligne.quantite) || cmd.quantite || 1;
           const lHs = lType === "hors_standard" ? { t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage } : cmd.hsTemps;
-          const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null);
+          const lSf = specialMultiplier(parseFloat(ligne?.largeur_mm) || parseFloat(ligne?.largeur) || 0);
+          const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf, learnedTimes,
+            li === 0 ? detailIsulaInfo : undefined);
           for (const e of routage) {
             if (!postTotals[e.postId]) postTotals[e.postId] = { label: e.label, min: 0, phase: e.phase };
             postTotals[e.postId].min += e.estimatedMin;

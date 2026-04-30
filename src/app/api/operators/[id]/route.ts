@@ -14,16 +14,37 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.weekHours !== undefined) data.weekHours = body.weekHours;
   if (body.workingDays !== undefined) data.workingDays = body.workingDays;
   if (body.posts !== undefined) data.posts = body.posts;
+  if (body.defaultSchedule !== undefined) data.defaultSchedule = body.defaultSchedule;
+  if (body.naissance !== undefined) data.naissance = body.naissance;
 
-  const updated = await prisma.operator.update({
-    where: { id: params.id },
-    data,
-    include: {
-      skills: {
-        include: { workPost: { select: { id: true, label: true, atelier: true } } },
+  // Tentative avec les nouveaux champs (defaultSchedule, naissance) ; si la
+  // migration BDD n'a pas tourné, on retombe sur les colonnes historiques.
+  let updated;
+  try {
+    updated = await prisma.operator.update({
+      where: { id: params.id },
+      data: data as any,
+      include: {
+        skills: {
+          include: { workPost: { select: { id: true, label: true, atelier: true } } },
+        },
       },
-    },
-  });
+    });
+  } catch (e) {
+    // Fallback : on retire defaultSchedule/naissance et on retente.
+    const { defaultSchedule: _ds, naissance: _n, ...legacyData } = data as any;
+    void _ds; void _n;
+    updated = await prisma.operator.update({
+      where: { id: params.id },
+      data: legacyData,
+      include: {
+        skills: {
+          include: { workPost: { select: { id: true, label: true, atelier: true } } },
+        },
+      },
+    });
+    console.warn("PATCH operator: migration BDD non appliquée pour defaultSchedule/naissance");
+  }
 
   return NextResponse.json(updated);
 }

@@ -227,6 +227,12 @@ model Operator {
   workingDays     Int[]             @default([0, 1, 2, 3, 4])
   notes           String?
   active          Boolean           @default(true)
+  /// Horaires détaillés par jour de la semaine (JSON).
+  /// Format : { "Mon": [{from: "08:00", to: "12:00"}, {from: "13:00", to: "17:00"}], ... }
+  /// Si null, on utilise la convention par défaut basée sur weekHours.
+  defaultSchedule Json?
+  /// Date de naissance (ISO YYYY-MM-DD) pour anniversaires.
+  naissance       String?
   absences        OperatorAbsence[]
   taskAssignments TaskAssignment[]
   skills          OperatorSkill[]
@@ -257,8 +263,28 @@ model OperatorAbsence {
 model WorkPost {
   id               String           @id
   label            String
+  shortLabel       String?          // libellé court pour les vues compactes (ex: "Coupe LMT")
   atelier          Atelier
   capacityMinDay   Int
+  /// Phase de fabrication : coupe / montage / vitrage / isula / logistique / autre
+  phase            String?
+  /// Nombre maximum d'opérateurs simultanés (1 = exclusif, null = pas de limite)
+  maxOperators     Int?
+  /// Tampon en minutes après cette étape avant la suivante (par défaut 240 = 4h)
+  tamponMinAfter   Int?
+  /// Couleur d'affichage (hex). Pour cohérence des vues.
+  color            String?
+  /// Visible par défaut dans les vues utilisateur (Aujourd'hui, PlanningAffectations)
+  visible          Boolean          @default(true)
+  /// Ordre d'affichage dans la phase
+  sortOrder        Int              @default(0)
+  /// Planification autonome : nombre d'opérateurs utiles max (au-delà, gêne)
+  parallelism      Int?             @default(1)
+  /// Courbe d'efficacité — gain de vitesse selon nb_ops (JSON: number[]).
+  /// Ex: [1.0, 1.8, 2.4] = 1op→×1, 2ops→×1.8, 3ops→×2.4
+  parallelGain     Json?
+  /// Si vrai, 1 seul opérateur du début à la fin (qualité, sur-mesure)
+  monolithic       Boolean          @default(false)
   defaultOperators String[]
   tasks            ProductionTask[]
   skills           OperatorSkill[]

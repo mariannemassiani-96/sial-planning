@@ -50,14 +50,6 @@ Object.values(TYPES_MENUISERIE).forEach(tm => {
   tm.profils_total = tm.lmt || 0;
 });
 
-export const OPERATEURS_VITRAGE_HS = [
-  { id:"quentin",  label:"Quentin" },
-  { id:"michel",   label:"Michel" },
-  { id:"jf",       label:"Jean-François" },
-  { id:"jp",       label:"Jean-Pierre" },
-  { id:"bruno",    label:"Bruno" },
-];
-
 export const T = {
   coupe_profil:           1,
   ouvrant_coul_prep:      5,
@@ -109,7 +101,13 @@ export interface TempsType {
   notes?: string;
 }
 
-export function calcTempsType(typeId: string, quantite = 1, hsTemps?: HsTemps | null): TempsType | null {
+export function calcTempsType(
+  typeId: string,
+  quantite = 1,
+  hsTemps?: HsTemps | null,
+  /** Multiplicateur grand format (1.0 par défaut). Voir `specialMultiplier()`. */
+  specialFactor = 1.0,
+): TempsType | null {
   const tm = TYPES_MENUISERIE[typeId];
   if (!tm) return null;
 
@@ -158,8 +156,13 @@ export function calcTempsType(typeId: string, quantite = 1, hsTemps?: HsTemps | 
     ? T.soudure_cadre * nbCadres * q
     : (!isPVC && isFrappe ? T.poincon_assemblage_alu * nbCadres * q : 0);
 
-  const tMontDormantCoul = isCoul ? (T.pose_rails_accessoires + T.montage_dormant_coul) * q : 0;
-  const tMontDormantGland = isGland ? (T.pose_rails_accessoires + T.montage_dormant_gland) * q : 0;
+  // Spéciaux grand format (coulissants/galandages > 4m) :
+  // applique un multiplicateur sur le montage et le vitrage uniquement.
+  // La coupe et le contrôle/palette ne sont pas amplifiés.
+  const sf = (isCoul || isGland) ? Math.max(1, specialFactor) : 1;
+
+  const tMontDormantCoul = isCoul ? (T.pose_rails_accessoires + T.montage_dormant_coul) * q * sf : 0;
+  const tMontDormantGland = isGland ? (T.pose_rails_accessoires + T.montage_dormant_gland) * q * sf : 0;
 
   const tFerrage = isFrappe ? T.ferrage_ouvrant * ouvrants * q : 0;
   const tPrepDormant = isFrappe ? T.prep_dormant * q : 0;
@@ -168,7 +171,7 @@ export function calcTempsType(typeId: string, quantite = 1, hsTemps?: HsTemps | 
   const tControle = isFrappe ? T.controle * q : 0;
   const tPaletteFrappe = isFrappe ? T.mise_palette * q : 0;
 
-  const tVitrageOuv = (isCoul || isGland) ? T.vitrage_ouvrant_coul * ouvrants * q : 0;
+  const tVitrageOuv = (isCoul || isGland) ? T.vitrage_ouvrant_coul * ouvrants * q * sf : 0;
   const tPaletteCoul = (isCoul || isGland) ? T.mise_palette * q : 0;
 
   const tPosteCoupe = tCoupe + tSoudurePoincon;
@@ -194,6 +197,46 @@ export interface CommandeCalc {
   type: string;
   quantite: number;
   hsTemps?: HsTemps | null;
+}
+
+/**
+ * Multiplicateur grand format pour coulissants et galandages.
+ * Source : SPEC section 5 — pièces > 4m allongent significativement le montage.
+ *   widthMm >= 6000 → ×4
+ *   widthMm >= 5000 → ×3
+ *   widthMm >= 4000 → ×2
+ *   sinon          → ×1
+ */
+export function specialMultiplier(widthMm: number | null | undefined): number {
+  const w = Number(widthMm) || 0;
+  if (w >= 6000) return 4.0;
+  if (w >= 5000) return 3.0;
+  if (w >= 4000) return 2.0;
+  return 1.0;
+}
+
+/**
+ * Détecte si une commande contient une pièce grand format (largeur > 4m
+ * pour coulissant ou galandage). Renvoie le multiplicateur le plus grand.
+ * Cherche dans les `lignes` un champ `largeur_mm`/`widthMm`/`largeur`
+ * applicable à un type coulissant/galandage.
+ */
+export function detectSpecialMultiplier(cmd: { type: string; lignes?: unknown }): number {
+  const tm = TYPES_MENUISERIE[cmd.type];
+  if (!tm) return 1.0;
+  if (tm.famille !== "coulissant" && tm.famille !== "glandage") return 1.0;
+
+  const lignes = Array.isArray(cmd.lignes) ? cmd.lignes : [];
+  let max = 1.0;
+  for (const l of lignes as Array<Record<string, unknown>>) {
+    const lt = String(l?.type || cmd.type);
+    const ltm = TYPES_MENUISERIE[lt];
+    if (!ltm || (ltm.famille !== "coulissant" && ltm.famille !== "glandage")) continue;
+    const w = Number(l?.largeur_mm) || Number(l?.widthMm) || Number(l?.largeur) || 0;
+    const m = specialMultiplier(w);
+    if (m > max) max = m;
+  }
+  return max;
 }
 
 export function calcChargeSemaine(commandes: CommandeCalc[]) {
@@ -252,6 +295,14 @@ export const POSTES_COMPETENCES = [
   { id:"isula",       label:"ISULA",       c:"#4DB6AC" },
 ];
 
+/**
+ * Liste statique de l'équipe — utilisée comme **fallback** quand
+ * /api/operators n'est pas disponible. La source de vérité doit être
+ * la table Prisma `Operator` (lue via `useOperators()` dans `lib/use-operators.ts`).
+ *
+ * Ne pas ajouter de logique métier ici : préférer l'enrichissement de
+ * /api/operators et l'usage du hook côté composant.
+ */
 export const EQUIPE = [
   { id:"guillaume", nom:"Guillaume",     poste:"logistique", h:39, vendrediOff:false, remplace:["isula_op","vitrage"], competences:["logistique","vitrage","isula"],      note:"Réceptions · Rangement · Prépa accessoires · Chargements · 8h L-J, 7h V" },
   { id:"momo",      nom:"Momo",          poste:"isula",      h:39, vendrediOff:false, remplace:["vitrage"],            competences:["isula","vitrage"],                   note:"Opérateur ISULA A→Z · Remplace vitrage · 8h L-J, 7h V" },
@@ -269,11 +320,6 @@ export const EQUIPE = [
 ];
 
 export const ZONES = ["SIAL","Porto-Vecchio","Ajaccio","Bastia","Balagne","Plaine Orientale","Continent","Sur chantier","Autre"];
-
-export const TAMPONS_OFFICIELS = {
-  coupe_livraison: 15,
-  vitrage_livraison: 4,
-};
 
 export const TAMPON_MIN = 4 * 60;
 export const TAMPON_COUPE_LIVRAISON = 15;
@@ -405,7 +451,8 @@ export function calcCheminCritique(cmd: CommandeCC) {
   const tm = TYPES_MENUISERIE[cmd.type];
   if (!tm) return null;
   if (tm.famille === "intervention") return null;
-  const t = calcTempsType(cmd.type, cmd.quantite, cmd.hsTemps);
+  const sf = detectSpecialMultiplier(cmd as { type: string; lignes?: unknown });
+  const t = calcTempsType(cmd.type, cmd.quantite, cmd.hsTemps, sf);
   if (!t) return null;
   const dd = dateDemarrage(cmd);
   if (!dd) return null;
@@ -451,8 +498,11 @@ export function calcCheminCritique(cmd: CommandeCC) {
     ? Math.round(parseFloat(String(cmd.hsTemps?.t_vitrage)) || 0)
     : t.par_poste.vitrage_ov || 0;
   const finVitrage = tVitrageReel > 0 ? addWorkMinutes(cursor, tVitrageReel) : cursor;
+  const opVitrageHsLabel: Record<string, string> = {
+    quentin: "Quentin", michel: "Michel", jf: "Jean-François", jp: "Jean-Pierre", bruno: "Bruno",
+  };
   const quiVitrage = cmd.hsTemps?.operateur_vitrage
-    ? (OPERATEURS_VITRAGE_HS.find(o => o.id === cmd.hsTemps!.operateur_vitrage)?.label || "Quentin")
+    ? (opVitrageHsLabel[String(cmd.hsTemps.operateur_vitrage)] || "Quentin")
     : tm.famille === "coulissant" || tm.famille === "glandage" ? "Quentin" : "Michel / Jean-François";
   etapes.push({ id:"vitrage", label:"Vitrage", debut:cursor, fin:finVitrage, duree_min:tVitrageReel, qui:quiVitrage, couleur:"#26C6DA", cmd_vitrage:dateCmdVitrage });
 
@@ -497,83 +547,6 @@ export const C = {
 
 export const CMAT: Record<string, string> = { PVC: C.blue, ALU: C.cyan };
 export const CFAM: Record<string, string> = { frappe: C.blue, coulissant: C.green, glandage: C.purple, porte: C.orange };
-
-// ── Transporteurs livraison ──────────────────────────────────────────────────
-export const TRANSPORTEURS_LIVRAISON = [
-  { id: "nous",    label: "Livraison par nous-mêmes",           c: "#42A5F5" },
-  { id: "setec",   label: "Livraison par Setec",                c: "#FFA726" },
-  { id: "express", label: "Livraison par transporteur express", c: "#66BB6A" },
-  { id: "poseur",  label: "Livraison par un poseur",            c: "#AB47BC" },
-  { id: "depot",   label: "Client récupère au dépôt",           c: "#26C6DA" },
-];
-
-// ── Tâches de fabrication ────────────────────────────────────────────────────
-export const TACHES_FABRICATION = [
-  // Production menuiserie
-  { id: "deballage_prep",      label: "Déballage et préparation profilés",     categorie: "production", temps_unitaire: 3,   unite: "min/barre",   parallelisable: true,  competences: ["julien","laurent","mateo"] },
-  { id: "coupe_lmt",           label: "Coupe LMT",                              categorie: "production", temps_unitaire: 1,   unite: "min/pièce",   parallelisable: true,  competences: ["julien","laurent","mateo"] },
-  { id: "coupe_dt",            label: "Coupe double tête",                      categorie: "production", temps_unitaire: 1.5, unite: "min/pièce",   parallelisable: false, competences: ["julien"] },
-  { id: "coupe_renfort",       label: "Coupe renfort acier",                    categorie: "production", temps_unitaire: 2,   unite: "min/pièce",   parallelisable: false, competences: ["mateo"] },
-  { id: "soudure_pvc",         label: "Soudure cadre PVC",                      categorie: "production", temps_unitaire: 5,   unite: "min/cadre",   parallelisable: false, competences: ["michel","apprenti"] },
-  { id: "premontage_coul",     label: "Pré-montage ouvrants coulissant/galandage", categorie: "production", temps_unitaire: 5, unite: "min/ouvrant", parallelisable: true, competences: ["alain","jf"] },
-  { id: "montage_dorm_coul",   label: "Montage dormant coulissant",              categorie: "production", temps_unitaire: 30,  unite: "min/dormant", parallelisable: false, competences: ["alain"] },
-  { id: "montage_dorm_gal",    label: "Montage dormant galandage",               categorie: "production", temps_unitaire: 60,  unite: "min/dormant", parallelisable: false, competences: ["alain"] },
-  { id: "assemblage_dorm_alu", label: "Assemblage dormant frappe ALU",           categorie: "production", temps_unitaire: 10,  unite: "min/dormant", parallelisable: true,  competences: ["michel","jf","jp"] },
-  { id: "assemblage_ouv_alu",  label: "Assemblage ouvrant frappe ALU",           categorie: "production", temps_unitaire: 10,  unite: "min/ouvrant", parallelisable: true,  competences: ["michel","jf","jp"] },
-  { id: "ferrage",             label: "Ferrage ouvrant",                         categorie: "production", temps_unitaire: 10,  unite: "min/ouvrant", parallelisable: true,  competences: ["michel","jf","jp"] },
-  { id: "vitrage_frappe",      label: "Vitrage frappes",                         categorie: "production", temps_unitaire: 10,  unite: "min/vantail",  parallelisable: true,  competences: ["jf","apprenti"] },
-  { id: "vitrage_coul",        label: "Vitrage ouvrants coulissants",             categorie: "production", temps_unitaire: 20,  unite: "min/ouvrant", parallelisable: true,  competences: ["quentin","apprenti"] },
-  { id: "palette",             label: "Mise sur palette",                         categorie: "production", temps_unitaire: 5,   unite: "min/pièce",   parallelisable: true,  competences: ["quentin","apprenti","guillaume"] },
-  { id: "controle_qual",       label: "Contrôle qualité",                         categorie: "production", temps_unitaire: 2,   unite: "min/pièce",   parallelisable: true,  competences: [] },
-  // Logistique
-  { id: "dech_profils",        label: "Déchargement camion fournisseur profilés",   categorie: "logistique", temps_unitaire: 60,  unite: "min (fixe)",  parallelisable: false, competences: ["guillaume"] },
-  { id: "dech_access",         label: "Déchargement camion fournisseur accessoires", categorie: "logistique", temps_unitaire: 30,  unite: "min (fixe)",  parallelisable: false, competences: ["guillaume"] },
-  { id: "charg_client",        label: "Chargement camion client",                    categorie: "logistique", temps_unitaire: 120, unite: "min (fixe)",  parallelisable: false, competences: ["guillaume"] },
-  { id: "rangement_stock",     label: "Rangement stock",                             categorie: "logistique", temps_unitaire: 120, unite: "min (fixe)",  parallelisable: false, competences: ["guillaume"] },
-  { id: "prep_accessoires",    label: "Préparation accessoires",                     categorie: "logistique", temps_unitaire: 120, unite: "min (fixe)",  parallelisable: false, competences: ["guillaume"] },
-];
-
-export const TACHES_RITUELLES_DEFAUT = [
-  { id: "nettoyage_soir",  label: "Nettoyage du soir",           fixe: true,  visible: true },
-  { id: "charg_client_r",  label: "Chargement camion client",    fixe: false, visible: true },
-  { id: "dech_fourn_r",    label: "Déchargement camion fournisseur", fixe: false, visible: true },
-  { id: "rangement_r",     label: "Rangement stock",             fixe: false, visible: true },
-  { id: "maintenance",     label: "Maintenance",                  fixe: false, visible: true },
-  { id: "prep_access_r",   label: "Préparation accessoires",     fixe: false, visible: true },
-];
-
-export const TACHES_ISULA = [
-  { id: "dech_vitrage",  label: "Déchargement camion fournisseur vitrage" },
-  { id: "coupe_bottero", label: "Coupe Bottero" },
-  { id: "coupe_lisec",   label: "Coupe Lisec" },
-  { id: "coupe_intercal",label: "Coupe intercalaire" },
-  { id: "pose_intercal", label: "Pose intercalaires" },
-  { id: "but_tammi",     label: "Mise en place but et Tammi" },
-  { id: "laveuse",       label: "Laveuse" },
-  { id: "mise_intercal", label: "Mise intercalaire sur vitrage" },
-  { id: "presse",        label: "Presse" },
-  { id: "gaz",           label: "Gaz" },
-  { id: "enduction",     label: "Enduction" },
-  { id: "controle_isula",label: "Contrôle qualité" },
-  { id: "chariot",       label: "Mise sur chariot" },
-];
-
-// Compétences préférentielles par défaut (configurables depuis l'app)
-export const COMPETENCES_DEFAUT: Record<string, string[]> = {
-  "julien":    ["coupe_lmt", "coupe_dt"],
-  "laurent":   ["coupe_lmt", "coupe_renfort"],
-  "mateo":     ["coupe_lmt", "coupe_renfort"],
-  "alain":     ["montage_dorm_coul", "montage_dorm_gal", "premontage_coul"],
-  "michel":    ["assemblage_dorm_alu", "assemblage_ouv_alu", "soudure_pvc"],
-  "jf":        ["assemblage_dorm_alu", "assemblage_ouv_alu", "vitrage_frappe"],
-  "quentin":   ["vitrage_coul", "palette"],
-  "apprenti":  ["soudure_pvc", "vitrage_frappe", "palette"],
-  "guillaume": ["dech_profils", "dech_access", "charg_client", "rangement_stock", "prep_accessoires"],
-  "ali":       [],
-  "momo":      [],
-  "bruno":     [],
-  "jp":        ["assemblage_dorm_alu", "assemblage_ouv_alu", "vitrage_coul", "montage_dorm_coul"],
-};
 
 // Équipe pour affichage atelier (avec dates naissance pour anniversaires)
 export const EQUIPE_ANNIVERSAIRES: Array<{ id: string; nom: string; naissance: string }> = [

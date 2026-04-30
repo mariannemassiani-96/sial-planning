@@ -6,7 +6,7 @@ import { H, Card } from "@/components/ui";
 
 const inp = { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, padding: "7px 11px", color: C.text, fontSize: 13, width: "100%", outline: "none" };
 
-const emptyLigne = { type: "ob1_pvc", quantite: 1, coloris: "blanc", hs_nb_profils: "", hs_t_coupe: "", hs_t_montage: "", hs_t_vitrage: "", hs_op_montage: "jp", hs_op_vitrage: "quentin", hs_notes: "" };
+const emptyLigne = { type: "ob1_pvc", quantite: 1, coloris: "blanc", largeur_mm: "", hs_nb_profils: "", hs_t_coupe: "", hs_t_montage: "", hs_t_vitrage: "", hs_op_montage: "jp", hs_op_vitrage: "quentin", hs_notes: "" };
 const emptyVitrage = { composition: "", quantite: "1", surface_m2: "", fournisseur: "isula", cmd_passee: false, date_reception: "", position: "", face_exterieure: "", face_interieure: "", couleur_intercalaire: "", epaisseur_intercalaire: "", largeur: "", hauteur: "", forme: "", prix_m2: "", prix_total: "", largeur_origine: "", hauteur_origine: "", surface_m2_origine: "" };
 const FOURNISSEURS_VITRAGE = [
   { id: "isula",  label: "ISULA VITRAGE" },
@@ -315,6 +315,27 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
                 <button onClick={() => delLigne(i)} style={{ padding: "6px 10px", background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, cursor: "pointer", fontSize: 11 }}>✕</button>
               </div>
               {tmLg && !isHSLg && !isIntervLg && <div style={{ marginTop: 4, fontSize: 9, color: C.muted }} className="mono">{tmLg.profils_total} profils · {tmLg.dormant} dorm. · {tmLg.ouvrants} ouv.</div>}
+              {tmLg && (tmLg.famille === "coulissant" || tmLg.famille === "glandage") && (() => {
+                const w = parseFloat(lg.largeur_mm) || 0;
+                const mult = w >= 6000 ? 4 : w >= 5000 ? 3 : w >= 4000 ? 2 : 1;
+                return (
+                  <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                    <label style={{ fontSize: 9, color: C.sec }}>LARGEUR (mm)</label>
+                    <input type="number" min={0} step={100} style={{ ...inp, width: 110, fontSize: 11, padding: "3px 6px" }}
+                      value={lg.largeur_mm || ""}
+                      onChange={e => setLigne(i, "largeur_mm", e.target.value)}
+                      placeholder="ex: 4500" />
+                    {mult > 1 && (
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 3, background: C.orange + "22", border: `1px solid ${C.orange}66`, color: C.orange }}>
+                        ⚡ Grand format ×{mult}
+                      </span>
+                    )}
+                    <span style={{ fontSize: 9, color: C.muted }}>
+                      ≥ 4000mm = ×2 · ≥ 5000mm = ×3 · ≥ 6000mm = ×4
+                    </span>
+                  </div>
+                );
+              })()}
               {isHSLg && (
                 <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
                   {[{ l: "Nb profils", k: "hs_nb_profils" }, { l: "Coupe total (min)", k: "hs_t_coupe" }, { l: "Montage total (min)", k: "hs_t_montage" }, { l: "Vitrage total (min)", k: "hs_t_vitrage" }].map(x => (

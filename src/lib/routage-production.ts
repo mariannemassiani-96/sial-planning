@@ -128,311 +128,20 @@ function ensureCache(typeId: string): ProductionRoute | null {
 // ── Public API ───────────────────────────────────────────────────────
 
 /**
- * Get the full production route for a given menuiserie type.
- * Returns null if the type is unknown.
+ * Retourne le routage de phases abstraites (coupe/frappes/coulissant/
+ * vitrage_ov) pour un type. Utilisé par la Nomenclature pour afficher
+ * les étapes par famille.
  */
 export function getRoute(typeId: string): ProductionRoute | null {
   return ensureCache(typeId);
 }
 
-/**
- * Get the poste name for a specific step index in a type's route.
- * Returns null if the type or step index is invalid.
- */
-export function getPosteForStep(typeId: string, stepIndex: number): string | null {
-  const route = ensureCache(typeId);
-  if (!route) return null;
-  if (stepIndex < 0 || stepIndex >= route.steps.length) return null;
-  return route.steps[stepIndex].poste;
-}
-
-/**
- * Get the step index for a given poste within a type's route.
- * Returns -1 if the poste is not part of this type's route.
- */
-export function getStepIndex(typeId: string, poste: string): number {
-  const route = ensureCache(typeId);
-  if (!route) return -1;
-  return route.steps.findIndex((s) => s.poste === poste);
-}
-
-/**
- * Get all postes (in order) that a type goes through.
- */
-export function getPostesForType(typeId: string): PosteId[] {
-  const route = ensureCache(typeId);
-  if (!route) return [];
-  return route.steps.map((s) => s.poste);
-}
-
-/**
- * Check if posteA must be completed before posteB for a given type.
- */
-export function isDependency(typeId: string, posteA: string, posteB: string): boolean {
-  const route = ensureCache(typeId);
-  if (!route) return false;
-  const idxA = route.steps.findIndex((s) => s.poste === posteA);
-  const idxB = route.steps.findIndex((s) => s.poste === posteB);
-  if (idxA === -1 || idxB === -1) return false;
-  return idxA < idxB;
-}
-
-/**
- * Get the next step after a given poste for a type.
- * Returns null if there is no next step or the poste is not in the route.
- */
-export function getNextStep(typeId: string, currentPoste: string): RouteStep | null {
-  const route = ensureCache(typeId);
-  if (!route) return null;
-  const idx = route.steps.findIndex((s) => s.poste === currentPoste);
-  if (idx === -1 || idx >= route.steps.length - 1) return null;
-  return route.steps[idx + 1];
-}
-
-/**
- * Get the previous step before a given poste for a type.
- * Returns null if there is no previous step or the poste is not in the route.
- */
-export function getPreviousStep(typeId: string, currentPoste: string): RouteStep | null {
-  const route = ensureCache(typeId);
-  if (!route) return null;
-  const idx = route.steps.findIndex((s) => s.poste === currentPoste);
-  if (idx <= 0) return null;
-  return route.steps[idx - 1];
-}
-
-// ── Slot helpers ─────────────────────────────────────────────────────
-
-type Slot = "am" | "pm";
-
-interface Assignment {
-  poste: string;
-  date: string;    // "YYYY-MM-DD"
-  slot: Slot;
-}
-
-/**
- * Convert a date + slot into a comparable timestamp-like value.
- * AM = date at 08:00, PM = date at 13:00 (workshop hours).
- * Returns minutes since epoch for easy comparison.
- */
-function slotToMinutes(date: string, slot: Slot): number {
-  const d = new Date(date + "T00:00:00Z");
-  const dayMinutes = d.getTime() / 60000;
-  return dayMinutes + (slot === "am" ? 480 : 780); // 8h00 or 13h00
-}
-
-/**
- * Validate that a set of assignments respects the production route dependencies
- * for a given menuiserie type.
- *
- * Checks:
- * 1. All required postes in the route are covered
- * 2. Assignments follow the correct order
- * 3. Buffer times (tampon) between consecutive steps are respected
- *
- * Returns { valid: true, errors: [] } if everything is OK.
- */
-export function validateDependencies(
-  typeId: string,
-  assignments: Assignment[]
-): { valid: boolean; errors: string[] } {
-  const errors: string[] = [];
-  const route = ensureCache(typeId);
-
-  if (!route) {
-    errors.push(`Type inconnu : "${typeId}"`);
-    return { valid: false, errors };
-  }
-
-  // Build a map of poste -> earliest assignment
-  const posteAssignments = new Map<string, { date: string; slot: Slot; minuteValue: number }>();
-  for (const a of assignments) {
-    const mv = slotToMinutes(a.date, a.slot);
-    const existing = posteAssignments.get(a.poste);
-    if (!existing || mv < existing.minuteValue) {
-      posteAssignments.set(a.poste, { date: a.date, slot: a.slot, minuteValue: mv });
-    }
-  }
-
-  // Check 1: All required postes are assigned
-  for (const step of route.steps) {
-    if (!posteAssignments.has(step.poste)) {
-      errors.push(
-        `Poste "${step.poste}" manquant dans les affectations pour le type "${typeId}".`
-      );
-    }
-  }
-
-  // If postes are missing, skip ordering checks
-  if (errors.length > 0) {
-    return { valid: false, errors };
-  }
-
-  // Check 2 & 3: Order and buffer times
-  for (let i = 1; i < route.steps.length; i++) {
-    const prevStep = route.steps[i - 1];
-    const currStep = route.steps[i];
-    const prevAssign = posteAssignments.get(prevStep.poste)!;
-    const currAssign = posteAssignments.get(currStep.poste)!;
-
-    // Order check
-    if (currAssign.minuteValue < prevAssign.minuteValue) {
-      errors.push(
-        `Ordre invalide : "${currStep.poste}" (${currAssign.date} ${currAssign.slot}) ` +
-        `est planifie avant "${prevStep.poste}" (${prevAssign.date} ${prevAssign.slot}). ` +
-        `"${prevStep.poste}" doit etre termine en premier.`
-      );
-      continue; // Skip buffer check if order is wrong
-    }
-
-    // Same slot check (can't do dependent steps in the same slot)
-    if (
-      currAssign.date === prevAssign.date &&
-      currAssign.slot === prevAssign.slot
-    ) {
-      errors.push(
-        `"${currStep.poste}" et "${prevStep.poste}" ne peuvent pas etre dans le meme creneau ` +
-        `(${currAssign.date} ${currAssign.slot}). Un tampon de ${currStep.tamponMin} min est requis.`
-      );
-      continue;
-    }
-
-    // Buffer time check
-    const gap = currAssign.minuteValue - prevAssign.minuteValue;
-    if (gap < currStep.tamponMin) {
-      errors.push(
-        `Tampon insuffisant entre "${prevStep.poste}" et "${currStep.poste}" : ` +
-        `${gap} min disponibles, ${currStep.tamponMin} min requis ` +
-        `(${prevAssign.date} ${prevAssign.slot} -> ${currAssign.date} ${currAssign.slot}).`
-      );
-    }
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-}
-
-// ── Auto-scheduling helper ───────────────────────────────────────────
-
-interface SlotCapacity {
-  date: string;
-  slot: Slot;
-  poste: PosteId;
-  availableMinutes: number;
-}
-
-/**
- * Given a type, quantity and available slot capacities, propose an optimal
- * scheduling that respects dependencies and buffer times.
- *
- * Returns an ordered list of proposed assignments, or null if no valid
- * schedule can be found within the given slots.
- */
-export function proposeSchedule(
-  typeId: string,
-  requiredMinutesByPoste: Record<string, number>,
-  availableSlots: SlotCapacity[]
-): Assignment[] | null {
-  const route = ensureCache(typeId);
-  if (!route) return null;
-
-  const result: Assignment[] = [];
-  let minStartMinutes = 0; // Earliest time the next step can begin
-
-  for (const step of route.steps) {
-    const needed = requiredMinutesByPoste[step.poste] ?? 0;
-    if (needed === 0) {
-      // If no time needed at this poste, skip but record a zero-duration assignment
-      // at the earliest available slot to maintain ordering
-      const candidate = availableSlots
-        .filter(
-          (s) =>
-            s.poste === step.poste &&
-            slotToMinutes(s.date, s.slot) >= minStartMinutes
-        )
-        .sort((a, b) => slotToMinutes(a.date, a.slot) - slotToMinutes(b.date, b.slot));
-
-      if (candidate.length > 0) {
-        result.push({
-          poste: step.poste,
-          date: candidate[0].date,
-          slot: candidate[0].slot,
-        });
-        minStartMinutes = slotToMinutes(candidate[0].date, candidate[0].slot) + step.tamponMin;
-      }
-      continue;
-    }
-
-    // Find the first slot at this poste that:
-    // 1. Starts after minStartMinutes (respects buffer from previous step)
-    // 2. Has enough capacity
-    const candidates = availableSlots
-      .filter(
-        (s) =>
-          s.poste === step.poste &&
-          slotToMinutes(s.date, s.slot) >= minStartMinutes &&
-          s.availableMinutes >= needed
-      )
-      .sort((a, b) => slotToMinutes(a.date, a.slot) - slotToMinutes(b.date, b.slot));
-
-    if (candidates.length === 0) return null; // Can't schedule
-
-    const chosen = candidates[0];
-    result.push({
-      poste: step.poste,
-      date: chosen.date,
-      slot: chosen.slot,
-    });
-
-    // Reduce available capacity in the chosen slot
-    chosen.availableMinutes -= needed;
-
-    // Set minimum start for next step
-    const nextStep = route.steps[route.steps.indexOf(step) + 1];
-    if (nextStep) {
-      minStartMinutes =
-        slotToMinutes(chosen.date, chosen.slot) + nextStep.tamponMin;
-    }
-  }
-
-  return result;
-}
-
-// ── All routes (precompute on import) ────────────────────────────────
-
-/** All known type IDs */
-export const ALL_TYPE_IDS = Object.keys(TYPES_MENUISERIE);
-
-// Eagerly populate the cache
-for (const typeId of ALL_TYPE_IDS) {
+// ── Précompilation du cache (au chargement du module) ────────────────
+for (const typeId of Object.keys(TYPES_MENUISERIE)) {
   ensureCache(typeId);
 }
 
-// ── Debug / introspection ────────────────────────────────────────────
-
-/**
- * Return a human-readable description of the production route for a type.
- */
-export function describeRoute(typeId: string): string {
-  const route = ensureCache(typeId);
-  if (!route) return `Type inconnu : "${typeId}"`;
-
-  const tm = TYPES_MENUISERIE[typeId];
-  const label = tm?.label ?? typeId;
-  const steps = route.steps
-    .map((s, i) => {
-      const dep = s.dependsOn ? ` (apres ${s.dependsOn}, tampon ${s.tamponMin}min)` : " (debut)";
-      return `  ${i + 1}. ${s.poste}${dep}`;
-    })
-    .join("\n");
-
-  return `${label} :\n${steps}`;
-}
-
-// ── Compatibilité ancienne API ──────────────────────────────────────
+// ── API publique : routage par poste réel ──────────────────────────
 
 export interface EtapeRoutage {
   postId: string;
@@ -443,19 +152,81 @@ export interface EtapeRoutage {
 }
 
 /**
- * Ancienne API compatible : retourne un tableau d'étapes avec temps estimés.
- * Retourne les postIds spécifiques (C3, F1, M1, V1, etc.) attendus par PlanningAffectations.
+ * Map des temps appris par couple type×poste, fourni par
+ * `/api/cerveau/learned-times`. Format : `{"<typeId>|<phase>": minutes}`.
+ * Quand fourni et qu'il existe une mesure suffisamment échantillonnée,
+ * remplace le temps théorique par le temps réel observé.
+ */
+export type LearnedTimesMap = Record<string, { minutes: number; ratio?: number }>;
+
+/**
+ * Vitrage ISULA déclaré sur la commande (depuis cmd.vitrages).
+ * Sert à générer des étapes I1-I4 dans le routage quand au moins un
+ * vitrage `fournisseur="isula"` existe. Sans ces étapes, les opérateurs
+ * ISULA (Momo, Ali, Bruno, Guillaume) n'apparaissent pas dans la charge.
+ */
+export interface IsulaVitrageInfo {
+  /** Nombre de vitrages ISULA. Si fourni, on calcule les étapes I1-I4. */
+  nbVitrages?: number;
+  /** Vrai si au moins un vitrage > 2000mm OU > 3000mm (grand format). */
+  grandFormat?: boolean;
+}
+
+/**
+ * Extrait l'info ISULA d'une commande (depuis cmd.vitrages).
+ * Renvoie `undefined` si aucun vitrage ISULA.
+ */
+export function isulaInfoFromCmd(cmd: { vitrages?: unknown }): IsulaVitrageInfo | undefined {
+  const v = Array.isArray(cmd.vitrages) ? cmd.vitrages : [];
+  const isulaVit = (v as Array<Record<string, unknown>>).filter(x =>
+    String(x?.fournisseur || "").toLowerCase() === "isula"
+  );
+  if (isulaVit.length === 0) return undefined;
+  const nbVitrages = isulaVit.reduce((s, x) => s + (parseInt(String(x.quantite)) || 1), 0);
+  const grandFormat = isulaVit.some(x =>
+    parseFloat(String(x.largeur)) > 2000 || parseFloat(String(x.hauteur)) > 3000
+  );
+  return { nbVitrages, grandFormat };
+}
+
+/**
+ * Retourne un tableau d'étapes avec temps estimés et postIds spécifiques
+ * (C3, F1, M1, V1, etc.) attendus par PlanningAffectations.
+ *
+ * @param specialFactor multiplicateur grand format (1.0 par défaut, voir
+ *   `specialMultiplier(widthMm)` ou `detectSpecialMultiplier(cmd)` pour
+ *   coulissants/galandages > 4m).
+ * @param learned map de temps appris par "<typeId>|<phase>". Si fourni
+ *   et qu'une mesure existe, applique le ratio appris au temps théorique.
  */
 export function getRoutage(
   typeId: string,
   quantite: number = 1,
   hsTemps?: Record<string, unknown> | null,
+  specialFactor: number = 1.0,
+  learned?: LearnedTimesMap,
+  isula?: IsulaVitrageInfo,
 ): EtapeRoutage[] {
   const tm = TYPES_MENUISERIE[typeId];
   if (!tm) return [];
 
-  const temps = calcTempsType(typeId, quantite, hsTemps as any);
+  const temps = calcTempsType(typeId, quantite, hsTemps as any, specialFactor);
   if (!temps) return [];
+
+  // Application des temps appris : on cherche un ratio par phase
+  // (coupe/frappes/coulissant/vitrage_ov) et on l'applique au temps théorique.
+  const phaseKey = (phase: string) => `${typeId}|${phase}`;
+  const ratioFor = (phase: string): number => {
+    if (!learned) return 1;
+    const e = learned[phaseKey(phase)];
+    if (!e || !e.ratio || e.ratio <= 0) return 1;
+    return e.ratio;
+  };
+
+  // Le multiplicateur grand format ne s'applique qu'au montage et au vitrage
+  // (pas à la coupe ni au contrôle/palette). Voir SPEC section 5.
+  const sfMontage = (tm.famille === "coulissant" || tm.famille === "glandage")
+    ? Math.max(1, specialFactor) : 1;
 
   const etapes: EtapeRoutage[] = [];
   const isPVC = tm.mat === "PVC";
@@ -464,15 +235,20 @@ export function getRoutage(
   const isGland = tm.famille === "glandage";
   const isHS = tm.famille === "hors_standard";
 
+  const rCoupe = ratioFor("coupe");
+  const rFrappes = ratioFor("frappes");
+  const rCoul = ratioFor("coulissant");
+  const rVitrage = ratioFor("vitrage_ov");
+
   // ── Coupe ──
   if (temps.par_poste.coupe > 0) {
     // Décomposer la coupe en sous-postes
-    const lmt = (tm.lmt || 0) * 1 * quantite; // T.coupe_profil = 1 min/pièce
-    const dt = (tm.dt || 0) * 1.5 * quantite;
-    const renfort = (tm.renfort || 0) * 2 * quantite;
+    const lmt = (tm.lmt || 0) * 1 * quantite * rCoupe; // T.coupe_profil = 1 min/pièce
+    const dt = (tm.dt || 0) * 1.5 * quantite * rCoupe;
+    const renfort = (tm.renfort || 0) * 2 * quantite * rCoupe;
     const nbCadres = 1 + tm.ouvrants;
-    const soudure = isPVC && isFrappe ? 5 * nbCadres * quantite : 0;
-    const poincon = !isPVC && isFrappe ? 10 * nbCadres * quantite : 0;
+    const soudure = isPVC && isFrappe ? 5 * nbCadres * quantite * rCoupe : 0;
+    const poincon = !isPVC && isFrappe ? 10 * nbCadres * quantite * rCoupe : 0;
 
     if (lmt > 0) etapes.push({ postId: "C3", label: "Coupe LMT", phase: "coupe", estimatedMin: Math.round(lmt) });
     if (dt > 0)  etapes.push({ postId: "C4", label: "Coupe 2 têtes", phase: "coupe", estimatedMin: Math.round(dt) });
@@ -482,49 +258,73 @@ export function getRoutage(
 
     // Si HS, tout en C3
     if (isHS && etapes.length === 0) {
-      etapes.push({ postId: "C3", label: "Coupe HS", phase: "coupe", estimatedMin: temps.par_poste.coupe });
+      etapes.push({ postId: "C3", label: "Coupe HS", phase: "coupe", estimatedMin: Math.round(temps.par_poste.coupe * rCoupe) });
+    }
+
+    // QC dimensionnel post-coupe : contrôle des cotes avant assemblage.
+    // Référence : best practice menuiserie alu/PVC — la cote est sacrée,
+    // un défaut détecté à ce stade coûte 10× moins qu'à l'assemblage.
+    // Estimation : 1 min/pièce coupée, plafonné à 30 min par chantier.
+    const qcCoupeMin = Math.min(30, Math.round(quantite * 1));
+    if (qcCoupeMin > 0 && !isHS) {
+      etapes.push({ postId: "C3", label: "✓ Contrôle cotes", phase: "coupe", estimatedMin: qcCoupeMin });
     }
   }
 
   // ── Montage ──
+  // temps.par_poste.coulissant inclut déjà sfMontage via calcTempsType.
   if (temps.par_poste.coulissant > 0) {
     const pid = isGland ? "M2" : "M1";
-    etapes.push({ postId: pid, label: isGland ? "Dorm. galandage" : "Dorm. coulissant", phase: "montage", estimatedMin: temps.par_poste.coulissant });
+    etapes.push({ postId: pid, label: isGland ? "Dorm. galandage" : "Dorm. coulissant", phase: "montage", estimatedMin: Math.round(temps.par_poste.coulissant * rCoul) });
   }
   if (temps.par_poste.frappes > 0) {
     if (isHS) {
-      etapes.push({ postId: "MHS", label: "Montage HS", phase: "montage", estimatedMin: temps.par_poste.frappes });
+      etapes.push({ postId: "MHS", label: "Montage HS", phase: "montage", estimatedMin: Math.round(temps.par_poste.frappes * rFrappes) });
     } else if (tm.famille === "porte") {
-      etapes.push({ postId: "M3", label: "Portes ALU", phase: "montage", estimatedMin: temps.par_poste.frappes });
+      etapes.push({ postId: "M3", label: "Portes ALU", phase: "montage", estimatedMin: Math.round(temps.par_poste.frappes * rFrappes) });
     } else {
       // Frappes : répartir entre F1 (dormant), F2 (ouvrants+ferrage+vitrage), F3 (mise en bois+contrôle)
-      const ferrage = 10 * tm.ouvrants * quantite;
-      const prep = 5 * quantite;
-      const meb = 5 * quantite;
-      const controle = (2 + 5) * quantite;
+      // Note : pas de multiplicateur grand format pour les frappes (voir SPEC).
+      const ferrage = 10 * tm.ouvrants * quantite * rFrappes;
+      const prep = 5 * quantite * rFrappes;
+      const meb = 5 * quantite * rFrappes;
+      const controle = (2 + 5) * quantite * rFrappes;
       etapes.push({ postId: "F1", label: "Dorm. frappe", phase: "montage", estimatedMin: Math.round(prep) });
       etapes.push({ postId: "F2", label: "Ouv.+ferrage", phase: "montage", estimatedMin: Math.round(ferrage) });
       etapes.push({ postId: "F3", label: "Mise bois+CQ", phase: "montage", estimatedMin: Math.round(meb + controle) });
     }
   }
 
+  // ── ISULA Vitrage isolant ──
+  // Si la commande contient des vitrages ISULA, on génère les étapes I1-I4
+  // pour que les opérateurs ISULA reçoivent du travail dans le planning.
+  // Estimations standard (calibrables) :
+  //   I1 réception : 5 min/vitrage
+  //   I2 coupe verre : 15 min/vitrage standard, 25 min si grand format
+  //   I3 coupe intercalaire : 8 min/vitrage
+  //   I4 assemblage VI : 24 min/vitrage standard, 40 min si grand format
+  if (isula && isula.nbVitrages && isula.nbVitrages > 0) {
+    const n = isula.nbVitrages;
+    const isGF = !!isula.grandFormat;
+    const i1 = n * 5;
+    const i2 = n * (isGF ? 25 : 15);
+    const i3 = n * 8;
+    const i4 = n * (isGF ? 40 : 24);
+    etapes.push({ postId: "I1", label: "Réception verre", phase: "isula", estimatedMin: i1 });
+    etapes.push({ postId: "I2", label: isGF ? "Coupe verre (GF)" : "Coupe verre", phase: "isula", estimatedMin: i2 });
+    etapes.push({ postId: "I3", label: "Coupe intercalaire", phase: "isula", estimatedMin: i3 });
+    etapes.push({ postId: "I4", label: isGF ? "Assemblage VI (GF)" : "Assemblage VI", phase: "isula", estimatedMin: i4 });
+  }
+
   // ── Vitrage ──
+  // temps.par_poste.vitrage_ov inclut déjà sfMontage pour coul/gland.
   if (temps.par_poste.vitrage_ov > 0) {
     const pid = (isCoul || isGland) ? "V2" : isHS ? "V1" : "V1";
-    etapes.push({ postId: pid, label: (isCoul || isGland) ? "Vitr. Coul/Gal" : "Vitr. Frappe", phase: "vitrage", estimatedMin: temps.par_poste.vitrage_ov });
+    const lbl = (isCoul || isGland)
+      ? (sfMontage > 1 ? `Vitr. Coul/Gal ×${sfMontage}` : "Vitr. Coul/Gal")
+      : "Vitr. Frappe";
+    etapes.push({ postId: pid, label: lbl, phase: "vitrage", estimatedMin: Math.round(temps.par_poste.vitrage_ov * rVitrage) });
   }
 
   return etapes.filter(e => e.estimatedMin > 0);
-}
-
-/**
- * Matrice complète de tous les types avec leurs routages.
- */
-export function getMatriceRoutage() {
-  return Object.keys(TYPES_MENUISERIE).map(id => ({
-    typeId: id,
-    label: TYPES_MENUISERIE[id].label,
-    etapes: getRoutage(id, 1),
-    totalMin: getRoutage(id, 1).reduce((s: number, e: EtapeRoutage) => s + e.estimatedMin, 0),
-  }));
 }

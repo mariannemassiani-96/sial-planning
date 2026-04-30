@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { computeAutoSemaines, AUTO_PLANNING_OUTPUTS } from "@/lib/auto-planning";
 
 let _columnsOk = false;
 async function ensureColumns() {
@@ -20,6 +21,20 @@ async function ensureColumns() {
 }
 
 function mapToDb(data: any) {
+  // Auto-planning : si les semaines ne sont pas explicitement saisies,
+  // on les calcule à partir de la date de livraison et des règles SPEC.
+  const autoSem = computeAutoSemaines({
+    date_livraison_souhaitee: data.date_livraison_souhaitee,
+    dates_livraisons: data.dates_livraisons,
+    aucune_menuiserie: data.aucune_menuiserie,
+    aucun_vitrage: data.aucun_vitrage,
+    vitrages: data.vitrages,
+  });
+  const sem: Record<string, string | null> = {};
+  for (const k of AUTO_PLANNING_OUTPUTS) {
+    sem[k] = data[k] !== undefined ? data[k] : autoSem[k];
+  }
+
   return {
     num_commande:            data.num_commande            || "",
     client:                  data.client                  || "",
@@ -75,6 +90,11 @@ function mapToDb(data: any) {
     reliquat_accessoires_date: data.reliquat_accessoires_date || null,
     nb_livraisons:             parseInt(data.nb_livraisons)   || 1,
     dates_livraisons:          data.dates_livraisons          ?? null,
+    semaine_logistique:        sem.semaine_logistique,
+    semaine_coupe:             sem.semaine_coupe,
+    semaine_montage:           sem.semaine_montage,
+    semaine_vitrage:           sem.semaine_vitrage,
+    semaine_isula:             sem.semaine_isula,
   };
 }
 

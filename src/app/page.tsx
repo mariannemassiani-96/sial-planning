@@ -23,7 +23,10 @@ import PointageJour from "@/components/tabs/PointageJour";
 import AffichageAtelier from "@/components/tabs/AffichageAtelier";
 import PlanningCommandes from "@/components/tabs/PlanningCommandes";
 import PlanningAffectations from "@/components/tabs/PlanningAffectations";
+import Aujourdhui from "@/components/tabs/Aujourdhui";
 import StatsAdmin from "@/components/tabs/StatsAdmin";
+import ChargeCapacite from "@/components/tabs/ChargeCapacite";
+import Chauffeurs from "@/components/tabs/Chauffeurs";
 import AdminUsers from "@/components/tabs/AdminUsers";
 import GestionCompetences from "@/components/tabs/GestionCompetences";
 import TutoAJ from "@/components/TutoAJ";
@@ -67,7 +70,7 @@ export default function HomePage() {
   })();
 
 
-  const [ong, setOng] = useState(initNav.tab || "planning_fab");
+  const [ong, setOng] = useState(initNav.tab || "aujourdhui");
   const [commandes, setCommandes] = useState<CommandeCC[]>([]);
   const [cmdEdit, setCmdEdit] = useState<CommandeCC | null>(null);
   const [editReturnTab, setEditReturnTab] = useState<string>("carnet");
@@ -155,51 +158,77 @@ export default function HomePage() {
     return userPerms.tabs.includes(tabId);
   };
 
-  // ── Navigation — onglets filtrés par permissions ──────────────────────────
-  const allNav = [
-    { id: "planning_fab",    l: "📅 Planning" },
-    { id: "dashboard",       l: `🏠 Suivi${retards > 0 ? ` ⚠${retards}` : ""}`, alert: critiques },
-    { id: "livraison",       l: "🚚 Livraisons" },
-    { id: "chargements",     l: "📦 Chargements" },
-    { id: "saisie",          l: "➕ Commande" },
-    { id: "carnet",          l: `📂 Commandes (${commandes.length})` },
-    { id: "rh",              l: "👥 Équipe" },
-    { id: "pointage",        l: "✅ Pointage" },
-    { id: "affichage_atelier", l: "📺 Atelier" },
-    { id: "isula",           l: "🔷 ISULA" },
-    { id: "qualite",         l: "✅ Qualité" },
-    { id: "stocks",          l: `📦 Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
-    { id: "referentiel",     l: "📐 Référentiel" },
-    { id: "import_csv",      l: "📥 Import" },
-    { id: "stats_admin",     l: "📊 Stats" },
-    ...(isAdmin ? [{ id: "admin_users", l: "⚙ Admin" }] : []),
+  // ── Navigation — 2 niveaux : 7 groupes + sous-onglets ────────────────────
+  // Refonte UX : passage de 18 onglets plats → 7 groupes thématiques.
+  // Le rendu reste basé sur `ong` (id de sous-onglet) pour rétro-compat.
+  interface NavTab { id: string; l: string; alert?: boolean }
+  interface NavGroup { id: string; l: string; tabs: NavTab[] }
+
+  const NAV_GROUPS: NavGroup[] = [
+    {
+      id: "g_aujourdhui", l: `🌅 Aujourd'hui${retards > 0 ? ` ⚠${retards}` : ""}`,
+      tabs: [{ id: "aujourdhui", l: "Aujourd'hui", alert: critiques }],
+    },
+    {
+      id: "g_planning", l: "📅 Planning",
+      tabs: [
+        { id: "planning_fab", l: "Hebdo (commandes & affectations)" },
+        { id: "charge",       l: "Charge 8 sem." },
+        { id: "dashboard",    l: `Suivi & crise${retards > 0 ? ` (${retards})` : ""}` },
+      ],
+    },
+    {
+      id: "g_commandes", l: `📂 Commandes (${commandes.length})`,
+      tabs: [
+        { id: "carnet", l: "Carnet" },
+        { id: "saisie", l: "➕ Nouvelle" },
+      ],
+    },
+    {
+      id: "g_logistique", l: "🚚 Logistique",
+      tabs: [
+        { id: "livraison",   l: "Livraisons" },
+        { id: "chargements", l: "Chargements" },
+        { id: "chauffeurs",  l: "Chauffeurs" },
+      ],
+    },
+    {
+      id: "g_equipe", l: "👥 Équipe",
+      tabs: [
+        { id: "rh",       l: "Planning RH & Compétences" },
+        { id: "pointage", l: "Pointage rétro" },
+      ],
+    },
+    {
+      id: "g_atelier", l: "🏭 Atelier",
+      tabs: [
+        { id: "affichage_atelier", l: "Affichage TV" },
+        { id: "isula",             l: "ISULA & vitrages" },
+        { id: "qualite",           l: "Qualité" },
+        { id: "stocks",            l: `Stocks${ruptures > 0 ? ` ⚠${ruptures}` : ""}`, alert: ruptures > 0 },
+      ],
+    },
+    {
+      id: "g_reglages", l: "⚙ Réglages",
+      tabs: [
+        { id: "referentiel", l: "Référentiel" },
+        { id: "stats_admin", l: "Stats" },
+        { id: "import_csv",  l: "Import CSV" },
+        ...(isAdmin ? [{ id: "admin_users", l: "Utilisateurs" }] : []),
+      ],
+    },
   ];
-  const filteredNav = allNav.filter(o => o.id === "admin_users" || canSeeTab(o.id));
 
-  // Ordre personnalisé des onglets (sauvé dans localStorage)
-  const [tabOrder, setTabOrder] = useState<string[]>(() => {
-    if (typeof window === "undefined") return [];
-    try { const s = localStorage.getItem("sial_tab_order"); return s ? JSON.parse(s) : []; } catch { return []; }
-  });
-  const [dragTab, setDragTab] = useState<string | null>(null);
+  // Filtrer par permissions : un groupe est visible s'il a au moins 1 tab visible.
+  const filteredGroups = NAV_GROUPS
+    .map(g => ({ ...g, tabs: g.tabs.filter(t => t.id === "admin_users" || canSeeTab(t.id)) }))
+    .filter(g => g.tabs.length > 0);
 
-  // Appliquer l'ordre personnalisé + filtrage permissions
-  const nav = tabOrder.length > 0
-    ? tabOrder.map(id => filteredNav.find(n => n.id === id)).filter(Boolean).concat(filteredNav.filter(n => !tabOrder.includes(n.id))) as typeof filteredNav
-    : filteredNav;
+  // Trouver le groupe actif depuis `ong` courant
+  const currentGroup = filteredGroups.find(g => g.tabs.some(t => t.id === ong)) ?? filteredGroups[0];
 
-  const onDropTab = (targetId: string) => {
-    if (!dragTab || dragTab === targetId) return;
-    const ids = nav.map(n => n.id);
-    const fromIdx = ids.indexOf(dragTab);
-    const toIdx = ids.indexOf(targetId);
-    if (fromIdx < 0 || toIdx < 0) return;
-    ids.splice(fromIdx, 1);
-    ids.splice(toIdx, 0, dragTab);
-    setTabOrder(ids);
-    try { localStorage.setItem("sial_tab_order", JSON.stringify(ids)); } catch {}
-    setDragTab(null);
-  };
+  // (drag-and-drop personnalisé des onglets supprimé avec la refonte en 7 groupes :
+  // l'ordre canonique métier est désormais imposé pour la cohérence d'équipe)
 
   const addCommande = async (cmd: CommandeCC) => {
     try {
@@ -263,17 +292,22 @@ export default function HomePage() {
     } catch {}
   };
 
-  // ── Onglets prioritaires pour la bottom nav mobile ──
-  const mobileMainTabs = ["planning_fab", "carnet", "pointage", "rh", "isula"];
-  const mobileMainNav = nav.filter(o => mobileMainTabs.includes(o.id));
-  const mobileMoreNav = nav.filter(o => !mobileMainTabs.includes(o.id));
+  // ── Mobile bottom nav : groupes prioritaires + bouton "Plus" ──
+  // 4 groupes en bottom + Plus pour les autres. Aujourd'hui/Planning/
+  // Commandes/Atelier sont les plus utilisés au quotidien.
+  const mobileMainGroupIds = ["g_aujourdhui", "g_planning", "g_commandes", "g_atelier"];
+  const mobileMainGroups = filteredGroups.filter(g => mobileMainGroupIds.includes(g.id));
+  const mobileMoreGroups = filteredGroups.filter(g => !mobileMainGroupIds.includes(g.id));
 
-  // Icônes courtes pour mobile bottom nav
-  const mobileIcons: Record<string, string> = {
-    planning_fab: "📅", carnet: "📂", pointage: "✅", rh: "👥", isula: "🔷",
-    dashboard: "🏠", livraison: "🚚", chargements: "📦", saisie: "➕", affichage_atelier: "📺",
-    qualite: "✓", stocks: "📦", referentiel: "📐", import_csv: "📥",
-    stats_admin: "📊", admin_users: "⚙",
+  // Icônes courtes pour la bottom nav mobile (extraits depuis le label du groupe)
+  const groupShortLabel = (g: NavGroup): string => {
+    // Premier emoji + premier mot
+    const m = g.l.match(/^(\S+)\s+(\S+)/);
+    return m ? m[2].replace(/[^\wÀ-ÿ]/g, "") : g.l;
+  };
+  const groupIcon = (g: NavGroup): string => {
+    const m = g.l.match(/^(\S+)/);
+    return m ? m[1] : "•";
   };
 
   return (
@@ -312,26 +346,58 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* ══ DESKTOP NAV (top tabs) ═════════════════════════════════════════ */}
+      {/* ══ DESKTOP NAV (2 niveaux : groupes + sous-onglets) ═══════════════ */}
       {!mobile && (
-        <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, paddingLeft: 16, background: C.s1, overflowX: "auto" }}>
-          {nav.map(o => (
-            <button key={o.id}
-              draggable
-              onDragStart={() => setDragTab(o.id)}
-              onDragOver={e => e.preventDefault()}
-              onDrop={() => onDropTab(o.id)}
-              onClick={() => { if (o.id !== "saisie") setCmdEdit(null); setOng(o.id); }}
-              style={{
-                padding: "10px 14px", background: dragTab === o.id ? C.orange + "22" : "none",
-                border: "none", borderBottom: `2px solid ${ong === o.id ? C.orange : "transparent"}`,
-                color: ong === o.id ? C.text : o.alert ? C.red : C.sec,
-                fontSize: 12, fontWeight: ong === o.id ? 700 : 400, cursor: "grab", whiteSpace: "nowrap",
-              }}>
-              {o.l}
-            </button>
-          ))}
-        </div>
+        <>
+          {/* Niveau 1 : groupes thématiques */}
+          <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, paddingLeft: 16, background: C.s1, overflowX: "auto" }}>
+            {filteredGroups.map(g => {
+              const isActive = currentGroup?.id === g.id;
+              const hasAlert = g.tabs.some(t => t.alert);
+              return (
+                <button key={g.id}
+                  onClick={() => {
+                    if (!g.tabs[0]) return;
+                    if (g.tabs[0].id !== "saisie") setCmdEdit(null);
+                    setOng(g.tabs[0].id);
+                  }}
+                  style={{
+                    padding: "10px 18px", background: isActive ? C.orange + "11" : "none",
+                    border: "none",
+                    borderBottom: `3px solid ${isActive ? C.orange : "transparent"}`,
+                    color: isActive ? C.text : hasAlert ? C.red : C.sec,
+                    fontSize: 13, fontWeight: isActive ? 800 : 600, cursor: "pointer", whiteSpace: "nowrap",
+                  }}>
+                  {g.l}
+                </button>
+              );
+            })}
+          </div>
+          {/* Niveau 2 : sous-onglets du groupe actif (caché si 1 seul) */}
+          {currentGroup && currentGroup.tabs.length > 1 && (
+            <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, paddingLeft: 24, background: C.bg, overflowX: "auto" }}>
+              {currentGroup.tabs.map(t => {
+                const isActive = ong === t.id;
+                return (
+                  <button key={t.id}
+                    onClick={() => {
+                      if (t.id !== "saisie") setCmdEdit(null);
+                      setOng(t.id);
+                    }}
+                    style={{
+                      padding: "8px 14px", background: "none",
+                      border: "none",
+                      borderBottom: `2px solid ${isActive ? C.orange : "transparent"}`,
+                      color: isActive ? C.orange : t.alert ? C.red : C.muted,
+                      fontSize: 11, fontWeight: isActive ? 700 : 500, cursor: "pointer", whiteSpace: "nowrap",
+                    }}>
+                    {t.l}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
       {/* ══ CONTENU ════════════════════════════════════════════════════════ */}
@@ -349,6 +415,9 @@ export default function HomePage() {
                 <button onClick={fetchAll} style={{ marginLeft: 12, padding: "4px 10px", background: C.red, border: "none", borderRadius: 4, color: "#fff", cursor: "pointer", fontSize: 11 }}>Recharger</button>
               </div>
             )}
+            {ong === "aujourdhui" && <Aujourdhui commandes={commandes} stocks={stocks} onNav={setOng} />}
+            {/* Planning hebdo : Commandes + Affectations en sous-onglets internes
+                conservés (gros composant unique avec son onglet interne). */}
             {ong === "planning_fab" && (
               <>
                 <SubTabs
@@ -360,8 +429,8 @@ export default function HomePage() {
                 {planningSub === "affectations" && <PlanningAffectations commandes={commandes} viewWeek={planningWeek} onPatch={patchCommande} onWeekChange={setPlanningWeek} />}
               </>
             )}
-
-            {/* Tableau de bord + Crise fusionnés */}
+            {ong === "charge" && <ChargeCapacite commandes={commandes} />}
+            {/* Suivi : Dashboard + Crise en sous-onglets internes */}
             {ong === "dashboard" && (
               <>
                 <SubTabs
@@ -374,12 +443,16 @@ export default function HomePage() {
               </>
             )}
 
-            {ong === "saisie" && <SaisieCommande key={String(cmdEdit?.id || "new")} onAjouter={addCommande} commande={cmdEdit} onModifier={modifCommande} />}
+            {/* 📂 Commandes */}
             {ong === "carnet" && <Carnet commandes={commandes} onDelete={delCommande} onEdit={editCommande} onPatch={patchCommande} savedFiltersState={carnetFilters} onFiltersChange={setCarnetFilters} />}
+            {ong === "saisie" && <SaisieCommande key={String(cmdEdit?.id || "new")} onAjouter={addCommande} commande={cmdEdit} onModifier={modifCommande} />}
+
+            {/* 🚚 Logistique */}
             {ong === "livraison" && <PlanningLivraison commandes={commandes} onPatch={patchCommande} onEdit={editCommande} />}
             {ong === "chargements" && <PlanningChargements commandes={commandes} onPatch={patchCommande} onEdit={editCommande} />}
+            {ong === "chauffeurs" && <Chauffeurs />}
 
-            {/* Équipe SIAL + Compétences fusionnés */}
+            {/* 👥 Équipe : Planning RH + Compétences en sous-onglets internes */}
             {ong === "rh" && (
               <>
                 <SubTabs
@@ -391,11 +464,10 @@ export default function HomePage() {
                 {rhSub === "competences" && <GestionCompetences />}
               </>
             )}
-
             {ong === "pointage" && <PointageJour commandes={commandes} onPatch={patchCommande} />}
-            {ong === "affichage_atelier" && <AffichageAtelier commandes={commandes} stocks={stocks} />}
 
-            {/* Planning ISULA + Besoins Vitrages fusionnés */}
+            {/* 🏭 Atelier */}
+            {ong === "affichage_atelier" && <AffichageAtelier commandes={commandes} stocks={stocks} />}
             {ong === "isula" && (
               <>
                 <SubTabs
@@ -407,11 +479,10 @@ export default function HomePage() {
                 {isulaSub === "besoins" && <BesoinVitrages commandes={commandes} />}
               </>
             )}
-
             {ong === "qualite" && <Qualite />}
             {ong === "stocks" && <StocksTampons stocksTampons={stocks} onUpdate={updateStock} />}
 
-            {/* Nomenclature + Simulateur fusionnés */}
+            {/* ⚙ Réglages */}
             {ong === "referentiel" && (
               <>
                 <SubTabs
@@ -423,9 +494,8 @@ export default function HomePage() {
                 {refSub === "simulateur" && <Simulateur />}
               </>
             )}
-
-            {ong === "import_csv" && <ImportCSV onRefresh={fetchAll} />}
             {ong === "stats_admin" && <StatsAdmin />}
+            {ong === "import_csv" && <ImportCSV onRefresh={fetchAll} />}
             {ong === "admin_users" && isAdmin && <AdminUsers />}
           </>
         )}
@@ -433,10 +503,10 @@ export default function HomePage() {
       {!mobile && <TutoAJ onGoToDashboard={() => setOng("planning_fab")} />}
       <AssistantIA />
 
-      {/* ══ MOBILE BOTTOM NAV ═══════════════════════════════════════════ */}
+      {/* ══ MOBILE BOTTOM NAV (par groupes) ═══════════════════════════════ */}
       {mobile && (
         <>
-          {/* Menu "plus" overlay */}
+          {/* Menu "plus" overlay : autres groupes + leurs sous-onglets */}
           {mobileMenuOpen && (
             <div
               style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 998 }}
@@ -447,46 +517,80 @@ export default function HomePage() {
                   position: "absolute", bottom: 64, left: 0, right: 0,
                   background: C.s1, borderTop: `1px solid ${C.border}`,
                   borderRadius: "16px 16px 0 0", padding: "16px 12px",
-                  maxHeight: "50vh", overflowY: "auto",
+                  maxHeight: "70vh", overflowY: "auto",
                 }}
                 onClick={e => e.stopPropagation()}
               >
-                <div style={{ fontSize: 11, fontWeight: 700, color: C.sec, marginBottom: 8, letterSpacing: 1 }}>AUTRES ONGLETS</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                  {mobileMoreNav.map(o => (
-                    <button
-                      key={o.id}
-                      onClick={() => { setOng(o.id); setMobileMenuOpen(false); }}
-                      style={{
-                        padding: "10px 8px", background: ong === o.id ? C.orange + "22" : C.bg,
-                        border: `1px solid ${ong === o.id ? C.orange : C.border}`,
-                        borderRadius: 8, cursor: "pointer",
-                        display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-                      }}
-                    >
-                      <span style={{ fontSize: 18 }}>{mobileIcons[o.id] ?? "📋"}</span>
-                      <span style={{ fontSize: 10, color: ong === o.id ? C.orange : C.sec, fontWeight: ong === o.id ? 700 : 400 }}>
-                        {o.l.replace(/[^\w\sÀ-ÿ()]/g, "").trim().split(" ").slice(0, 2).join(" ")}
-                      </span>
-                    </button>
-                  ))}
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.sec, marginBottom: 10, letterSpacing: 1 }}>
+                  AUTRES SECTIONS
                 </div>
+                {mobileMoreGroups.map(g => (
+                  <div key={g.id} style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 6 }}>{g.l}</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                      {g.tabs.map(t => (
+                        <button key={t.id}
+                          onClick={() => { if (t.id !== "saisie") setCmdEdit(null); setOng(t.id); setMobileMenuOpen(false); }}
+                          style={{
+                            padding: "10px 12px", background: ong === t.id ? C.orange + "22" : C.bg,
+                            border: `1px solid ${ong === t.id ? C.orange : C.border}`,
+                            borderRadius: 8, cursor: "pointer", textAlign: "left",
+                            color: ong === t.id ? C.orange : t.alert ? C.red : C.sec,
+                            fontSize: 11, fontWeight: ong === t.id ? 700 : 500,
+                          }}>
+                          {t.l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
 
-          {/* Bottom bar */}
+          {/* Sous-onglets visibles en bandeau au-dessus de la bottom bar
+              uniquement si le groupe actif a >1 sous-onglet */}
+          {currentGroup && currentGroup.tabs.length > 1 && (
+            <div style={{
+              position: "fixed", bottom: 60, left: 0, right: 0, zIndex: 996,
+              background: C.s1, borderTop: `1px solid ${C.border}`,
+              display: "flex", overflowX: "auto", height: 36,
+            }}>
+              {currentGroup.tabs.map(t => {
+                const active = ong === t.id;
+                return (
+                  <button key={t.id}
+                    onClick={() => { if (t.id !== "saisie") setCmdEdit(null); setOng(t.id); }}
+                    style={{
+                      padding: "8px 12px", background: "none", border: "none",
+                      borderBottom: `2px solid ${active ? C.orange : "transparent"}`,
+                      color: active ? C.orange : t.alert ? C.red : C.muted,
+                      fontSize: 10, fontWeight: active ? 700 : 500, cursor: "pointer", whiteSpace: "nowrap",
+                    }}>
+                    {t.l}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Bottom bar : 4 groupes principaux + Plus */}
           <div style={{
             position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 997,
             background: C.s1, borderTop: `1px solid ${C.border}`,
             display: "flex", justifyContent: "space-around", alignItems: "stretch",
             height: 60, paddingBottom: "env(safe-area-inset-bottom, 0px)",
           }}>
-            {mobileMainNav.map(o => {
-              const active = ong === o.id;
+            {mobileMainGroups.map(g => {
+              const active = currentGroup?.id === g.id;
               return (
-                <button key={o.id}
-                  onClick={() => { setOng(o.id); setMobileMenuOpen(false); }}
+                <button key={g.id}
+                  onClick={() => {
+                    if (!g.tabs[0]) return;
+                    if (g.tabs[0].id !== "saisie") setCmdEdit(null);
+                    setOng(g.tabs[0].id);
+                    setMobileMenuOpen(false);
+                  }}
                   style={{
                     flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
                     justifyContent: "center", gap: 2,
@@ -494,9 +598,9 @@ export default function HomePage() {
                     borderTop: `2px solid ${active ? C.orange : "transparent"}`,
                   }}
                 >
-                  <span style={{ fontSize: 20 }}>{mobileIcons[o.id] ?? "📋"}</span>
+                  <span style={{ fontSize: 20 }}>{groupIcon(g)}</span>
                   <span style={{ fontSize: 9, color: active ? C.orange : C.sec, fontWeight: active ? 700 : 400 }}>
-                    {o.l.replace(/[^\w\sÀ-ÿ]/g, "").trim().split(" ")[0]}
+                    {groupShortLabel(g)}
                   </span>
                 </button>
               );
