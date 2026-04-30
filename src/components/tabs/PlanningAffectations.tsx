@@ -1,7 +1,7 @@
 "use client";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { C, EQUIPE, TYPES_MENUISERIE, hm, CommandeCC, JOURS_FERIES, specialMultiplier } from "@/lib/sial-data";
-import { getRoutage, type LearnedTimesMap } from "@/lib/routage-production";
+import { getRoutage, isulaInfoFromCmd, type LearnedTimesMap } from "@/lib/routage-production";
 import {
   postShortLabel, postCapacityMinDay, postMaxOperators, postTamponAfter,
   chooseNbOps, detectStrategy, postIsMonolithic,
@@ -368,7 +368,9 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
 
       // Agréger les temps par poste pour cette commande
       const cmdPostTotals: Record<string, { min: number; phase: string }> = {};
-      for (const ligne of lignes) {
+      const isulaInfo = isulaInfoFromCmd(cmd as any);
+      for (let li = 0; li < lignes.length; li++) {
+        const ligne = lignes[li];
         const lType = ligne.type || cmd.type;
         if (lType === "intervention_chantier") continue;
         const lQte = parseInt(ligne.quantite) || cmd.quantite || 1;
@@ -376,7 +378,10 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage,
         } : (cmd as any).hsTemps;
         const lSf = specialMultiplier(parseFloat(ligne?.largeur_mm) || parseFloat(ligne?.largeur) || 0);
-        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf, learnedTimes);
+        // L'info ISULA est globale au chantier — passée à la 1re ligne uniquement
+        // pour ne pas dupliquer les étapes I1-I4.
+        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf, learnedTimes,
+          li === 0 ? isulaInfo : undefined);
         for (const e of routage) {
           if (!cmdPostTotals[e.postId]) cmdPostTotals[e.postId] = { min: 0, phase: e.phase };
           cmdPostTotals[e.postId].min += e.estimatedMin;
@@ -1525,7 +1530,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         if ((cmd as any)[field] !== viewWeek) continue;
 
         // Vérifier si cette phase a des postes non couverts
-        const routage = getRoutage(cmd.type, cmd.quantite, (cmd as any).hsTemps as Record<string, unknown> | null, 1.0, learnedTimes);
+        const routage = getRoutage(cmd.type, cmd.quantite, (cmd as any).hsTemps as Record<string, unknown> | null, 1.0, learnedTimes, isulaInfoFromCmd(cmd as any));
         const phasePostIds = routage.filter(e => e.phase === ph).map(e => e.postId);
         const hasUncovered = phasePostIds.some(pid => coverage.uncoveredPosts.some(u => u.postId === pid));
 
@@ -2449,13 +2454,16 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         const lignes = Array.isArray(cmd.lignes) && cmd.lignes.length > 0 ? cmd.lignes : [{ type: cmd.type, quantite: cmd.quantite }];
         // Agréger par poste (une seule ligne par poste)
         const postTotals: Record<string, { label: string; min: number; phase: string }> = {};
-        for (const ligne of lignes) {
+        const detailIsulaInfo = isulaInfoFromCmd(cmd);
+        for (let li = 0; li < lignes.length; li++) {
+          const ligne = lignes[li];
           const lType = ligne.type || cmd.type;
           if (lType === "intervention_chantier") continue;
           const lQte = parseInt(ligne.quantite) || cmd.quantite || 1;
           const lHs = lType === "hors_standard" ? { t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage } : cmd.hsTemps;
           const lSf = specialMultiplier(parseFloat(ligne?.largeur_mm) || parseFloat(ligne?.largeur) || 0);
-          const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf, learnedTimes);
+          const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf, learnedTimes,
+            li === 0 ? detailIsulaInfo : undefined);
           for (const e of routage) {
             if (!postTotals[e.postId]) postTotals[e.postId] = { label: e.label, min: 0, phase: e.phase };
             postTotals[e.postId].min += e.estimatedMin;

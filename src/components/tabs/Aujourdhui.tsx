@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { C, calcCheminCritique, fmtDate, CommandeCC, JOURS_FERIES, getWeekNum, specialMultiplier } from "@/lib/sial-data";
 import { postShortLabel, type Phase as WorkPostPhase } from "@/lib/work-posts";
-import { getRoutage } from "@/lib/routage-production";
+import { getRoutage, isulaInfoFromCmd } from "@/lib/routage-production";
 import { calcCriticalRatio, detectBottleneck, calcTakt } from "@/lib/scheduling-priority";
 import { suggestModeJourSemaine, type ModeJour } from "@/lib/heijunka";
 import AndonPanel from "@/components/AndonPanel";
@@ -207,7 +207,9 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
       const lignes = Array.isArray(a.lignes) && a.lignes.length > 0
         ? a.lignes
         : [{ type: cmd.type, quantite: cmd.quantite }];
-      for (const ligne of lignes) {
+      const isulaInfo = isulaInfoFromCmd(a);
+      for (let li = 0; li < lignes.length; li++) {
+        const ligne = lignes[li];
         const lType = ligne.type || cmd.type;
         if (lType === "intervention_chantier") continue;
         const lQte = parseInt(ligne.quantite) || cmd.quantite || 1;
@@ -215,7 +217,8 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
           ? { t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage }
           : a.hsTemps;
         const lSf = specialMultiplier(parseFloat(ligne?.largeur_mm) || parseFloat(ligne?.largeur) || 0);
-        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf);
+        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf, undefined,
+          li === 0 ? isulaInfo : undefined);
         for (const e of routage) {
           const k = `${ch}|${e.postId}`;
           map.set(k, (map.get(k) || 0) + e.estimatedMin);
@@ -367,7 +370,9 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
       if (semCoupe !== monday) continue;
       const lignes = Array.isArray(a.lignes) && a.lignes.length > 0
         ? a.lignes : [{ type: cmd.type, quantite: cmd.quantite }];
-      for (const ligne of lignes) {
+      const isulaInfoBN = isulaInfoFromCmd(a);
+      for (let li = 0; li < lignes.length; li++) {
+        const ligne = lignes[li];
         const lType = ligne.type || cmd.type;
         if (lType === "intervention_chantier") continue;
         const lQte = parseInt(ligne.quantite) || cmd.quantite || 1;
@@ -375,7 +380,8 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
           ? { t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage }
           : a.hsTemps;
         const lSf = specialMultiplier(parseFloat(ligne?.largeur_mm) || parseFloat(ligne?.largeur) || 0);
-        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf);
+        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf, undefined,
+          li === 0 ? isulaInfoBN : undefined);
         for (const e of routage) {
           if (!work[e.postId]) work[e.postId] = { totalMin: 0 };
           work[e.postId].totalMin += e.estimatedMin;

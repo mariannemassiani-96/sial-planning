@@ -4,15 +4,37 @@ Deux migrations sont prêtes mais pas encore appliquées en production.
 Le code est rétro-compatible (fallback gracieux), mais pour bénéficier
 pleinement des fonctionnalités, applique-les avec :
 
+## Commandes prêtes
+
 ```bash
 # Vérifier le statut des migrations
-npx prisma migrate status
+npm run db:status
 
 # Appliquer en production (mode maintenance recommandé : ~30 secondes)
-DATABASE_URL=$DATABASE_URL_PROD npx prisma migrate deploy
+DATABASE_URL=$DATABASE_URL_PROD npm run db:migrate
 
-# Régénérer le client Prisma (si besoin)
-npx prisma generate
+# (Régénération du client incluse dans la build, mais possible manuellement)
+npm run db:generate
+```
+
+## Variables d'environnement
+
+```bash
+# .env (à la racine)
+DATABASE_URL="postgresql://sial_app:PASSWORD@37.187.250.4:5432/sial-planning"
+```
+
+Pour tester localement la migration sur une copie locale :
+
+```bash
+# Créer une BDD locale de test
+createdb sial_planning_test
+
+# Lancer la migration en mode dev (interactif)
+DATABASE_URL=postgresql://localhost:5432/sial_planning_test npm run db:migrate:dev
+
+# Lancer le test de planification après migration
+npm run test:planif
 ```
 
 ## 1. `20260429_workpost_planning_autonome`

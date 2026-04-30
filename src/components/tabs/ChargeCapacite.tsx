@@ -11,7 +11,7 @@
 "use client";
 import { useMemo, useState, useEffect } from "react";
 import { C, CommandeCC, hm, JOURS_FERIES, specialMultiplier, getWeekNum } from "@/lib/sial-data";
-import { getRoutage } from "@/lib/routage-production";
+import { getRoutage, isulaInfoFromCmd } from "@/lib/routage-production";
 import { postShortLabel, postCapacityMinDay, WORK_POSTS } from "@/lib/work-posts";
 import { computeAllOEE, type OEEResult } from "@/lib/oee";
 import { H } from "@/components/ui";
@@ -101,7 +101,9 @@ export default function ChargeCapacite({ commandes }: { commandes: CommandeCC[] 
       // Charge par poste depuis le routage
       const lignes = Array.isArray(a.lignes) && a.lignes.length > 0
         ? a.lignes : [{ type: cmd.type, quantite: cmd.quantite }];
-      for (const ligne of lignes) {
+      const isulaInfo = isulaInfoFromCmd(a);
+      for (let li = 0; li < lignes.length; li++) {
+        const ligne = lignes[li];
         const lType = ligne.type || cmd.type;
         if (lType === "intervention_chantier") continue;
         const lQte = parseInt(ligne.quantite) || cmd.quantite || 1;
@@ -109,7 +111,8 @@ export default function ChargeCapacite({ commandes }: { commandes: CommandeCC[] 
           ? { t_coupe: ligne.hs_t_coupe, t_montage: ligne.hs_t_montage, t_vitrage: ligne.hs_t_vitrage }
           : a.hsTemps;
         const lSf = specialMultiplier(parseFloat(ligne?.largeur_mm) || parseFloat(ligne?.largeur) || 0);
-        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf);
+        const routage = getRoutage(lType, lQte, lHs as Record<string, unknown> | null, lSf, undefined,
+          li === 0 ? isulaInfo : undefined);
         for (const e of routage) {
           // Trouver la semaine de ce poste
           const phaseMonday = phasesMonday[e.phase];

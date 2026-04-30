@@ -127,6 +127,15 @@ function ensureCache(typeId: string): ProductionRoute | null {
 
 // ── Public API ───────────────────────────────────────────────────────
 
+/**
+ * Retourne le routage de phases abstraites (coupe/frappes/coulissant/
+ * vitrage_ov) pour un type. Utilisé par la Nomenclature pour afficher
+ * les étapes par famille.
+ */
+export function getRoute(typeId: string): ProductionRoute | null {
+  return ensureCache(typeId);
+}
+
 // ── Précompilation du cache (au chargement du module) ────────────────
 for (const typeId of Object.keys(TYPES_MENUISERIE)) {
   ensureCache(typeId);
@@ -161,6 +170,23 @@ export interface IsulaVitrageInfo {
   nbVitrages?: number;
   /** Vrai si au moins un vitrage > 2000mm OU > 3000mm (grand format). */
   grandFormat?: boolean;
+}
+
+/**
+ * Extrait l'info ISULA d'une commande (depuis cmd.vitrages).
+ * Renvoie `undefined` si aucun vitrage ISULA.
+ */
+export function isulaInfoFromCmd(cmd: { vitrages?: unknown }): IsulaVitrageInfo | undefined {
+  const v = Array.isArray(cmd.vitrages) ? cmd.vitrages : [];
+  const isulaVit = (v as Array<Record<string, unknown>>).filter(x =>
+    String(x?.fournisseur || "").toLowerCase() === "isula"
+  );
+  if (isulaVit.length === 0) return undefined;
+  const nbVitrages = isulaVit.reduce((s, x) => s + (parseInt(String(x.quantite)) || 1), 0);
+  const grandFormat = isulaVit.some(x =>
+    parseFloat(String(x.largeur)) > 2000 || parseFloat(String(x.hauteur)) > 3000
+  );
+  return { nbVitrages, grandFormat };
 }
 
 /**
