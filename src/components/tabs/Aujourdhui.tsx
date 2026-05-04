@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { C, calcCheminCritique, fmtDate, CommandeCC, JOURS_FERIES, getWeekNum, specialMultiplier } from "@/lib/sial-data";
 import { postShortLabel, type Phase as WorkPostPhase } from "@/lib/work-posts";
 import { getRoutage, isulaInfoFromCmd } from "@/lib/routage-production";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { calcCriticalRatio, detectBottleneck, calcTakt } from "@/lib/scheduling-priority";
 import { suggestModeJourSemaine, type ModeJour } from "@/lib/heijunka";
 import AndonPanel from "@/components/AndonPanel";
@@ -113,6 +114,13 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
   const [saving, setSaving] = useState(false);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [editingHourKey, setEditingHourKey] = useState<string | null>(null);
+  const mobile = useIsMobile();
+  // Sur mobile, les bandeaux secondaires sont collapsés par défaut
+  // pour ne pas noyer la liste des tâches.
+  const [showCritiques, setShowCritiques] = useState(!mobile);
+  const [showLivraisons, setShowLivraisons] = useState(!mobile);
+  // Refs pour le swipe horizontal entre jours
+  const touchStartX = useRef<number | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const monday = getMondayOf(date);
@@ -502,19 +510,29 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
   };
 
   return (
-    <div>
+    <div
+      onTouchStart={mobile ? (e) => { touchStartX.current = e.touches[0].clientX; } : undefined}
+      onTouchEnd={mobile ? (e) => {
+        const start = touchStartX.current;
+        if (start == null) return;
+        const dx = e.changedTouches[0].clientX - start;
+        touchStartX.current = null;
+        // Swipe d'au moins 60 px pour déclencher la navigation
+        if (Math.abs(dx) >= 60) navDate(dx < 0 ? 1 : -1);
+      } : undefined}
+    >
       {/* ══ HEADER ═══════════════════════════════════════════════════════════ */}
       <div style={{
-        display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap",
+        display: "flex", alignItems: "center", gap: mobile ? 8 : 12, marginBottom: mobile ? 10 : 14, flexWrap: "wrap",
       }}>
         <div style={{ display: "flex", gap: 4 }}>
-          <button onClick={() => navDate(-1)} style={navBtn}>←</button>
+          <button onClick={() => navDate(-1)} style={navBtn} aria-label="Jour précédent">←</button>
           <button onClick={() => setDate(localStr(new Date()))} style={navBtn}>Auj.</button>
-          <button onClick={() => navDate(1)} style={navBtn}>→</button>
+          <button onClick={() => navDate(1)} style={navBtn} aria-label="Jour suivant">→</button>
         </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 18, fontWeight: 800, textTransform: "capitalize" }}>
-            {fmtDayLong(date)} <span style={{ fontSize: 13, color: C.sec, fontWeight: 600 }}>· S{String(semNum).padStart(2, "0")}</span>
+        <div style={{ flex: 1, minWidth: mobile ? "100%" : 0 }}>
+          <div style={{ fontSize: mobile ? 15 : 18, fontWeight: 800, textTransform: "capitalize" }}>
+            {fmtDayLong(date)} <span style={{ fontSize: mobile ? 11 : 13, color: C.sec, fontWeight: 600 }}>· S{String(semNum).padStart(2, "0")}</span>
             {isFerie && <span style={{ marginLeft: 10, padding: "2px 8px", background: C.red + "22", border: `1px solid ${C.red}66`, borderRadius: 4, color: C.red, fontSize: 11, fontWeight: 700 }}>FÉRIÉ — {JOURS_FERIES[date]}</span>}
             {!isFerie && isIsulaDay && <span style={{ marginLeft: 10, padding: "2px 8px", background: "#4DB6AC22", border: "1px solid #4DB6AC66", borderRadius: 4, color: "#4DB6AC", fontSize: 10, fontWeight: 700 }}>ISULA actif</span>}
           </div>
@@ -526,6 +544,7 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
             ) : (
               <>Aucune tâche planifiée — vérifie les <a onClick={() => onNav?.("planning_fab")} style={{ color: C.orange, cursor: "pointer", textDecoration: "underline" }}>affectations</a></>
             )}
+            {mobile && <span style={{ marginLeft: 6, color: C.muted, fontStyle: "italic" }}>· glisse ← →</span>}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -536,13 +555,13 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
           )}
           <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
             <button onClick={toggleMode} title="Bascule mode du jour" style={{
-              padding: "8px 14px",
+              padding: mobile ? "6px 10px" : "8px 14px",
               background: mode === "FRAPPES" ? "#FFA72622" : "#66BB6A22",
               border: `2px solid ${mode === "FRAPPES" ? "#FFA726" : "#66BB6A"}`,
               borderRadius: 6, color: mode === "FRAPPES" ? "#FFA726" : "#66BB6A",
-              fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
+              fontSize: mobile ? 11 : 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
             }}>
-              Mode : {mode === "FRAPPES" ? "Frappes" : "Coulissants"}
+              {mobile ? (mode === "FRAPPES" ? "Frappes" : "Coul.") : `Mode : ${mode === "FRAPPES" ? "Frappes" : "Coulissants"}`}
             </button>
             {suggestedDifferent && modeAuj && (
               <button
@@ -636,42 +655,56 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
           background: C.red + "10", border: `1px solid ${C.red}55`, borderRadius: 6,
           padding: "10px 14px", marginBottom: 12,
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <div onClick={() => setShowCritiques(s => !s)}
+            style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: showCritiques ? 6 : 0,
+                     cursor: "pointer", flexWrap: "wrap" }}>
             <span style={{ fontSize: 14 }}>⚠</span>
             <span style={{ fontSize: 12, fontWeight: 800, color: C.red }}>
               {cmdsCritiques.length} commande{cmdsCritiques.length > 1 ? "s" : ""} en alerte
             </span>
-            <span style={{ fontSize: 10, color: C.muted, fontStyle: "italic" }}>
-              triées par Critical Ratio (jours dispo / jours besoin)
+            {!mobile && (
+              <span style={{ fontSize: 10, color: C.muted, fontStyle: "italic" }}>
+                triées par Critical Ratio (jours dispo / jours besoin)
+              </span>
+            )}
+            <span style={{ marginLeft: "auto", color: C.muted, fontSize: 10 }}>
+              {showCritiques ? "▾" : "▸"}
             </span>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            {cmdsCritiques.slice(0, 8).map(({ cmd, cc, cr }) => {
-              const a = cmd as any;
-              return (
-                <div key={String(cmd.id)} style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 11 }}>
-                  <span style={{
-                    minWidth: 90, padding: "2px 6px", borderRadius: 3,
-                    fontWeight: 700, fontSize: 10,
-                    background: cr.color + "33", color: cr.color, textAlign: "center",
-                  }} title={`${cr.joursDispo}j dispo / ${cr.joursBesoin}j besoin`}>
-                    CR {cr.ratio}× {cr.level === "impossible" ? "🔴" : cr.level === "tendu" ? "🟠" : ""}
-                  </span>
-                  {cc?.enRetard && (
-                    <span style={{ minWidth: 50, fontWeight: 700, color: C.red }}>+{cc.retardJours}j</span>
-                  )}
-                  <span style={{ fontWeight: 700, color: C.text }}>{a.client}</span>
-                  <span style={{ color: C.sec }}>{a.ref_chantier || "—"}</span>
-                  <span style={{ color: C.muted, fontSize: 10 }}>livraison {fmtDate(a.date_livraison_souhaitee)}</span>
+          {showCritiques && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              {cmdsCritiques.slice(0, 8).map(({ cmd, cc, cr }) => {
+                const a = cmd as any;
+                return (
+                  <div key={String(cmd.id)} style={{
+                    display: "flex", gap: mobile ? 6 : 10, alignItems: "center",
+                    fontSize: 11, flexWrap: mobile ? "wrap" : "nowrap",
+                  }}>
+                    <span style={{
+                      minWidth: mobile ? 70 : 90, padding: "2px 6px", borderRadius: 3,
+                      fontWeight: 700, fontSize: 10,
+                      background: cr.color + "33", color: cr.color, textAlign: "center",
+                    }} title={`${cr.joursDispo}j dispo / ${cr.joursBesoin}j besoin`}>
+                      CR {cr.ratio}× {cr.level === "impossible" ? "🔴" : cr.level === "tendu" ? "🟠" : ""}
+                    </span>
+                    {cc?.enRetard && (
+                      <span style={{ minWidth: 40, fontWeight: 700, color: C.red }}>+{cc.retardJours}j</span>
+                    )}
+                    <span style={{ fontWeight: 700, color: C.text }}>{a.client}</span>
+                    <span style={{ color: C.sec }}>{a.ref_chantier || "—"}</span>
+                    {!mobile && (
+                      <span style={{ color: C.muted, fontSize: 10 }}>livraison {fmtDate(a.date_livraison_souhaitee)}</span>
+                    )}
+                  </div>
+                );
+              })}
+              {cmdsCritiques.length > 8 && (
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
+                  + {cmdsCritiques.length - 8} autre{cmdsCritiques.length - 8 > 1 ? "s" : ""}
                 </div>
-              );
-            })}
-            {cmdsCritiques.length > 8 && (
-              <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
-                + {cmdsCritiques.length - 8} autre{cmdsCritiques.length - 8 > 1 ? "s" : ""}
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -681,22 +714,33 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
           background: C.green + "10", border: `1px solid ${C.green}55`, borderRadius: 6,
           padding: "10px 14px", marginBottom: 12,
         }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: C.green, marginBottom: 6 }}>
+          <div onClick={() => setShowLivraisons(s => !s)}
+            style={{ fontSize: 12, fontWeight: 800, color: C.green,
+                     marginBottom: showLivraisons ? 6 : 0,
+                     cursor: "pointer", display: "flex", alignItems: "center" }}>
             🚚 À livrer aujourd'hui ({livraisonsAuj.length})
+            <span style={{ marginLeft: "auto", color: C.muted, fontSize: 10 }}>
+              {showLivraisons ? "▾" : "▸"}
+            </span>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            {livraisonsAuj.map(c => {
-              const a = c as any;
-              return (
-                <div key={String(c.id)} style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 11 }}>
-                  <span style={{ fontWeight: 700, color: C.text }}>{a.client}</span>
-                  <span style={{ color: C.sec }}>{a.ref_chantier || "—"}</span>
-                  {a.zone && <span style={{ padding: "1px 6px", background: C.s2, borderRadius: 3, color: C.muted, fontSize: 10 }}>{a.zone}</span>}
-                  {a.transporteur && <span style={{ padding: "1px 6px", background: C.teal + "22", borderRadius: 3, color: C.teal, fontSize: 10, fontWeight: 700 }}>{a.transporteur}</span>}
-                </div>
-              );
-            })}
-          </div>
+          {showLivraisons && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              {livraisonsAuj.map(c => {
+                const a = c as any;
+                return (
+                  <div key={String(c.id)} style={{
+                    display: "flex", gap: mobile ? 6 : 10, alignItems: "center",
+                    fontSize: 11, flexWrap: mobile ? "wrap" : "nowrap",
+                  }}>
+                    <span style={{ fontWeight: 700, color: C.text }}>{a.client}</span>
+                    <span style={{ color: C.sec }}>{a.ref_chantier || "—"}</span>
+                    {a.zone && <span style={{ padding: "1px 6px", background: C.s2, borderRadius: 3, color: C.muted, fontSize: 10 }}>{a.zone}</span>}
+                    {a.transporteur && <span style={{ padding: "1px 6px", background: C.teal + "22", borderRadius: 3, color: C.teal, fontSize: 10, fontWeight: 700 }}>{a.transporteur}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
