@@ -1911,6 +1911,45 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           postIds={activePosts.flatMap(g => g.visiblePosts)}
           commandes={commandes}
           todayIdx={todayIdx}
+          onMoveBlock={({ fromPid, toPid, jourIdx, chantier, isExtra }) => {
+            if (locked) return;
+            // Retirer le chantier/extra de tous les créneaux du poste source
+            // sur ce jour, et l'ajouter sur le créneau am du poste cible.
+            const newAff: AffMap = { ...aff };
+            for (const demi of ["am", "pm"] as const) {
+              const srcKey = ck(fromPid, jourIdx, demi);
+              const src = newAff[srcKey];
+              if (!src) continue;
+              if (isExtra) {
+                const newExtras = (src.extras || []).filter(e => e !== chantier);
+                if (newExtras.length === 0 && (!src.cmds || src.cmds.length === 0) && (!src.ops || src.ops.length === 0)) {
+                  delete newAff[srcKey];
+                } else {
+                  newAff[srcKey] = { ...src, extras: newExtras };
+                }
+              } else {
+                const newCmds = (src.cmds || []).filter(c => c !== chantier);
+                if (newCmds.length === 0 && (!src.extras || src.extras.length === 0) && (!src.ops || src.ops.length === 0)) {
+                  delete newAff[srcKey];
+                } else {
+                  newAff[srcKey] = { ...src, cmds: newCmds };
+                }
+              }
+            }
+            // Ajouter sur le poste cible (créneau am par défaut)
+            const dstKey = ck(toPid, jourIdx, "am");
+            const dst = newAff[dstKey] || { ops: [], cmds: [], extras: [] };
+            if (isExtra) {
+              const newExtras = [...(dst.extras || [])];
+              if (!newExtras.includes(chantier)) newExtras.push(chantier);
+              newAff[dstKey] = { ...dst, extras: newExtras };
+            } else {
+              const newCmds = [...(dst.cmds || [])];
+              if (!newCmds.includes(chantier)) newCmds.push(chantier);
+              newAff[dstKey] = { ...dst, cmds: newCmds };
+            }
+            saveAff(newAff);
+          }}
         />
       )}
 

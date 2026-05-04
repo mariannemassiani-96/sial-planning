@@ -37,6 +37,18 @@ export interface TimelineWeekProps {
   commandes: CommandeCC[];
   /** Index d'aujourd'hui dans la semaine (0..4) ou -1 si autre semaine. */
   todayIdx: number;
+  /**
+   * Callback appelé quand un bloc est déplacé sur un autre poste.
+   * Si fourni, le drag vertical entre lignes de postes est activé et
+   * l'affectation `aff` doit être mise à jour côté parent.
+   */
+  onMoveBlock?: (params: {
+    fromPid: string;
+    toPid: string;
+    jourIdx: number;
+    chantier: string;
+    isExtra: boolean;
+  }) => void;
 }
 
 const JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
@@ -58,7 +70,7 @@ const PIXELS_PER_HOUR = 60;
 const TIMELINE_WIDTH = HOUR_RANGE * PIXELS_PER_HOUR;
 
 export default function PlanningTimelineWeek({
-  aff, monday, postIds, commandes, todayIdx,
+  aff, monday, postIds, commandes, todayIdx, onMoveBlock,
 }: TimelineWeekProps) {
   // ── Overrides horaires (drag/resize) — chargés et sauvegardés ──
   const [overrides, setOverrides] = useState<TimelineOverrides>({});
@@ -94,6 +106,9 @@ export default function PlanningTimelineWeek({
     key: string; mode: "move" | "resize"; startX: number;
     initialStart: number; initialDur: number;
   } | null>(null);
+
+  // ── Drop target (drag inter-poste HTML5) ──
+  const [dropTarget, setDropTarget] = useState<{ pid: string; jourIdx: number } | null>(null);
 
   const onMouseDown = (e: React.MouseEvent, key: string, mode: "move" | "resize",
                       currentStart: number, currentDur: number) => {
@@ -295,12 +310,36 @@ export default function PlanningTimelineWeek({
                   const ds = localStr(d);
                   const ferie = !!JOURS_FERIES[ds];
                   const blocks = blocksByPostDay.get(`${pid}|${j}`) || [];
+                  const isDropTarget = dropTarget?.pid === pid && dropTarget?.jourIdx === j;
                   return (
-                    <td key={j} style={{
-                      border: `1px solid ${C.border}`,
-                      background: ferie ? C.s2 + "44" : C.bg,
-                      padding: 0, position: "relative", height: 50, verticalAlign: "middle",
-                    }}>
+                    <td key={j}
+                      onDragOver={onMoveBlock ? (e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "move";
+                        if (!isDropTarget) setDropTarget({ pid, jourIdx: j });
+                      } : undefined}
+                      onDragLeave={onMoveBlock ? () => {
+                        if (isDropTarget) setDropTarget(null);
+                      } : undefined}
+                      onDrop={onMoveBlock ? (e) => {
+                        e.preventDefault();
+                        setDropTarget(null);
+                        try {
+                          const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+                          if (data?.kind !== "timeline-block") return;
+                          if (data.fromPid === pid && data.jourIdx === j) return; // pas de changement
+                          onMoveBlock({
+                            fromPid: data.fromPid, toPid: pid,
+                            jourIdx: data.jourIdx === j ? j : j,
+                            chantier: data.chantier, isExtra: !!data.isExtra,
+                          });
+                        } catch {}
+                      } : undefined}
+                      style={{
+                        border: `1px solid ${isDropTarget ? C.orange : C.border}`,
+                        background: isDropTarget ? C.orange + "18" : ferie ? C.s2 + "44" : C.bg,
+                        padding: 0, position: "relative", height: 50, verticalAlign: "middle",
+                      }}>
                       <div style={{ position: "relative", width: TIMELINE_WIDTH, height: 50 }}>
                         {/* Lignes verticales heures (chaque heure) */}
                         {Array.from({ length: HOUR_RANGE + 1 }, (_, h) => (
@@ -323,9 +362,10 @@ export default function PlanningTimelineWeek({
                           const width = (b.endHour - b.startHour) * PIXELS_PER_HOUR;
                           const dur = Math.round((b.endHour - b.startHour) * 60);
                           const isBeingDragged = dragging?.key === b.key;
+                          const dragVerticalEnabled = !!onMoveBlock;
                           return (
                             <div key={idx}
-                              title={`${b.chantier}\n${fmtHourCompact(b.startHour)} → ${fmtHourCompact(b.endHour)} (${hm(dur)})\n${b.ops.length} op${b.ops.length > 1 ? "s" : ""} : ${b.ops.join(", ") || "—"}\n\nGlisser pour décaler · bord droit pour redimensionner${b.isOverride ? " · double-clic pour réinitialiser" : ""}`}
+                              title={`${b.chantier}\n${fmtHourCompact(b.startHour)} → ${fmtHourCompact(b.endHour)} (${hm(dur)})\n${b.ops.length} op${b.ops.length > 1 ? "s" : ""} : ${b.ops.join(", ") || "—"}\n\nGlisser pour décaler · bord droit pour redimensionner${dragVerticalEnabled ? " · poignée gauche ⋮⋮ pour changer de poste" : ""}${b.isOverride ? " · double-clic pour réinitialiser" : ""}`}
                               onMouseDown={(e) => onMouseDown(e, b.key, "move", b.startHour, dur)}
                               onDoubleClick={(e) => { e.stopPropagation(); if (b.isOverride) resetOverride(b.key); }}
                               style={{
@@ -333,7 +373,8 @@ export default function PlanningTimelineWeek({
                                 left, width: Math.max(20, width),
                                 background: b.isExtra ? color + "22" : color + "44",
                                 border: `${b.isOverride ? "2px" : "1px"} solid ${color}`,
-                                borderRadius: 3, padding: "2px 4px",
+                                borderRadius: 3,
+                                padding: dragVerticalEnabled ? "2px 4px 2px 12px" : "2px 4px",
                                 overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis",
                                 fontSize: 9, color: C.text, fontWeight: 600,
                                 display: "flex", flexDirection: "column", justifyContent: "center",
@@ -346,6 +387,28 @@ export default function PlanningTimelineWeek({
                                 {b.isOverride ? "✎ " : ""}{b.chantier}
                               </div>
                               <div style={{ fontSize: 8, color: C.sec, fontWeight: 400 }}>{fmtHourCompact(b.startHour)}–{fmtHourCompact(b.endHour)}</div>
+                              {/* Poignée gauche ⋮⋮ : drag inter-poste (HTML5) */}
+                              {dragVerticalEnabled && (
+                                <div
+                                  draggable
+                                  onDragStart={(e) => {
+                                    e.stopPropagation();
+                                    e.dataTransfer.effectAllowed = "move";
+                                    e.dataTransfer.setData("text/plain", JSON.stringify({
+                                      kind: "timeline-block",
+                                      fromPid: pid, jourIdx: j,
+                                      chantier: b.chantier, isExtra: b.isExtra,
+                                    }));
+                                  }}
+                                  title="Glisser pour changer de poste"
+                                  style={{
+                                    position: "absolute", left: 0, top: 0, bottom: 0, width: 10,
+                                    cursor: "grab", background: color + "AA",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    fontSize: 9, color: "#fff",
+                                  }}
+                                >⋮⋮</div>
+                              )}
                               {/* Poignée de redimensionnement à droite */}
                               <div
                                 onMouseDown={(e) => onMouseDown(e, b.key, "resize", b.startHour, dur)}
@@ -370,6 +433,7 @@ export default function PlanningTimelineWeek({
       <div style={{ marginTop: 8, fontSize: 10, color: C.muted }}>
         💡 <b>Glisser un bloc</b> pour décaler son heure de début ·{" "}
         <b>poignée droite</b> pour redimensionner ·{" "}
+        {onMoveBlock && <><b>poignée gauche ⋮⋮</b> pour glisser sur un autre poste · </>}
         <b>double-clic</b> sur un bloc modifié (✎) pour rétablir l&apos;heure auto.
         Snap aux 5 min. Les overrides sont sauvegardés automatiquement.
       </div>
