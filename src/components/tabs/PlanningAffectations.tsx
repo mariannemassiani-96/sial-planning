@@ -299,6 +299,9 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       .then(r => r.ok ? r.json() : [])
       .then(data => { if (Array.isArray(data)) setExtraTasks(data); else if (data?.tasks) setExtraTasks(data.tasks); else setExtraTasks([]); })
       .catch(() => setExtraTasks([]));
+    // `commandes` est utilisé pour la requête initiale mais on ne veut PAS
+    // recharger les overrides à chaque modification de commande (boucle).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewWeek]);
 
   // ── Rafraîchissement auto toutes les 10s (si pas en train de sauvegarder) ──
@@ -1378,7 +1381,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     }
 
     openPrintWindow(`Planning ${wk} — Fiches opérateurs`, html);
-  }, [aff, postWork, viewWeek]);
+  }, [aff, postWork, viewWeek, ops]);
 
   // ── Livraisons auto → tâches chargement + livraison ──
   // Inclut désormais :
@@ -1539,7 +1542,7 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         }
       }
     }
-  }, [commandes, viewWeek, coverage, onPatch]);
+  }, [commandes, viewWeek, coverage, onPatch, learnedTimes]);
 
   const todayIdx = (() => {
     const today = localStr(new Date());
