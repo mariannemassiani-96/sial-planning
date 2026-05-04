@@ -30,7 +30,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         },
       },
     });
-  } catch (e) {
+  } catch {
     // Fallback : on retire defaultSchedule/naissance et on retente.
     const { defaultSchedule: _ds, naissance: _n, ...legacyData } = data as any;
     void _ds; void _n;

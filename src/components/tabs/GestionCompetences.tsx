@@ -5,7 +5,7 @@ import { C } from "@/lib/sial-data";
 import { postShortLabel } from "@/lib/work-posts";
 import {
   type OperatorSchedule, type DayKey, type DaySchedule,
-  buildDefaultScheduleFromWeekHours, computeDayMinutes,
+  buildDefaultScheduleFromWeekHours,
 } from "@/lib/operator-schedule";
 
 // ── Types ────────────────────────────────────────────────────────────────────

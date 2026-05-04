@@ -1,11 +1,11 @@
 "use client";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { C, calcCheminCritique, fmtDate, CommandeCC, JOURS_FERIES, getWeekNum, specialMultiplier } from "@/lib/sial-data";
-import { postShortLabel, type Phase as WorkPostPhase } from "@/lib/work-posts";
+import { postShortLabel } from "@/lib/work-posts";
 import { getRoutage, isulaInfoFromCmd } from "@/lib/routage-production";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { calcCriticalRatio, detectBottleneck, calcTakt } from "@/lib/scheduling-priority";
-import { suggestModeJourSemaine, type ModeJour } from "@/lib/heijunka";
+import { suggestModeJourSemaine } from "@/lib/heijunka";
 import AndonPanel from "@/components/AndonPanel";
 import SqdcpPanel from "@/components/SqdcpPanel";
 
@@ -355,12 +355,6 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
       .sort((a, b) => a.cr.ratio - b.cr.ratio);
   }, [commandes, date]);
 
-  const retards = useMemo(() => {
-    return commandes
-      .map(c => ({ cmd: c, cc: calcCheminCritique(c) }))
-      .filter(x => x.cc?.enRetard && (x.cmd as any).statut !== "livre" && (x.cmd as any).statut !== "annulee" && (x.cmd as any).statut !== "terminee")
-      .sort((a, b) => (b.cc?.retardJours || 0) - (a.cc?.retardJours || 0));
-  }, [commandes]);
 
   // ── Détection du goulot de la semaine (Drum-Buffer-Rope) ──────────────
   // On agrège la charge par poste depuis les chantiers actifs cette semaine,
@@ -718,7 +712,7 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
             style={{ fontSize: 12, fontWeight: 800, color: C.green,
                      marginBottom: showLivraisons ? 6 : 0,
                      cursor: "pointer", display: "flex", alignItems: "center" }}>
-            🚚 À livrer aujourd'hui ({livraisonsAuj.length})
+            🚚 À livrer aujourd&apos;hui ({livraisonsAuj.length})
             <span style={{ marginLeft: "auto", color: C.muted, fontSize: 10 }}>
               {showLivraisons ? "▾" : "▸"}
             </span>
@@ -1158,7 +1152,7 @@ function HourEditor({
       padding: 10, minWidth: 240, boxShadow: "0 4px 16px #00000080",
     }}>
       <div style={{ fontSize: 10, fontWeight: 700, color: C.sec, marginBottom: 6 }}>
-        FIXER L'HEURE MANUELLEMENT
+        FIXER L&apos;HEURE MANUELLEMENT
       </div>
       <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
         <span style={{ fontSize: 10, color: C.sec, minWidth: 50 }}>Début</span>
