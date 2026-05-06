@@ -17,11 +17,16 @@ SQDCP, Andon, OEE) et **calcul de charge théorique** (routage par type, temps
 unitaires, multiplicateurs grand format). Elle est encore très en-deçà côté
 **ingénierie de l'ordonnancement** :
 
+- **la saisie commande sous-capte** : `SaisieCommande.tsx` ne demande pas
+  `hauteur_mm`, `coloris_lot`, `laquage_externe + délai`, `ferrage_special`,
+  `pose_chantier_date`, `regroupement_camion`, `operateur_prefere` — autant
+  d'attributs nécessaires à l'algo. Tant qu'on n'importe pas PRO F2 (décision
+  produit : on diffère), il faut que la saisie manuelle les capte tous.
 - **deux modèles de données coexistent** sans pont opérationnel : un legacy
   `Commande` (JSON `lignes` / `vitrages`) qui sert à 100 % de l'IHM, et un
   schéma industriel `Order` / `FabItem` / `ProductionTask` / `QCCheck` /
   `BufferStock` / `NonConformity` qui n'est **que lu** (stats) — aucun write
-  applicatif n'y va. C'est le premier blocage à lever pour avancer.
+  applicatif n'y va.
 - **l'ordonnancement n'est pas vraiment backward** : on calcule des « semaines »
   (`semaine_coupe`/`semaine_montage`/…) en remontant de la livraison via des
   offsets de 1 semaine fixes ; la fonction `autoAssign` qui place les étapes
@@ -32,9 +37,8 @@ unitaires, multiplicateurs grand format). Elle est encore très en-deçà côté
   phases (`postTamponAfter`) — il n'y a pas de stock tampon
   `BufferType.VITRAGES_ISULA` consommé/produit en BDD, ni de jalon de
   disponibilité par UV.
-- **PRO F2** est mentionné dans la SaisieCommande mais aucun import XML/CSV
-  n'existe ; **Odoo** est branché en RPC mais la sync sert à pousser des
-  données, pas à tirer des OF.
+- **Odoo** est branché en RPC mais la sync sert à pousser des données, pas à
+  tirer des OF.
 
 ---
 
@@ -46,7 +50,8 @@ Légende : ✅ OK · ⚠️ Partiel · ❌ Absent.
 
 | Fonctionnalité | Statut | Commentaire |
 |---|:---:|---|
-| Import PRO F2 (XML/CSV) → ordres de fab | ❌ | Aucun parser. Saisie manuelle dans `SaisieCommande.tsx` ou import CSV maison (`/api/import-csv`) sans schéma PRO F2. |
+| Import PRO F2 (XML/CSV) → ordres de fab | ⏸️ | Différé sur décision produit. Un parser texte sommaire `parseProF2()` existe dans `SaisieCommande.tsx:98` pour aider la saisie collée, mais l'import structuré n'est plus prioritaire. |
+| Saisie commande exhaustive | ⚠️ | Voir §4.1 — il manque hauteur_mm, coloris_lot, laquage_externe, pose_chantier_date, regroupement_camion, operateur_prefere/interdit. |
 | Synchro Odoo (clients, devis, projets) | ⚠️ | `src/lib/odoo.ts` + `odoo-sync.ts` connectent en JSON-RPC (`VISTA-PRODUCTION`) mais en sortie / lecture ad hoc. Pas de poll d'OF entrants. |
 | Référentiels temps unitaires (gammes opératoires) | ⚠️ | Codé en dur dans `T = {…}` de `src/lib/sial-data.ts:53` (28 constantes). Pas éditable en BDD. La table `Tache(temps_unitaire)` existe mais n'est pas utilisée par `calcTempsType`. |
 | Calendrier atelier (jours fériés, vendredi off, ISULA lun/mar/jeu) | ✅ | `JOURS_FERIES` (sial-data:329), `vendrediOff` (Operator), contrainte ISULA dans `autoAssign` (j ∈ {0,1,3}) à PlanningAffectations:867. |
@@ -125,11 +130,19 @@ Légende : ✅ OK · ⚠️ Partiel · ❌ Absent.
 
 Ordre = impact métier (qualité du planning vs effort).
 
+> **Décision produit (mai 2026)** : on ne cherche PAS à brancher l'import
+> PRO F2 pour l'instant. La règle posée par Marianne est :
+> *« si on ne peut pas importer, on saisit manuellement TOUTES les
+> informations raisonnées dont l'algorithme a besoin »*. Le P0 d'origine
+> n°1 (import PRO F2) est donc requalifié P2 et remplacé par
+> « SaisieCommande exhaustive ».
+
 ### P0 — Bloquants (à faire avant le reste)
 
-1. **Importer les OF depuis PRO F2** (XML/CSV). Sans ça, AJ ressaisit chaque
-   commande à la main → mortalité du flux. Brancher sur `Order` + `FabItem`
-   (le schéma existe déjà). Voir §4.1.
+1. **Saisie commande exhaustive** : étendre `SaisieCommande.tsx` pour
+   capter tous les attributs manquants (dimensions par ligne,
+   précédences, jalons par étape, contraintes de regroupement camion,
+   préférence opérateur, contrainte coloris/laquage). Voir §4.1.
 2. **Unifier le modèle données : `Commande` (legacy) → `Order` + `FabItem`**.
    Aujourd'hui les composants lisent `commandes` (JSON), les stats lisent
    `ProductionTask`. Soit on déprécie un côté, soit on écrit un adaptateur
@@ -165,8 +178,10 @@ Ordre = impact métier (qualité du planning vs effort).
 9. **Lissage Heijunka effectif** : permettre à `autoAssign` de répartir le
    travail des frappes entre lundi et mercredi au lieu de tout caser le
    lundi.
-10. **Polling Odoo** des OF entrants (cron horaire) → push dans `Order`.
-11. **Fenêtres mobiles d'opérateur** : afficher les minutes restantes par
+10. **Import PRO F2** (requalifié P2 sur décision produit) : tant que la
+    saisie manuelle reste tractable, on diffère.
+11. **Polling Odoo** des OF entrants (cron horaire) → push dans `Order`.
+12. **Fenêtres mobiles d'opérateur** : afficher les minutes restantes par
     op dans le rapport visuel pour qu'AJ voie immédiatement « Bruno : 4 h
     libres mardi PM ».
 
@@ -174,157 +189,257 @@ Ordre = impact métier (qualité du planning vs effort).
 
 ## 4. Implémentations concrètes pour les 3 écarts critiques
 
-### 4.1 Import PRO F2 (XML) → `Order` / `FabItem`
+### 4.1 Saisie commande exhaustive (en remplacement de l'import PRO F2)
 
-#### Schéma Prisma — additions
+Décision : on ne câble PAS PRO F2 maintenant. À la place, on rend
+`SaisieCommande.tsx` capable de capter **tout** ce dont l'algo a besoin,
+même si c'est plus long à saisir. C'est mieux que des planifs fausses
+faute de données.
+
+#### a) État actuel de la saisie
+
+`SaisieCommande.tsx` (`empty` + `emptyLigne` + `emptyVitrage` à
+src/components/tabs/SaisieCommande.tsx:9-47) capte aujourd'hui :
+
+- Identification : client, ref_chantier, num_commande
+- Planning livraison : zone, type_commande, atelier, priorité, montant_ht,
+  semaine_théorique, semaine_atteignable, transporteur
+- Multi-livraisons : `nb_livraisons` + `dates_livraisons[]`
+- Matières amont : date_alu, date_pvc, date_accessoires, date_panneau_porte,
+  date_volet_roulant + flags nécessaire/passée
+- Lignes : type, quantité, coloris, largeur_mm, hs_temps (si HS)
+- Vitrages : composition, qté, surface_m2, fournisseur, date_reception,
+  position, faces, intercalaire, largeur, hauteur, forme, prix
+- Acompte + reliquats
+
+#### b) Champs MANQUANTS pour que l'algo soit autonome
+
+| Champ manquant | Niveau | Pourquoi l'algo en a besoin |
+|---|---|---|
+| `hauteur_mm` (par ligne) | ligne | Détecter grand format vertical (>3 m galandage) — actuellement seul `largeur_mm` est saisi (`emptyLigne` ligne 9). |
+| `coloris_lot` (par ligne) | ligne | Regrouper les pièces du même coloris pour éviter le changement de série au laquage / poinçon. |
+| `laquage_externe` + `delai_laquage_jours` | ligne | Le laquage extérieur (sous-traité) ajoute 5-10 j ouvrés ; sans cette info, l'algo croit que la coupe est dispo de suite. |
+| `ferrage_special` (texte libre + `temps_supp_min`) | ligne | Mécanismes spécifiques (motorisation, oscillo-battant lourd) qui ne sont pas dans `T = {…}`. |
+| `pose_chantier_date` (≠ livraison) | commande | Date de pose ferme (RDV poseur). C'est elle qui doit piloter le backward, pas la livraison camion. |
+| `regroupement_camion` (`true`/`false`) | commande | Si vrai, l'algo ne doit pas split la production sur 2 semaines (sinon le 1er lot reste en stock). |
+| `chantier_split_autorise` (`true`/`false`) | commande | Inverse : si vrai (ex. grand chantier 50 menuiseries), l'algo PEUT livrer en plusieurs vagues. |
+| `operateur_prefere` (par ligne) | ligne | Marianne/AJ savent que tel coulissant grand format = Alain obligatoire (qualité critique). Aujourd'hui, seul HS le permet. |
+| `operateur_interdit` (par ligne) | ligne | Inverse pour limiter les retours qualité (apprenti sur un chantier sensible). |
+| `tampon_apres_min` (par ligne, optionnel) | ligne | Séchage colle / réglage spécifique > 4 h standard. |
+| `vitrage_id_ext` (par vitrage) | vitrage | Identifiant ISULA ou fournisseur externe pour matcher le bon de commande. |
+| `vitrage_dependances` (par vitrage : id ligne menuiserie qui le reçoit) | vitrage | Aujourd'hui le lien vitrage→menuiserie est implicite (par chantier entier). Empêche le calcul fin « V1 ouvrant n°3 attend UV n°7 ». |
+| `controle_qualite_specifique` (texte libre) | commande/ligne | « test étanchéité au jet d'eau », « contrôle CEKAL renforcé »… ajoutent une étape CQ. |
+| `notes_pose` | commande | Contraintes site (étage, ascenseur, accès limité) — utilisées par le chef d'équipe, pas l'algo, mais à conserver. |
+| `risque_perso` (`bas`/`moyen`/`haut`) | commande | Pour pondérer le critique-ratio : un chantier Marianne/connu peut être plus tendu qu'un nouveau client. |
+
+#### c) Schéma Prisma — additions
 
 ```prisma
-// Source d'un OF (PRO F2 = ERP menuiserie) — à ajouter à Order
-model Order {
+model Commande {
   // ... existant ...
-  source        OrderSource    @default(MANUEL)
-  sourceRef     String?        // n° d'OF dans PRO F2
-  sourceImport  ProF2Import?   @relation(fields: [sourceImportId], references: [id])
-  sourceImportId String?
+  pose_chantier_date     String?     // YYYY-MM-DD, RDV poseur ferme
+  regroupement_camion    Boolean    @default(true)
+  chantier_split_autorise Boolean    @default(false)
+  controle_qualite_specifique String?
+  notes_pose             String?
+  risque_perso           String     @default("bas")  // bas | moyen | haut
 }
 
-enum OrderSource {
-  MANUEL
-  PRO_F2
-  ODOO
-}
-
-model ProF2Import {
-  id           String    @id @default(cuid())
-  filename     String
-  importedAt   DateTime  @default(now())
-  importedBy   String
-  rawXml       String    // archivage pour rejouer si besoin
-  ordersCount  Int       @default(0)
-  itemsCount   Int       @default(0)
-  errors       Json?     // [{ line, code, message }]
-  orders       Order[]
-}
+// Le champ `lignes` (Json) reçoit ces nouveaux attributs par ligne :
+//   {
+//     type, quantite, coloris,
+//     largeur_mm, hauteur_mm,                       // ← NOUVEAU hauteur_mm
+//     coloris_lot,                                  // ← NOUVEAU
+//     laquage_externe, delai_laquage_jours,         // ← NOUVEAU
+//     ferrage_special, temps_supp_min,              // ← NOUVEAU
+//     operateur_prefere, operateur_interdit,        // ← NOUVEAU
+//     tampon_apres_min,                             // ← NOUVEAU
+//     hs_temps: { ... }
+//   }
+//
+// Le champ `vitrages` (Json) reçoit :
+//   { ..., vitrage_id_ext, ligne_menuiserie_id (string) }   // ← NOUVEAU
 ```
 
-#### Pseudo-code parser (`src/lib/pro-f2-import.ts`)
+Comme `Commande.lignes` et `Commande.vitrages` sont déjà des `Json`, on
+peut **étendre sans migration cassante**. On ajoute uniquement
+`pose_chantier_date`, `regroupement_camion`, `chantier_split_autorise`,
+`controle_qualite_specifique`, `notes_pose`, `risque_perso` (5 champs
+scalaires, migration `ALTER TABLE` simple).
 
-```ts
-import { parseXml } from "fast-xml-parser"; // npm i fast-xml-parser
-import prisma from "@/lib/prisma";
+#### d) Pseudo-code — extension du formulaire (`SaisieCommande.tsx`)
 
-interface ProF2Order {
-  numero: string;          // sourceRef
-  client: string;
-  refChantier: string;
-  dateLivraison: string;   // DD/MM/YYYY
-  lignes: ProF2Ligne[];
-}
-
-interface ProF2Ligne {
-  type: string;            // "OB2_PVC", "C3V3R", ...
-  largeurMm: number;
-  hauteurMm: number;
-  quantite: number;
-  vitrageFournisseur?: "isula" | "externe";
-  isSpecial?: boolean;
-}
-
-const TYPE_MAP: Record<string, MenuiserieType> = {
-  "OB2_PVC": "OB2_PVC",
-  "C3V3R":   "C3V3R",
-  // ... à compléter avec le mapping PRO F2 → enum local
+```tsx
+const emptyLigne = {
+  type: "ob1_pvc",
+  quantite: 1,
+  coloris: "blanc",
+  // ── NOUVEAUX champs ────────────────────────────────────────────
+  largeur_mm: "",
+  hauteur_mm: "",                         // ← capter L×H systématiquement
+  coloris_lot: "",                        // ← libellé lot peinture
+  laquage_externe: false,
+  delai_laquage_jours: "",                // ex 7
+  ferrage_special: "",                    // texte libre
+  temps_supp_min: "",                     // minutes ajoutées au montage
+  operateur_prefere: "",                  // id op (cf. EQUIPE)
+  operateur_interdit: "",                 // id op
+  tampon_apres_min: "",                   // optionnel, défaut 240
+  // ── Existants HS ───────────────────────────────────────────────
+  hs_nb_profils: "", hs_t_coupe: "", hs_t_montage: "", hs_t_vitrage: "",
+  hs_op_montage: "jp", hs_op_vitrage: "quentin", hs_notes: "",
 };
 
-export async function importProF2Xml(xml: string, importedBy: string) {
-  const parsed = parseXml(xml, { ignoreAttributes: false });
-  const orders = mapProF2(parsed); // implémentation selon DTD PRO F2
-  const importRow = await prisma.proF2Import.create({
-    data: { filename: "upload", rawXml: xml, importedBy, ordersCount: 0, itemsCount: 0 },
-  });
+const emptyVitrage = {
+  // ... existant ...
+  vitrage_id_ext: "",                     // ← n° BC ISULA ou fournisseur
+  ligne_menuiserie_id: "",                // ← lien ligne menuiserie destinataire
+};
 
-  let nbOrders = 0, nbItems = 0;
-  const errors: Array<{ line: string; code: string; message: string }> = [];
-
-  for (const o of orders) {
-    try {
-      // dédoublonnage : si refProF2 existe déjà → skip
-      const exists = await prisma.order.findUnique({ where: { refProF2: o.numero } });
-      if (exists) continue;
-
-      await prisma.order.create({
-        data: {
-          refProF2:     o.numero,
-          refChantier:  o.refChantier,
-          clientName:   o.client,
-          deliveryDate: parseFrDate(o.dateLivraison),
-          status:       "A_LANCER",
-          source:       "PRO_F2",
-          sourceRef:    o.numero,
-          sourceImportId: importRow.id,
-          items: {
-            create: o.lignes.map(l => ({
-              menuiserieType: TYPE_MAP[l.type] ?? "HORS_STANDARD",
-              quantity:       l.quantite,
-              widthMm:        l.largeurMm,
-              heightMm:       l.hauteurMm,
-              label:          `${l.type} ${l.largeurMm}×${l.hauteurMm}`,
-              isSpecial:      !!l.isSpecial,
-              matiere:        deduceMatiere(l.type),
-            })),
-          },
-        },
-      });
-      nbOrders++; nbItems += o.lignes.length;
-    } catch (e) {
-      errors.push({ line: o.numero, code: "IMPORT_FAIL", message: String(e) });
-    }
-  }
-
-  await prisma.proF2Import.update({
-    where: { id: importRow.id },
-    data: { ordersCount: nbOrders, itemsCount: nbItems, errors },
-  });
-
-  // ═══════════════════════════════════════════════════════════════════
-  // GÉNÉRATION DES ProductionTask — utilise getRoutage existant
-  // ═══════════════════════════════════════════════════════════════════
-  for (const order of await prisma.order.findMany({
-    where: { sourceImportId: importRow.id },
-    include: { items: true },
-  })) {
-    for (const item of order.items) {
-      const etapes = getRoutage(item.menuiserieType.toLowerCase(), item.quantity);
-      await prisma.productionTask.createMany({
-        data: etapes.map((et, i) => ({
-          fabItemId:        item.id,
-          workPostId:       et.postId,
-          label:            et.label,
-          estimatedMinutes: et.estimatedMin,
-          status:           "PENDING",
-          sortOrder:        i,
-          isBlocking:       et.phase === "vitrage" && needsIsula(item),
-        })),
-      });
-    }
-  }
-
-  return { importId: importRow.id, nbOrders, nbItems, errors };
-}
+const empty = {
+  // ... existant ...
+  pose_chantier_date: "",                 // RDV poseur ferme
+  regroupement_camion: true,
+  chantier_split_autorise: false,
+  controle_qualite_specifique: "",
+  notes_pose: "",
+  risque_perso: "bas",
+  lignes: [{ ...emptyLigne }],
+  vitrages: [{ ...emptyVitrage }],
+};
 ```
 
-#### Route API (`src/app/api/import-prof2/route.ts`)
+#### e) UI — où mettre ces champs
+
+```tsx
+// 1. Sous "PLANNING LIVRAISON" — encart "POSE & TRANSPORT"
+<div style={cardStyle}>
+  <div style={{ ...titleStyle, color: C.cyan }}>POSE & TRANSPORT</div>
+  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+    <Field label="DATE POSE CHANTIER (RDV poseur)" type="date"
+      value={f.pose_chantier_date}
+      onChange={v => set("pose_chantier_date", v)}
+      hint="Si vide, on utilise date_livraison_souhaitée" />
+    <Switch label="REGROUPEMENT CAMION (pas de split sem.)"
+      value={f.regroupement_camion}
+      onChange={v => set("regroupement_camion", v)} />
+    <Switch label="SPLIT CHANTIER AUTORISÉ (gros chantier)"
+      value={f.chantier_split_autorise}
+      onChange={v => set("chantier_split_autorise", v)} />
+  </div>
+</div>
+
+// 2. Dans le bloc "MENUISERIES" — chaque ligne expose 2 onglets :
+//    [Standard] (type/qté/coloris) — visible par défaut
+//    [Avancé]   (L×H, lot, laquage, ferrage, op préféré, tampon)
+//                — replié, à déplier
+<div className="ligne-tabs">
+  <button onClick={() => setExpandedLigne(i, !expanded)}>
+    {expanded ? "− Masquer avancé" : "+ Options avancées"}
+  </button>
+  {expanded && (
+    <div style={advancedGrid}>
+      <Field label="HAUTEUR (mm)" type="number" value={lg.hauteur_mm}
+        onChange={v => setLigne(i, "hauteur_mm", v)} />
+      <Field label="COLORIS LOT" value={lg.coloris_lot}
+        onChange={v => setLigne(i, "coloris_lot", v)}
+        hint="Pour regrouper la production des pièces de même coloris" />
+      <Switch label="LAQUAGE EXTERNE (sous-traitance)"
+        value={lg.laquage_externe}
+        onChange={v => setLigne(i, "laquage_externe", v)} />
+      {lg.laquage_externe && (
+        <Field label="DÉLAI LAQUAGE (j ouvrés)" type="number"
+          value={lg.delai_laquage_jours}
+          onChange={v => setLigne(i, "delai_laquage_jours", v)} />
+      )}
+      <Field label="FERRAGE SPÉCIAL" value={lg.ferrage_special}
+        onChange={v => setLigne(i, "ferrage_special", v)}
+        placeholder="ex: motorisation Somfy + oscillo lourd" />
+      <Field label="TEMPS SUPPL. MONTAGE (min)" type="number"
+        value={lg.temps_supp_min}
+        onChange={v => setLigne(i, "temps_supp_min", v)} />
+      <SelectOp label="OPÉRATEUR PRÉFÉRÉ" value={lg.operateur_prefere}
+        onChange={v => setLigne(i, "operateur_prefere", v)} />
+      <SelectOp label="OPÉRATEUR INTERDIT" value={lg.operateur_interdit}
+        onChange={v => setLigne(i, "operateur_interdit", v)} />
+      <Field label="TAMPON APRÈS (min, défaut 240)" type="number"
+        value={lg.tampon_apres_min}
+        onChange={v => setLigne(i, "tampon_apres_min", v)} />
+    </div>
+  )}
+</div>
+
+// 3. Dans le bloc "VITRAGES" — par vitrage, ajouter :
+<Field label="N° BC FOURNISSEUR" value={v.vitrage_id_ext}
+  onChange={x => setVitrage(i, "vitrage_id_ext", x)} />
+<SelectLigne label="MENUISERIE DESTINATAIRE" lignes={f.lignes}
+  value={v.ligne_menuiserie_id}
+  onChange={x => setVitrage(i, "ligne_menuiserie_id", x)} />
+
+// 4. Nouveau bloc "QUALITÉ & RISQUE" en bas
+<div style={cardStyle}>
+  <div style={{ ...titleStyle, color: C.purple }}>QUALITÉ & RISQUE</div>
+  <Field label="CONTRÔLE QUALITÉ SPÉCIFIQUE"
+    value={f.controle_qualite_specifique}
+    onChange={v => set("controle_qualite_specifique", v)}
+    placeholder="ex: test étanchéité au jet d'eau, CEKAL renforcé" />
+  <Field label="NOTES POSE (accès, étage, contraintes site)"
+    value={f.notes_pose}
+    onChange={v => set("notes_pose", v)} />
+  <Select label="RISQUE PERSO (chantier sensible ?)"
+    options={[{v:"bas",l:"Standard"},{v:"moyen",l:"À surveiller"},{v:"haut",l:"Critique"}]}
+    value={f.risque_perso}
+    onChange={v => set("risque_perso", v)} />
+</div>
+```
+
+#### f) Branchement algo
+
+Une fois les champs saisis, l'algo `autoAssign` doit les exploiter :
 
 ```ts
-export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const formData = await req.formData();
-  const file = formData.get("file") as File | null;
-  if (!file) return NextResponse.json({ error: "missing file" }, { status: 400 });
-  const xml = await file.text();
-  const result = await importProF2Xml(xml, session.user.email);
-  return NextResponse.json(result);
+// Dans tryPlaceEtape (PlanningAffectations.tsx:813)
+function tryPlaceEtape(et: Etape, allowPhaseFallback: boolean) {
+  // ... existant ...
+
+  // ── NOUVEAU 1 : pose_chantier_date prime sur date_livraison ────────
+  const cmd = commandes.find(c => c.id === et.cmdId);
+  const deadlineEffective = cmd?.pose_chantier_date || cmd?.date_livraison_souhaitee || et.deadline;
+
+  // ── NOUVEAU 2 : opérateur préféré boost score ────────────────────
+  const ligne = (cmd?.lignes || []).find(l => /* match étape */);
+  const opPref = ligne?.operateur_prefere;
+  const opInterdit = ligne?.operateur_interdit;
+
+  competentOps = competentOps
+    .filter(op => !opInterdit || op.id !== opInterdit);
+
+  // ── NOUVEAU 3 : tampon custom ─────────────────────────────────────
+  const tamponCustom = ligne?.tampon_apres_min
+    ? parseInt(ligne.tampon_apres_min)
+    : postTamponAfter(et.postId);
+
+  // ── NOUVEAU 4 : laquage externe = jalon earliestStart ──────────
+  if (ligne?.laquage_externe && et.phase === "montage") {
+    const finCoupe = progress[et.chantier]?.lastSlotIdxByPhase?.coupe || 0;
+    const delaiLaq = parseInt(ligne.delai_laquage_jours || "5");
+    earliestSlot = Math.max(earliestSlot, finCoupe + delaiLaq * 2); // ×2 = demis
+  }
+
+  // ── NOUVEAU 5 : grand format vertical (galandage > 3 m) ─────────
+  if (ligne?.hauteur_mm > 3000 && et.phase === "montage") {
+    nbPers = Math.max(nbPers, 2); // toujours au moins 2 pour port pièce
+  }
+
+  // ── NOUVEAU 6 : regroupement_camion ─────────────────────────────
+  // Si true, on AJOUTE une contrainte que toutes les phases du chantier
+  // finissent dans la même semaine (ne pas split sur 2 semaines).
+  // Si chantier_split_autorise=true, on peut au contraire éclater.
+
+  // ── NOUVEAU 7 : score booster pour op préféré ──────────────────
+  for (const o of availOps) {
+    if (opPref && o.op.id === opPref) o.score += 0.5;
+  }
 }
 ```
 
@@ -661,7 +776,7 @@ Cet ensemble :
 
 | Priorité | Chantier | Effort | Impact |
 |:---:|---|:---:|:---:|
-| P0 | Import PRO F2 → `Order/FabItem` | M | 🔥🔥🔥 |
+| P0 | **SaisieCommande exhaustive** (champs manquants) | M | 🔥🔥🔥 |
 | P0 | Backward scheduling avec capacité | L | 🔥🔥🔥 |
 | P0 | Unifier `Commande` ↔ `Order` | L | 🔥🔥🔥 |
 | P1 | DAG `predecessorIds` sur `ProductionTask` | S | 🔥🔥 |
@@ -670,11 +785,15 @@ Cet ensemble :
 | P1 | Reporting retards en cours | S | 🔥 |
 | P2 | Split 7 étapes SIAL strict | M | 🔥 |
 | P2 | Heijunka effectif | M | 🔥 |
+| P2 | **Import PRO F2** (différé sur décision produit) | M | 🔥 |
 | P2 | Polling Odoo OF | S | 🔥 |
 | P2 | Fenêtres mobiles op dans rapport | XS | 🔥 |
 
-S = ½ jour · M = 2-3 jours · L = 1 semaine.
+XS = 2 h · S = ½ jour · M = 2-3 jours · L = 1 semaine.
 
-**Recommandation immédiate** : commencer par 4.1 (import PRO F2) car ça
-nourrit `Order/FabItem` qui sont les pré-requis de 4.2 et 4.3. Sans OF en
-BDD, le backward scheduling reste théorique.
+**Recommandation immédiate** : commencer par 4.1 (SaisieCommande
+exhaustive). C'est ce qui débloque tout le reste : tant qu'on n'a pas
+`hauteur_mm`, `laquage_externe`, `pose_chantier_date`, `regroupement_camion`,
+`operateur_prefere`, le backward scheduling marchera mais produira des
+plans naïfs (ignorera les laquages, respectera la mauvaise deadline,
+autorisera des split que le client n'accepte pas).
