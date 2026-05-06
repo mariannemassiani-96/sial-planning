@@ -201,6 +201,18 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   const [loaded, setLoaded] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Rapport de la dernière exécution de "Proposition auto" — affiché en modal
+  // pour expliquer ce qui a été placé / partiellement placé / non placé
+  // et le taux d'utilisation des opérateurs.
+  interface AutoAssignReport {
+    totalChantiers: number;
+    fullyPlaced: string[];
+    partiallyPlaced: Array<{ chantier: string; postesManquants: Array<{ postId: string; raison: string; minutes: number }> }>;
+    notPlaced: Array<{ chantier: string; raison: string }>;
+    opUsage: Array<{ nom: string; usedMin: number; capacityMin: number; pct: number; postsUsed: string[] }>;
+  }
+  const [autoAssignReport, setAutoAssignReport] = useState<AutoAssignReport | null>(null);
+
   // ── Charger les opérateurs + compétences depuis la base ──
   useEffect(() => {
     fetch("/api/operators")
@@ -683,31 +695,44 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
   //   - focus  → 1 op par poste, qualité maximale
   //   - normal → sweet spot (gain par op le meilleur)
   const autoAssign = useCallback(() => {
+    // ════════════════════════════════════════════════════════════════════
+    // ALGO V2 — Placement étape-par-étape avec 2 passes + rapport
+    //
+    // Différences avec V1 (ancien) :
+    //   - Plus chantier-par-chantier (qui prenait tous les bons ops sur le
+    //     1er et laissait les suivants sans rien) → étape-par-étape global
+    //   - Tracking de la capacité hebdo de CHAQUE opérateur (39h/36h/30h…
+    //     - jours fériés - absences RH - vendrediOff)
+    //   - Tri global des étapes : priorité chantier → deadline → phase → durée
+    //   - 2e passe avec fallback compétence par phase (EQUIPE) si la 1re
+    //     passe (compétence poste exacte) n'a pas trouvé d'opérateur
+    //   - Rapport final : chantiers placés/partiels/non placés + ops
+    //     sous-utilisés. Affiché dans une modal pour qu'AJ comprenne
+    //     pourquoi telle ou telle phase manque.
+    // ════════════════════════════════════════════════════════════════════
     const newAff: AffMap = {};
+    const phaseOrderMap: Record<string, number> = { coupe: 0, montage: 1, vitrage: 2, logistique: 3, isula: 4 };
 
-    // Construire la liste des chantiers à placer avec leur routage complet
-    // Chaque chantier = un objet { label, etapes: [{ pid, phase, minutes }] }
-    interface ChantierTask {
-      label: string;
-      priority: number;
-      deadline: string;
+    // ── 1. Construire la liste des ÉTAPES à placer ──────────────────────
+    interface Etape {
+      chantier: string; cmdId: string;
+      postId: string; phase: string; minutes: number;
+      deadline: string; priority: number;
       strategy: "crash" | "focus" | "normal";
-      etapes: Array<{ pid: string; phase: string; minutes: number }>;
-      phases: Array<{ phase: string; etapes: Array<{ pid: string; minutes: number }> }>;
     }
-
-    const chantiers: ChantierTask[] = [];
+    const etapes: Etape[] = [];
     const prioMap: Record<string, number> = { chantier_bloque: 0, urgente: 1, normale: 2 };
 
-    // Parcourir les commandes actives de la semaine affichée
     for (const cmd of commandes) {
-      const statut = (cmd as any).statut;
-      if (statut === "livre" || statut === "terminee" || statut === "annulee") continue;
-      // Construire le label chantier
-      const label = (cmd as any).ref_chantier || (cmd as any).client || "";
+      const a = cmd as any;
+      if (a.statut === "livre" || a.statut === "terminee" || a.statut === "annulee") continue;
+      const label = a.ref_chantier || a.client || "";
       if (!label) continue;
-      // Récupérer toutes les étapes de routage pour ce chantier (via postWork)
-      const etapes: Array<{ pid: string; phase: string; minutes: number }> = [];
+      const deadline = a.date_livraison_souhaitee || "9999-12-31";
+      const priority = prioMap[a.priorite] ?? 2;
+      // Récupérer toutes les étapes via postWork (qui agrège chantier × poste)
+      const cmdEtapes: Etape[] = [];
+      let totalMin = 0;
       for (const grp of activePosts) {
         if (grp.phase === "autre") continue;
         for (const pid of grp.posts) {
@@ -715,236 +740,274 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           if (!pw) continue;
           const cmdInfo = pw.cmds.find(c => (c.chantier || c.client) === label);
           if (cmdInfo && cmdInfo.min > 0) {
-            etapes.push({ pid, phase: grp.phase, minutes: cmdInfo.min });
+            totalMin += cmdInfo.min;
+            cmdEtapes.push({
+              chantier: label, cmdId: String(cmd.id),
+              postId: pid, phase: grp.phase, minutes: cmdInfo.min,
+              deadline, priority, strategy: "normal",
+            });
           }
         }
       }
-      if (etapes.length === 0) continue;
-      // Trier les étapes dans l'ordre : coupe → montage → vitrage → logistique → isula
-      const phaseOrder: Record<string, number> = { coupe: 0, montage: 1, vitrage: 2, logistique: 3, isula: 4 };
-      etapes.sort((a, b) => (phaseOrder[a.phase] ?? 9) - (phaseOrder[b.phase] ?? 9));
-
-      // Grouper par phase (C3+C4+C5+C6 = 1 phase "coupe", F1+F2+F3 = 1 phase "montage")
-      // Toutes les étapes d'une phase se font EN PARALLÈLE sur le même créneau
-      interface PhaseGroup { phase: string; etapes: Array<{ pid: string; minutes: number }> }
-      const phases: PhaseGroup[] = [];
-      for (const et of etapes) {
-        const lastPhase = phases[phases.length - 1];
-        if (lastPhase && lastPhase.phase === et.phase) {
-          lastPhase.etapes.push({ pid: et.pid, minutes: et.minutes });
-        } else {
-          phases.push({ phase: et.phase, etapes: [{ pid: et.pid, minutes: et.minutes }] });
-        }
-      }
-
-      // Détecter la stratégie selon l'urgence : on calcule les jours
-      // ouvrés disponibles entre aujourd'hui et la deadline, vs le besoin
-      // en jours-personne (charge totale / 8h/jour).
-      const deadline = (cmd as any).date_livraison_souhaitee || "9999-12-31";
+      if (cmdEtapes.length === 0) continue;
+      // Stratégie : crash si urgent, focus si peinard, normal sinon
       const today = new Date();
       const dl = new Date(deadline + "T12:00:00");
       const joursDispo = Math.max(1, Math.round((dl.getTime() - today.getTime()) / 86400000 * 5 / 7));
-      const totalMinChantier = etapes.reduce((s, e) => s + e.minutes, 0);
-      const joursBesoin = Math.max(0.5, totalMinChantier / 480);
+      const joursBesoin = Math.max(0.5, totalMin / 480);
       const strategy = detectStrategy(joursDispo, joursBesoin);
-
-      chantiers.push({
-        label,
-        priority: prioMap[(cmd as any).priorite] ?? 2,
-        deadline,
-        strategy,
-        etapes,
-        phases,
-      });
+      for (const e of cmdEtapes) e.strategy = strategy;
+      etapes.push(...cmdEtapes);
     }
 
-    // Trier les chantiers par priorité, puis deadline
-    chantiers.sort((a, b) => {
+    // ── 2. Capacité hebdomadaire de chaque opérateur ────────────────────
+    interface OpCapa { nom: string; remaining: number; capacity: number; postsUsed: Set<string>; }
+    const opCapa: Record<string, OpCapa> = {};
+    for (const op of ops) {
+      const eq = EQUIPE.find(e => e.nom === op.nom);
+      const baseMin = (eq?.h || 39) * 60;
+      let absMin = 0;
+      for (let j = 0; j < 5; j++) {
+        const d = new Date(viewWeek + "T00:00:00");
+        d.setDate(d.getDate() + j);
+        const ds = localStr(d);
+        const isVen = j === 4;
+        const dayMax = isVen
+          ? (eq?.h === 39 ? 420 : eq?.h === 36 ? 240 : eq?.h === 35 ? 420 : 450)
+          : (eq?.h === 39 ? 480 : eq?.h === 36 ? 480 : eq?.h === 35 ? 420 : 450);
+        const opRH = rhPlan[eq?.id || ""] || {};
+        const dispo = opRH[ds];
+        if ((dispo !== undefined && dispo === 0) || JOURS_FERIES[ds]) absMin += dayMax;
+        else if (isVen && op.vendrediOff) absMin += dayMax;
+      }
+      const capacity = Math.max(0, baseMin - absMin);
+      opCapa[op.nom] = { nom: op.nom, remaining: capacity, capacity, postsUsed: new Set() };
+    }
+
+    // ── 3. Trier les étapes : priorité → deadline → phase → durée (LPT) ──
+    etapes.sort((a, b) => {
       if (a.priority !== b.priority) return a.priority - b.priority;
-      return a.deadline.localeCompare(b.deadline);
+      const dd = a.deadline.localeCompare(b.deadline);
+      if (dd !== 0) return dd;
+      const po = (phaseOrderMap[a.phase] ?? 9) - (phaseOrderMap[b.phase] ?? 9);
+      if (po !== 0) return po;
+      return b.minutes - a.minutes;
     });
 
-    // Tracker la charge cumulée par (pid, j, demi) pour éviter surcharge
-    const cellLoad: Record<string, number> = {};
-    // Tracker ops par créneau ET par poste pour éviter les conflits inter-postes
-    // "opNom|j|demi" → pid (le poste où l'op est placé)
-    const opBookedPost: Record<string, string> = {};
-    // Tracker par chantier la dernière demi-journée atteinte (pour séquencement + tampon)
-    // Tampon = 1 demi-journée entre étapes (sauf si même poste on enchaîne)
+    // ── 4. Trackers globaux ─────────────────────────────────────────────
+    const cellLoad: Record<string, number> = {};                        // pid|j|demi → minutes utilisées
+    const opBookedPost: Record<string, string> = {};                    // opNom|j|demi → pid
+    const progress: Record<string, { lastSlotIdxByPhase: Record<string, number>; placedPosts: Set<string> }> = {};
 
-    for (const ch of chantiers) {
-      let minSlotIdx = 0; // prochain créneau dispo pour ce chantier
+    function postCompetenceFromPid(pid: string): string {
+      if (["M1", "M2", "V2"].includes(pid)) return "coulissant";
+      if (["F1", "F2", "F3", "M3", "V1"].includes(pid)) return "frappes";
+      if (pid === "MHS") return "hors_std";
+      if (pid.startsWith("C")) return "coupe";
+      if (pid.startsWith("I")) return "isula";
+      if (pid.startsWith("L")) return "logistique";
+      return "";
+    }
 
-      // Placer phase par phase (coupe, montage, vitrage)
-      // Toutes les étapes d'une phase sont placées EN PARALLÈLE sur le même créneau
-      for (const phaseGrp of ch.phases) {
-        // Trouver le temps max parmi les étapes de cette phase
-        // (car elles sont en parallèle → le créneau dure le max)
-        const _maxMinutes = Math.max(...phaseGrp.etapes.map(e => e.minutes));
+    // ── 5. Fonction de placement d'une étape ────────────────────────────
+    function tryPlaceEtape(et: Etape, allowPhaseFallback: boolean): { placed: boolean; partial: boolean; raison?: string } {
+      const isMonolithic = postIsMonolithic(et.postId);
+      const isIsulaPhase = et.phase === "isula";
 
-        // Pour chaque étape de la phase, identifier les opérateurs compétents
-        // et choisir le nombre optimal selon la stratégie du chantier ET les
-        // niveaux disponibles (apprenti / autonome / expert).
-        const etapeInfos = phaseGrp.etapes.map(et => {
-          const pid = et.pid;
-          const grp = activePosts.find(g => g.posts.includes(pid));
-          // Niveaux des opérateurs compétents (triés du meilleur au moins bon)
-          const competentOpsForLevel = ops.filter(op => op.competentPosts.includes(pid));
-          const levels = competentOpsForLevel
-            .map(op => op.skillLevels[pid] || 0)
-            .filter(l => l > 0)
-            .sort((a, b) => b - a);
-          // Choix autonome : crash / focus / normal + supervision si apprenti seul
-          const decision = chooseNbOps(pid, ch.strategy, levels.length > 0 ? levels : 2);
-          let nbPers = decision.nbProducers;
-          const requiresSupervisor = decision.requiresSupervisor;
-          // Garde-fou rétrocompat : très grosses charges sur C3 → 3 ops
-          if (pid === "C3" && et.minutes > DEMI_MIN * 4 && !postIsMonolithic(pid)) {
-            nbPers = Math.max(nbPers, 3);
-          }
-          // Plafonner par maxOperators du poste
-          const maxPersPoste = postMaxPers(pid);
-          if (maxPersPoste) nbPers = Math.min(nbPers, maxPersPoste);
-          nbPers = Math.max(1, nbPers);
-
-          const postCompetence = (() => {
-            if (pid === "M1" || pid === "M2" || pid === "V2") return "coulissant";
-            if (["F1","F2","F3","M3","V1"].includes(pid)) return "frappes";
-            if (pid === "MHS") return "hors_std";
-            if (pid.startsWith("C")) return "coupe";
-            if (pid.startsWith("I")) return "isula";
-            if (pid.startsWith("L")) return "logistique";
-            return grp?.competence || "";
-          })();
-
-          let competentOps = ops.filter(op => op.competentPosts.includes(pid));
-          if (competentOps.length === 0) {
-            competentOps = ops.filter(op => {
-              const eq = EQUIPE.find(e => e.nom === op.nom);
-              return eq?.competences.includes(postCompetence);
-            });
-          }
-          return { pid, minutes: et.minutes, nbPers, requiresSupervisor, competentOps, grp };
-        });
-
-        // Combien de demi-journées pour cette phase (basé sur l'étape la plus longue / le nbPers le plus favorable)
-        const primaryEtape = etapeInfos.reduce((a, b) => a.minutes > b.minutes ? a : b, etapeInfos[0]);
-        const slotsNeeded = primaryEtape ? Math.max(1, Math.ceil(primaryEtape.minutes / (DEMI_MIN * primaryEtape.nbPers))) : 1;
-
-        let slotsPlaced = 0;
-        let lastSlotIdxUsed = minSlotIdx - 1;
-
-        for (let globalIdx = minSlotIdx; globalIdx < 10 && slotsPlaced < slotsNeeded; globalIdx++) {
-          const j = Math.floor(globalIdx / 2);
-          const demi = globalIdx % 2 === 0 ? "am" : "pm";
-
-          // Sauter les jours fériés
-          const dayD = new Date(viewWeek + "T12:00:00");
-          dayD.setDate(dayD.getDate() + j);
-          if (JOURS_FERIES[localStr(dayD)]) continue;
-
-          // Contrainte ISULA : la chaîne ne tourne que les lundi/mardi/jeudi
-          // (j=0=lun, j=1=mar, j=3=jeu). Mercredi/vendredi → pas d'ISULA.
-          const isIsulaPhase = phaseGrp.phase === "isula";
-          const isIsulaDay = j === 0 || j === 1 || j === 3;
-          if (isIsulaPhase && !isIsulaDay) continue;
-
-          // Placer TOUTES les étapes de cette phase en parallèle sur ce créneau
-          let canPlace = true;
-          for (const ei of etapeInfos) {
-            const key = ck(ei.pid, j, demi);
-            const currentLoad = cellLoad[key] || 0;
-            if (currentLoad >= ei.nbPers * DEMI_MIN) { canPlace = false; break; }
-          }
-          if (!canPlace) continue;
-
-          for (const ei of etapeInfos) {
-            const key = ck(ei.pid, j, demi);
-            const currentLoad = cellLoad[key] || 0;
-
-            // Opérateurs disponibles (pas sur un AUTRE poste ce créneau, pas absent RH)
-            const availableOps = ei.competentOps
-              .filter(op => {
-                const booked = opBookedPost[`${op.nom}|${j}|${demi}`];
-                return !booked || booked === ei.pid;
-              })
-              .filter(op => !(j === 4 && op.vendrediOff))
-              .filter(op => !(j === 4 && demi === "pm" && op.id === "jp"))
-              // Filtrer les absents RH
-              .filter(op => {
-                const eq = EQUIPE.find(e => e.nom === op.nom);
-                const opRH = rhPlan[eq?.id || ""] || {};
-                const dayDate = new Date(viewWeek + "T12:00:00");
-                dayDate.setDate(dayDate.getDate() + j);
-                const dayStr = localStr(dayDate);
-                const dispo = opRH[dayStr];
-                return dispo === undefined || dispo > 0;
-              })
-              .map(op => {
-                const postHabits = habits[ei.pid] || {};
-                const skill = (op.skillLevels[ei.pid] || 0) / 3;
-                return { op, score: skill * 0.4 + (brainScores[op.nom]?.[ei.pid] || 0) * 0.3 + (postHabits[op.nom] || 0) * 0.3 };
-              })
-              .sort((a, b) => b.score - a.score);
-
-            const existingOps = newAff[key]?.ops || [];
-            const opsToPlace: string[] = [...existingOps];
-            for (const o of availableOps) {
-              if (opsToPlace.length >= ei.nbPers) break;
-              if (!opsToPlace.includes(o.op.nom)) opsToPlace.push(o.op.nom);
-            }
-
-            // Supervision : si chooseNbOps a demandé un superviseur, on
-            // ajoute un opérateur de niveau ≥3 *à part* dans `supervisors`
-            // (pas dans `ops`) — il ne réduit pas le temps machine, il est
-            // là pour la qualité / formation.
-            const supervisorsToPlace: string[] = [];
-            if (ei.requiresSupervisor) {
-              const supervisor = availableOps.find(o =>
-                !opsToPlace.includes(o.op.nom) && (o.op.skillLevels[ei.pid] || 0) >= 3
-              );
-              if (supervisor) supervisorsToPlace.push(supervisor.op.nom);
-            }
-
-            const existingCell = newAff[key] || { ops: [], cmds: [], extras: [] };
-            const newCmds = existingCell.cmds.includes(ch.label) ? existingCell.cmds : [...existingCell.cmds, ch.label];
-            const existingSupervisors = (existingCell as any).supervisors || [];
-            const mergedSupervisors = [...existingSupervisors];
-            for (const s of supervisorsToPlace) {
-              if (!mergedSupervisors.includes(s)) mergedSupervisors.push(s);
-            }
-            newAff[key] = { ...existingCell, ops: opsToPlace, cmds: newCmds, supervisors: mergedSupervisors };
-
-            cellLoad[key] = currentLoad + Math.min(ei.minutes, DEMI_MIN * ei.nbPers);
-            for (const opNom of opsToPlace) {
-              opBookedPost[`${opNom}|${j}|${demi}`] = ei.pid;
-            }
-            // Bloquer aussi les superviseurs sur ce créneau (ils ne peuvent
-            // pas être ailleurs) mais sans compter dans le temps machine.
-            for (const s of supervisorsToPlace) {
-              opBookedPost[`${s}|${j}|${demi}`] = ei.pid;
-            }
-          }
-
-          lastSlotIdxUsed = globalIdx;
-          slotsPlaced++;
-        }
-
-        // Tampon entre phases : utilise le tamponMinAfter du dernier poste
-        // de la phase courante (issu de WORK_POSTS). Converti en demi-
-        // journées (1 demi = 240 min). Si la phase ne change pas, on
-        // enchaîne au créneau suivant.
-        const nextPhase = ch.phases[ch.phases.indexOf(phaseGrp) + 1];
-        if (nextPhase && nextPhase.phase !== phaseGrp.phase) {
-          // Trouver le tampon max parmi les postes de la phase qui se termine
-          const tamponMax = Math.max(0, ...phaseGrp.etapes.map(e => postTamponAfter(e.pid)));
-          const tamponDemi = Math.max(1, Math.ceil(tamponMax / DEMI_MIN));
-          minSlotIdx = lastSlotIdxUsed + 1 + tamponDemi;
-        } else {
-          minSlotIdx = lastSlotIdxUsed + 1;
+      // Identifier les ops compétents (poste exact, ou fallback phase)
+      let competentOps = ops.filter(op => op.competentPosts.includes(et.postId));
+      if (competentOps.length === 0 && allowPhaseFallback) {
+        const phaseComp = postCompetenceFromPid(et.postId);
+        if (phaseComp) {
+          competentOps = ops.filter(op => {
+            const eq = EQUIPE.find(e => e.nom === op.nom);
+            return !!eq?.competences.includes(phaseComp);
+          });
         }
       }
+      if (competentOps.length === 0) {
+        return { placed: false, partial: false, raison: `aucun opérateur compétent sur ${et.postId}` };
+      }
+
+      // Choix du nb d'opérateurs selon stratégie + niveaux dispos
+      const levels = competentOps.map(op => op.skillLevels[et.postId] || 0).filter(l => l > 0).sort((a, b) => b - a);
+      const decision = chooseNbOps(et.postId, et.strategy, levels.length > 0 ? levels : 2);
+      let nbPers = isMonolithic ? 1 : decision.nbProducers;
+      if (et.postId === "C3" && et.minutes > DEMI_MIN * 4 && !isMonolithic) nbPers = Math.max(nbPers, 3);
+      const maxPersPoste = postMaxPers(et.postId);
+      if (maxPersPoste) nbPers = Math.min(nbPers, maxPersPoste);
+      nbPers = Math.max(1, nbPers);
+      const requiresSupervisor = decision.requiresSupervisor;
+
+      const slotsNeeded = Math.max(1, Math.ceil(et.minutes / (DEMI_MIN * nbPers)));
+
+      // Tampon avec phases précédentes
+      const ch = progress[et.chantier] || { lastSlotIdxByPhase: {}, placedPosts: new Set<string>() };
+      let earliestSlot = 0;
+      for (const [ph, slotIdx] of Object.entries(ch.lastSlotIdxByPhase)) {
+        if ((phaseOrderMap[ph] ?? 9) < (phaseOrderMap[et.phase] ?? 9)) {
+          // phase précédente → tampon en demi-journées
+          const tamponMin = postTamponAfter(et.postId);
+          const tamponDemi = Math.max(1, Math.ceil(tamponMin / DEMI_MIN));
+          earliestSlot = Math.max(earliestSlot, slotIdx + tamponDemi);
+        } else if (ph === et.phase) {
+          earliestSlot = Math.max(earliestSlot, slotIdx + 1);
+        }
+      }
+
+      let slotsPlaced = 0;
+      let lastIdxUsed = -1;
+
+      for (let globalIdx = earliestSlot; globalIdx < 10 && slotsPlaced < slotsNeeded; globalIdx++) {
+        const j = Math.floor(globalIdx / 2);
+        const demi = globalIdx % 2 === 0 ? "am" : "pm";
+        const dayD = new Date(viewWeek + "T12:00:00");
+        dayD.setDate(dayD.getDate() + j);
+        if (JOURS_FERIES[localStr(dayD)]) continue;
+        if (isIsulaPhase && !(j === 0 || j === 1 || j === 3)) continue;
+
+        const key = ck(et.postId, j, demi);
+        const currentLoad = cellLoad[key] || 0;
+        const cellCapacity = nbPers * DEMI_MIN;
+        if (currentLoad >= cellCapacity) continue;
+
+        // Filtrer + scorer les ops dispos
+        const availOps = competentOps
+          .filter(op => {
+            const booked = opBookedPost[`${op.nom}|${j}|${demi}`];
+            if (booked && booked !== et.postId) return false;
+            // Heures restantes hebdo
+            if ((opCapa[op.nom]?.remaining || 0) < 30) return false;
+            if (j === 4 && op.vendrediOff) return false;
+            if (j === 4 && demi === "pm" && op.id === "jp") return false;
+            const eq = EQUIPE.find(e => e.nom === op.nom);
+            const opRH = rhPlan[eq?.id || ""] || {};
+            const dayDate = new Date(viewWeek + "T12:00:00");
+            dayDate.setDate(dayDate.getDate() + j);
+            const dispo = opRH[localStr(dayDate)];
+            return dispo === undefined || dispo > 0;
+          })
+          .map(op => {
+            const postHabits = habits[et.postId] || {};
+            const skill = (op.skillLevels[et.postId] || 0) / 3;
+            const habit = postHabits[op.nom] || 0;
+            const brain = brainScores[op.nom]?.[et.postId] || 0;
+            // Bonus inverse à l'utilisation : pousse les ops sous-utilisés
+            const cap = opCapa[op.nom];
+            const useRatio = cap && cap.capacity > 0 ? 1 - cap.remaining / cap.capacity : 0;
+            return { op, score: skill * 0.35 + brain * 0.25 + habit * 0.2 - useRatio * 0.2 };
+          })
+          .sort((a, b) => b.score - a.score);
+
+        const existingOps = newAff[key]?.ops || [];
+        const opsToPlace: string[] = [...existingOps];
+        for (const o of availOps) {
+          if (opsToPlace.length >= nbPers) break;
+          if (!opsToPlace.includes(o.op.nom)) opsToPlace.push(o.op.nom);
+        }
+        if (opsToPlace.length === 0) continue; // pas d'op dispo, créneau suivant
+
+        const supervisorsToPlace: string[] = [];
+        if (requiresSupervisor) {
+          const sup = availOps.find(o =>
+            !opsToPlace.includes(o.op.nom) && (o.op.skillLevels[et.postId] || 0) >= 3
+          );
+          if (sup) supervisorsToPlace.push(sup.op.nom);
+        }
+
+        const existing = newAff[key] || { ops: [], cmds: [], extras: [] };
+        const newCmds = existing.cmds.includes(et.chantier) ? existing.cmds : [...existing.cmds, et.chantier];
+        const existingSupervisors = (existing as any).supervisors || [];
+        const mergedSupervisors = [...existingSupervisors];
+        for (const s of supervisorsToPlace) if (!mergedSupervisors.includes(s)) mergedSupervisors.push(s);
+        newAff[key] = { ...existing, ops: opsToPlace, cmds: newCmds, supervisors: mergedSupervisors };
+
+        // Décompter les minutes machine (cellLoad) et les heures opérateurs
+        const minutesPlacedHere = Math.min(DEMI_MIN, cellCapacity - currentLoad);
+        cellLoad[key] = currentLoad + minutesPlacedHere;
+        for (const opNom of opsToPlace) {
+          opBookedPost[`${opNom}|${j}|${demi}`] = et.postId;
+          if (!existingOps.includes(opNom)) {
+            const cap = opCapa[opNom];
+            if (cap) {
+              const used = Math.min(DEMI_MIN, cap.remaining);
+              cap.remaining = Math.max(0, cap.remaining - used);
+              cap.postsUsed.add(et.postId);
+            }
+          }
+        }
+        for (const s of supervisorsToPlace) opBookedPost[`${s}|${j}|${demi}`] = et.postId;
+
+        lastIdxUsed = globalIdx;
+        slotsPlaced++;
+      }
+
+      if (!progress[et.chantier]) progress[et.chantier] = { lastSlotIdxByPhase: {}, placedPosts: new Set() };
+      if (slotsPlaced === 0) {
+        return { placed: false, partial: false, raison: `aucun créneau dispo (semaine saturée ou tampon impossible)` };
+      }
+      progress[et.chantier].lastSlotIdxByPhase[et.phase] = lastIdxUsed;
+      progress[et.chantier].placedPosts.add(et.postId);
+      if (slotsPlaced < slotsNeeded) {
+        return { placed: false, partial: true, raison: `partiel (${slotsPlaced}/${slotsNeeded} créneaux), semaine saturée` };
+      }
+      return { placed: true, partial: false };
     }
+
+    // ── 6. Passe 1 : compétence poste exacte ────────────────────────────
+    interface EchecEtape { etape: Etape; raison: string; partial: boolean }
+    const echecs: EchecEtape[] = [];
+    for (const et of etapes) {
+      const r = tryPlaceEtape(et, false);
+      if (!r.placed) echecs.push({ etape: et, raison: r.raison || "?", partial: r.partial });
+    }
+
+    // ── 7. Passe 2 : retenter les échecs avec fallback compétence phase ─
+    const stillFailed: EchecEtape[] = [];
+    for (const f of echecs) {
+      const r = tryPlaceEtape(f.etape, true);
+      if (!r.placed) stillFailed.push({ etape: f.etape, raison: r.raison || f.raison, partial: r.partial });
+    }
+
+    // ── 8. Construire le rapport ────────────────────────────────────────
+    const chantiersById = new Map<string, { all: number; placed: number; missing: EchecEtape[] }>();
+    for (const et of etapes) {
+      if (!chantiersById.has(et.chantier)) chantiersById.set(et.chantier, { all: 0, placed: 0, missing: [] });
+      chantiersById.get(et.chantier)!.all++;
+    }
+    for (const et of etapes) {
+      const failed = stillFailed.find(f => f.etape === et);
+      if (!failed) chantiersById.get(et.chantier)!.placed++;
+      else chantiersById.get(et.chantier)!.missing.push(failed);
+    }
+
+    const fullyPlaced: string[] = [];
+    const partiallyPlaced: AutoAssignReport["partiallyPlaced"] = [];
+    const notPlaced: AutoAssignReport["notPlaced"] = [];
+    for (const [label, ch] of Array.from(chantiersById.entries())) {
+      if (ch.placed === ch.all) fullyPlaced.push(label);
+      else if (ch.placed === 0) {
+        notPlaced.push({ chantier: label, raison: ch.missing[0]?.raison || "non placé" });
+      } else {
+        partiallyPlaced.push({
+          chantier: label,
+          postesManquants: ch.missing.map(m => ({
+            postId: m.etape.postId, raison: m.raison, minutes: m.etape.minutes,
+          })),
+        });
+      }
+    }
+
+    const opUsage = Object.values(opCapa)
+      .map(c => ({
+        nom: c.nom,
+        usedMin: c.capacity - c.remaining,
+        capacityMin: c.capacity,
+        pct: c.capacity > 0 ? Math.round((c.capacity - c.remaining) / c.capacity * 100) : 0,
+        postsUsed: Array.from(c.postsUsed).sort(),
+      }))
+      .sort((a, b) => a.pct - b.pct);
+
 
     // ── Ajouter automatiquement les livreurs pour les livraisons "nous" ──
     // Source unique : listLivraisonsForWeek (gère les multi-livraisons).
@@ -1030,6 +1093,11 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     }
 
     saveAff(newAff);
+    // Afficher le rapport en modal
+    setAutoAssignReport({
+      totalChantiers: chantiersById.size,
+      fullyPlaced, partiallyPlaced, notPlaced, opUsage,
+    });
   }, [activePosts, postWork, saveAff, ops, habits, brainScores, commandes, viewWeek, aff, rhPlan]);
 
   // ── Tout effacer ──
@@ -1783,6 +1851,133 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                 {o.label} ({o.saturationPct}% — {hm(o.needed)} pour {hm(o.capacity)} dispo)
               </span>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Rapport "Proposition auto" ── */}
+      {autoAssignReport && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 9000,
+          background: "rgba(0,0,0,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 20,
+        }}
+          onClick={() => setAutoAssignReport(null)}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: C.s1, border: `1px solid ${C.border}`, borderRadius: 8,
+            maxWidth: 720, width: "100%", maxHeight: "85vh", overflowY: "auto",
+            padding: "16px 20px",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <span style={{ fontSize: 16, fontWeight: 800, color: C.text }}>
+                Rapport Proposition auto · {weekId(viewWeek)}
+              </span>
+              <button onClick={() => setAutoAssignReport(null)} style={{
+                background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 18,
+              }}>✕</button>
+            </div>
+
+            {/* Résumé global */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 110, background: C.green + "15", border: `1px solid ${C.green}55`, borderRadius: 6, padding: "8px 10px" }}>
+                <div style={{ fontSize: 10, color: C.green, fontWeight: 700 }}>✓ COMPLETS</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: C.green }}>{autoAssignReport.fullyPlaced.length}</div>
+                <div style={{ fontSize: 9, color: C.muted }}>tous postes placés</div>
+              </div>
+              <div style={{ flex: 1, minWidth: 110, background: C.orange + "15", border: `1px solid ${C.orange}55`, borderRadius: 6, padding: "8px 10px" }}>
+                <div style={{ fontSize: 10, color: C.orange, fontWeight: 700 }}>⚠ PARTIELS</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: C.orange }}>{autoAssignReport.partiallyPlaced.length}</div>
+                <div style={{ fontSize: 9, color: C.muted }}>certains postes manquent</div>
+              </div>
+              <div style={{ flex: 1, minWidth: 110, background: C.red + "15", border: `1px solid ${C.red}55`, borderRadius: 6, padding: "8px 10px" }}>
+                <div style={{ fontSize: 10, color: C.red, fontWeight: 700 }}>✕ NON PLACÉS</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: C.red }}>{autoAssignReport.notPlaced.length}</div>
+                <div style={{ fontSize: 9, color: C.muted }}>aucune phase posée</div>
+              </div>
+              <div style={{ flex: 1, minWidth: 110, background: C.s2, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 10px" }}>
+                <div style={{ fontSize: 10, color: C.sec, fontWeight: 700 }}>TOTAL</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{autoAssignReport.totalChantiers}</div>
+                <div style={{ fontSize: 9, color: C.muted }}>chantiers à placer</div>
+              </div>
+            </div>
+
+            {/* Chantiers partiels */}
+            {autoAssignReport.partiallyPlaced.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.orange, marginBottom: 6 }}>
+                  Chantiers partiels — postes manquants
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {autoAssignReport.partiallyPlaced.map((p, i) => (
+                    <div key={i} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "6px 8px" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{p.chantier}</div>
+                      <div style={{ fontSize: 10, color: C.sec, marginTop: 2 }}>
+                        {p.postesManquants.map((m, j) => (
+                          <span key={j} style={{ marginRight: 8 }}>
+                            <b style={{ color: C.orange }}>{m.postId}</b> ({hm(m.minutes)}) — {m.raison}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Chantiers non placés */}
+            {autoAssignReport.notPlaced.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.red, marginBottom: 6 }}>
+                  Chantiers non placés
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {autoAssignReport.notPlaced.map((p, i) => (
+                    <div key={i} style={{ background: C.bg, border: `1px solid ${C.red}33`, borderRadius: 4, padding: "6px 8px" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{p.chantier}</div>
+                      <div style={{ fontSize: 10, color: C.red, marginTop: 2 }}>{p.raison}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Utilisation opérateurs */}
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 6 }}>
+                Utilisation des opérateurs
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 6 }}>
+                {autoAssignReport.opUsage.map(o => {
+                  const barColor = o.pct < 50 ? C.muted : o.pct < 80 ? C.green : o.pct < 100 ? C.orange : C.red;
+                  return (
+                    <div key={o.nom} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "6px 8px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{o.nom}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: barColor }}>{o.pct}%</span>
+                      </div>
+                      <div style={{ height: 4, background: C.s2, borderRadius: 2, overflow: "hidden", margin: "3px 0" }}>
+                        <div style={{ width: `${Math.min(100, o.pct)}%`, height: "100%", background: barColor }} />
+                      </div>
+                      <div style={{ fontSize: 9, color: C.muted }}>
+                        {hm(o.usedMin)} / {hm(o.capacityMin)}
+                      </div>
+                      {o.postsUsed.length > 0 && (
+                        <div style={{ fontSize: 8, color: C.sec, marginTop: 2 }}>
+                          {o.postsUsed.join(", ")}
+                        </div>
+                      )}
+                      {o.pct < 50 && o.capacityMin > 0 && (
+                        <div style={{ fontSize: 8, color: C.orange, marginTop: 2, fontStyle: "italic" }}>
+                          Sous-utilisé
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       )}
