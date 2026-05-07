@@ -687,6 +687,36 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     saveAff(newAff);
   }, [aff, saveAff]);
 
+  // Phase 0-B : appel à l'algo backward (POST /api/scheduling/backward).
+  // Conserve l'ancien autoAssign en parallèle — pas de remplacement forcé.
+  const runBackwardSchedule = useCallback(async () => {
+    try {
+      const res = await fetch("/api/scheduling/backward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Échec planning backward : ${err.error || res.statusText}`);
+        return;
+      }
+      const data = await res.json();
+      const results = (data?.results || []) as Array<{ orderId: string; fullyPlaced: string[]; partiallyPlaced: any[]; notPlaced: any[] }>;
+      const totalChantiers = results.reduce((s, r) => s + r.fullyPlaced.length + r.partiallyPlaced.length + r.notPlaced.length, 0);
+      // Réutiliser le modal existant (AutoAssignReport) pour afficher un résumé.
+      setAutoAssignReport({
+        totalChantiers,
+        fullyPlaced: results.flatMap(r => r.fullyPlaced),
+        partiallyPlaced: results.flatMap(r => r.partiallyPlaced),
+        notPlaced: results.flatMap(r => r.notPlaced),
+        opUsage: [], // l'algo backward ne renvoie pas opUsage pour l'instant
+      });
+    } catch (e) {
+      alert(`Erreur planning backward : ${String(e)}`);
+    }
+  }, []);
+
   // ── Proposition automatique ──
   // Algorithme par chantier (séquentiel) : pour chaque chantier, placer ses étapes
   // de routage dans l'ordre (coupe → montage → vitrage → palette) avec tampon.
@@ -1815,7 +1845,10 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <button onClick={autoAssign} style={{ padding: "8px 16px", background: C.orange, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-            Proposition auto
+            Proposition auto (semaines)
+          </button>
+          <button onClick={runBackwardSchedule} style={{ padding: "8px 16px", background: C.cyan, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+            Planifier backward (créneaux)
           </button>
           <button onClick={clearAll} style={{ padding: "6px 16px", background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, fontSize: 11, cursor: "pointer" }}>
             Tout effacer

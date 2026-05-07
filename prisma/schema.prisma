@@ -248,6 +248,7 @@ model Operator {
   naissance       String?
   absences        OperatorAbsence[]
   taskAssignments TaskAssignment[]
+  scheduleSlots   ScheduleSlot[]
   skills          OperatorSkill[]
 }
 
@@ -405,10 +406,37 @@ model ProductionTask {
   blockedReason    String?
   sortOrder        Int            @map("sort_order")
   isBlocking       Boolean        @default(false)
+  /// Phase 0-B / 1-A : IDs des tasks qui doivent finir avant celle-ci.
+  predecessorIds   String[]       @default([])
+  /// Phase 0-B : borne basse (jalons matière, fin laquage, etc.).
+  earliestStart    DateTime?
+  /// Phase 0-B : calculé par backward (deadline - tampons aval).
+  latestFinish     DateTime?
+  /// Phase 0-B : mis à jour quand l'algo pose la task.
+  scheduledStart   DateTime?
+  scheduledEnd     DateTime?
   assignments      TaskAssignment[]
   qcChecks         QCCheck[]
+  scheduleSlots    ScheduleSlot[]
   fabItem          FabItem        @relation(fields: [fabItemId], references: [id], onDelete: Cascade)
   workPost         WorkPost       @relation(fields: [workPostId], references: [id])
+}
+
+/// Phase 0-B : un créneau atomique (½ journée) où un opérateur travaille
+/// sur une ProductionTask. Source de vérité pour la grille de planning.
+model ScheduleSlot {
+  id          String         @id @default(cuid())
+  taskId      String
+  operatorId  String
+  date        DateTime       // jour du créneau (00:00 UTC)
+  halfDay     String         // "AM" | "PM"
+  minutes     Int            // minutes effectives (≤ 240)
+  createdAt   DateTime       @default(now())
+  task        ProductionTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  operator    Operator       @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+
+  @@index([date, halfDay])
+  @@unique([taskId, operatorId, date, halfDay])
 }
 
 enum TaskStatus {
