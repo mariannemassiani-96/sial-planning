@@ -189,3 +189,103 @@ export const AUTO_PLANNING_OUTPUTS = [
   "semaine_vitrage",
   "semaine_isula",
 ] as const;
+
+// ═══════════════════════════════════════════════════════════════════════
+// Phase 2-B : Heijunka — lissage des tâches Frappes sur la semaine.
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface HeijunkaSlot {
+  /** id du slot (ex. "F2|2026-05-08|AM") */
+  key: string;
+  postId: string;
+  date: string;        // YYYY-MM-DD
+  halfDay: "AM" | "PM";
+  /** Charge actuelle du créneau en minutes. */
+  loadedMin: number;
+  /** Capacité maximale du créneau en minutes (poste × demi). */
+  capacityMin: number;
+  /** Tâches Frappes posées sur ce slot, avec id task et minutes. */
+  frappesTasks: Array<{ taskId: string; minutes: number; predecessorIds?: string[]; }>;
+}
+
+/**
+ * Phase 2-B : déplace les tâches "Frappes" (postes F1/F2/F3/M1/M2/M3)
+ * des demi-journées surchargées (>90%) vers les sous-chargées (<70%)
+ * de la même semaine. Respecte les predecessorIds (on ne déplace pas
+ * une tâche dont le prédécesseur est posé après le créneau cible).
+ *
+ * Cette fonction est PURE : elle prend l'état des slots en entrée et
+ * retourne les ré-allocations à appliquer. C'est à l'appelant de les
+ * persister (ScheduleSlot UPDATE ou cellLoad recalc).
+ */
+export interface HeijunkaMove {
+  taskId: string;
+  fromKey: string;
+  toKey: string;
+}
+
+export function heijunkaRebalance(
+  weekSlots: HeijunkaSlot[],
+  /** Indice qui dit pour chaque taskId la liste de prédécesseurs (et leurs slots) */
+  predecessorSlotByTask?: Record<string, string[]>,
+): HeijunkaMove[] {
+  const moves: HeijunkaMove[] = [];
+  if (weekSlots.length === 0) return moves;
+
+  // Indexer slots par poste pour cibler les Frappes.
+  const slotsByPost = new Map<string, HeijunkaSlot[]>();
+  for (const s of weekSlots) {
+    if (!slotsByPost.has(s.postId)) slotsByPost.set(s.postId, []);
+    slotsByPost.get(s.postId)!.push(s);
+  }
+
+  const FRAPPES_POSTS = ["F1", "F2", "F3", "M1", "M2", "M3"];
+
+  for (const post of FRAPPES_POSTS) {
+    const arr = slotsByPost.get(post);
+    if (!arr || arr.length < 2) continue;
+
+    // Répéter jusqu'à stabilité (max 5 itérations pour borner)
+    for (let iter = 0; iter < 5; iter++) {
+      arr.sort((a, b) => a.date.localeCompare(b.date) || a.halfDay.localeCompare(b.halfDay));
+      const overloaded = arr.filter(s => s.loadedMin / s.capacityMin > 0.9);
+      const underloaded = arr.filter(s => s.loadedMin / s.capacityMin < 0.7);
+      if (overloaded.length === 0 || underloaded.length === 0) break;
+
+      let didMove = false;
+      for (const src of overloaded) {
+        // On essaie de déplacer la tâche la plus petite d'abord pour minimiser
+        // la fragmentation et garder la plus grosse au plus tôt.
+        const candidates = [...src.frappesTasks].sort((a, b) => a.minutes - b.minutes);
+        for (const cand of candidates) {
+          // Vérifier predecessorSlot (si défini) : on ne peut pas déplacer
+          // avant les preds. On compare les keys lexicographiquement —
+          // weekSlots fournit `date|halfDay` triable.
+          const predSlots = predecessorSlotByTask?.[cand.taskId] || [];
+          for (const dst of underloaded) {
+            if (dst === src) continue;
+            const room = dst.capacityMin - dst.loadedMin;
+            if (room < cand.minutes) continue;
+            // Si pred posé après dst, on ne peut pas reculer (on ne pose
+            // pas avant le prédécesseur).
+            const predTooLate = predSlots.some(pk => pk > dst.key);
+            if (predTooLate) continue;
+
+            // Effectuer le déplacement
+            moves.push({ taskId: cand.taskId, fromKey: src.key, toKey: dst.key });
+            src.loadedMin -= cand.minutes;
+            dst.loadedMin += cand.minutes;
+            src.frappesTasks = src.frappesTasks.filter(t => t.taskId !== cand.taskId);
+            dst.frappesTasks.push(cand);
+            didMove = true;
+            break;
+          }
+          if (didMove) break;
+        }
+      }
+      if (!didMove) break;
+    }
+  }
+
+  return moves;
+}

@@ -8,7 +8,14 @@
 // Aligné sur SPEC_PLANNING_SIAL_ISULA.md sections 3 & 6.
 // ═══════════════════════════════════════════════════════════════════════
 
+/**
+ * Phase 2-A : "vitrage" est conservée comme valeur canonique pour préserver
+ * 100 % de compatibilité (toutes les données BDD, tous les composants
+ * existants utilisent "vitrage"). On expose `pose_vitrage` comme alias
+ * sémantique recommandé pour les nouveaux développements.
+ */
 export type Phase = "coupe" | "montage" | "vitrage" | "isula" | "logistique" | "autre";
+export const PHASE_POSE_VITRAGE: Phase = "vitrage"; // alias sémantique 7-étapes SIAL
 
 export interface WorkPostDef {
   id: string;
@@ -87,8 +94,12 @@ export const WORK_POSTS: WorkPostDef[] = [
   P("C4", "Coupe double tête",        "Coupe 2 têtes", "SIAL", "coupe", 540, 1, T_DEFAULT, COLOR_COUPE, true,  4, 1, PARALLEL_MONO, true),
   P("C5", "Coupe renfort acier",      "Renfort acier", "SIAL", "coupe", 540, 1, T_DEFAULT, COLOR_COUPE, true,  5, 1, PARALLEL_MONO, true),
   P("C6", "Soudure PVC",              "Soudure PVC", "SIAL", "coupe", 540, 1, T_DEFAULT, COLOR_COUPE, true,  6, 1, PARALLEL_MONO, true),
+  // Phase 2-A : Étape 2 (usinage / fraisage) — entre coupe et montage.
+  P("U1", "Usinage / Fraisage",       "Usinage",     "SIAL", "coupe", 480, 1, T_DEFAULT, COLOR_COUPE, true,  7, 1, PARALLEL_MONO,       true),
 
   // ── SIAL Montage Coulissants/Galandages/Portes ─────────────────────────
+  // Phase 2-A : Étape 3 (préparation ferrures) — avant l'assemblage F2.
+  P("P1", "Préparation ferrures",     "Prépa ferr.",  "SIAL", "montage", 240, 1, T_DEFAULT, COLOR_MONTAGE, true, 0, 1, PARALLEL_MONO, true),
   // M1/M3 : 2 ops utiles (un dormant + un ouvrant en parallèle).
   P("M1", "Dormants coulissants",     "Dorm. couliss.", "SIAL", "montage", 1080, 2, T_DEFAULT, COLOR_MONTAGE, true, 1, 2, PARALLEL_LINEAIRE_2, false),
   // M2 : galandage = grand format, qualité critique → 1 op du début à fin (Alain).
@@ -120,9 +131,12 @@ export const WORK_POSTS: WorkPostDef[] = [
   P("I8", "Sortie chaîne + rangement",        "Sortie+rang.","ISULA", "isula", 1050, 3, T_DEFAULT, COLOR_ISULA, false, 8, 3, PARALLEL_LINEAIRE_3, false),
 
   // ── Logistique ─────────────────────────────────────────────────────────
-  P("L4", "Prépa accessoires fabrication", "Prépa acc.",   "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, true,  1, 2, PARALLEL_LINEAIRE_2, false),
-  P("L6", "Réalisation des palettes",      "Palettes",     "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, true,  2, 2, PARALLEL_LINEAIRE_2, false),
-  P("L7", "Chargement camion",             "Chargement",   "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, true,  3, 2, PARALLEL_LINEAIRE_2, false),
+  // Phase 2-A : Étapes 6 et 7 (CQ final + emballage/palettisation).
+  P("CQ1","Contrôle qualité final",        "CQ final",     "SIAL", "logistique", 240, 1, T_DEFAULT, COLOR_LOG, true,  0, 1, PARALLEL_MONO,       true),
+  P("EM1","Emballage / Palettisation",     "Emballage",    "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, true,  1, 2, PARALLEL_LINEAIRE_2, false),
+  P("L4", "Prépa accessoires fabrication", "Prépa acc.",   "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, true,  2, 2, PARALLEL_LINEAIRE_2, false),
+  P("L6", "Réalisation des palettes",      "Palettes",     "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, true,  3, 2, PARALLEL_LINEAIRE_2, false),
+  P("L7", "Chargement camion",             "Chargement",   "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, true,  4, 2, PARALLEL_LINEAIRE_2, false),
   P("L1", "Déchargement fournisseur",      "Déch. fourn.", "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, false, 4, 2, PARALLEL_LINEAIRE_2, false),
   P("L2", "Rangement stock profilés",      "Stock prof.",  "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, false, 5, 2, PARALLEL_LINEAIRE_2, false),
   P("L3", "Rangement stock accessoires",   "Stock acc.",   "SIAL", "logistique", 480, 2, T_DEFAULT, COLOR_LOG, false, 6, 2, PARALLEL_LINEAIRE_2, false),

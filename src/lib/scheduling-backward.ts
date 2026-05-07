@@ -15,6 +15,7 @@
 import prisma from "@/lib/prisma";
 import { detectStrategy } from "@/lib/work-posts";
 import { chooseNbOps, postIsMonolithic, postCapacityMinDay, postTamponAfter } from "@/lib/work-posts";
+import { heijunkaRebalance, type HeijunkaSlot } from "@/lib/auto-planning";
 import {
   HalfDayCursor,
   cellKey,
@@ -298,6 +299,54 @@ export async function backwardSchedule(orderId: string): Promise<ScheduleReport>
         neededSlots: slotsNeeded,
       });
     }
+  }
+
+  // ── 6a. Phase 2-B : Heijunka — lisser les Frappes de la même semaine ──
+  // Construit les HeijunkaSlot à partir de newSlotsToInsert puis applique
+  // les moves retournés. C'est best-effort : si ça échoue, on garde le
+  // résultat brut du backward.
+  try {
+    const FRAPPES = new Set(["F1", "F2", "F3", "M1", "M2", "M3"]);
+    const slotsByKey = new Map<string, HeijunkaSlot>();
+    for (const s of newSlotsToInsert) {
+      const t = tasksMap.get(s.taskId);
+      if (!t || !FRAPPES.has(t.workPostId)) continue;
+      const dStr = localStr(s.date);
+      const key = `${t.workPostId}|${dStr}|${s.halfDay}`;
+      if (!slotsByKey.has(key)) {
+        slotsByKey.set(key, {
+          key,
+          postId: t.workPostId,
+          date: dStr,
+          halfDay: s.halfDay,
+          loadedMin: 0,
+          capacityMin: postCapacityMinDay(t.workPostId) / 2,
+          frappesTasks: [],
+        });
+      }
+      const slot = slotsByKey.get(key)!;
+      slot.loadedMin += s.minutes;
+      slot.frappesTasks.push({ taskId: s.taskId, minutes: s.minutes });
+    }
+    const moves = heijunkaRebalance(Array.from(slotsByKey.values()));
+    // Appliquer les moves : on déplace dans newSlotsToInsert (in-memory).
+    for (const m of moves) {
+      const [_postId, toDate, toHalf] = m.toKey.split("|");
+      for (const s of newSlotsToInsert) {
+        if (s.taskId !== m.taskId) continue;
+        const sStr = localStr(s.date);
+        const fromKey = `${tasksMap.get(s.taskId)?.workPostId}|${sStr}|${s.halfDay}`;
+        if (fromKey === m.fromKey) {
+          s.date = parseDay(toDate);
+          s.halfDay = toHalf as "AM" | "PM";
+        }
+      }
+    }
+    if (moves.length > 0) {
+      console.log(`[heijunkaRebalance] ${moves.length} déplacements dans order ${orderId}`);
+    }
+  } catch (e) {
+    console.error("[heijunkaRebalance]", e);
   }
 
   // ── 6. Persister en BDD : ScheduleSlot + scheduledStart/End ──────────

@@ -2015,6 +2015,9 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 6 }}>
                 {autoAssignReport.opUsage.map(o => {
                   const barColor = o.pct < 50 ? C.muted : o.pct < 80 ? C.green : o.pct < 100 ? C.orange : C.red;
+                  // Phase 2-C : fenêtre mobile = minutes restantes
+                  const remainMin = Math.max(0, o.capacityMin - o.usedMin);
+                  const remainColor = remainMin > 240 ? C.green : remainMin >= 60 ? C.orange : C.red;
                   return (
                     <div key={o.nom} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "6px 8px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -2027,6 +2030,17 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                       <div style={{ fontSize: 9, color: C.muted }}>
                         {hm(o.usedMin)} / {hm(o.capacityMin)}
                       </div>
+                      {/* Phase 2-C : fenêtre mobile en minutes restantes */}
+                      {o.capacityMin > 0 && (
+                        <div style={{ marginTop: 3 }}>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: remainColor }}>
+                            Disponible : {hm(remainMin)}
+                          </div>
+                          <div style={{ height: 3, background: C.s2, borderRadius: 2, overflow: "hidden", marginTop: 2 }}>
+                            <div style={{ width: `${Math.min(100, (remainMin / o.capacityMin) * 100)}%`, height: "100%", background: remainColor }} />
+                          </div>
+                        </div>
+                      )}
                       {o.postsUsed.length > 0 && (
                         <div style={{ fontSize: 8, color: C.sec, marginTop: 2 }}>
                           {o.postsUsed.join(", ")}
