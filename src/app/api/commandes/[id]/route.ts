@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { computeAutoSemaines, AUTO_PLANNING_TRIGGERS, AUTO_PLANNING_OUTPUTS } from "@/lib/auto-planning";
+import { syncCommandeToOrder } from "@/lib/commande-adapter";
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -42,6 +43,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     "reliquat_accessoires","reliquat_accessoires_desc","reliquat_accessoires_date",
     "semaine_coupe","semaine_montage","semaine_vitrage","semaine_logistique","semaine_isula",
     "nb_livraisons","dates_livraisons",
+    // Phase 0-A : nouveaux champs de saisie exhaustive
+    "pose_chantier_date","regroupement_camion","chantier_split_autorise",
+    "controle_qualite_specifique","notes_pose","risque_perso",
   ];
   for (const key of fields) {
     if (data[key] !== undefined) {
@@ -65,10 +69,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         const merged = { ...existing, ...partial };
         const autoSem = computeAutoSemaines({
           date_livraison_souhaitee: merged.date_livraison_souhaitee,
+          pose_chantier_date: (merged as any).pose_chantier_date,
           dates_livraisons: merged.dates_livraisons,
           aucune_menuiserie: (merged as any).aucune_menuiserie,
           aucun_vitrage: merged.aucun_vitrage,
           vitrages: merged.vitrages,
+          regroupement_camion: (merged as any).regroupement_camion,
+          lignes: merged.lignes,
         });
         for (const k of AUTO_PLANNING_OUTPUTS) {
           partial[k] = autoSem[k];
@@ -81,6 +88,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   try {
     const cmd = await prisma.commande.update({ where: { id: params.id }, data: partial });
+    // Phase 0-C : reprojection vers Order/FabItem/ProductionTask (best-effort).
+    syncCommandeToOrder(cmd.id).catch(e => console.error("[sync PATCH]", e));
     return NextResponse.json(cmd);
   } catch {
     return NextResponse.json({ error: "Erreur mise à jour" }, { status: 500 });
