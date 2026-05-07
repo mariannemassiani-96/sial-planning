@@ -6,7 +6,7 @@
 // lun-PM, …, ven-PM). Chaque demi vaut 240 min de capacité machine.
 // ═══════════════════════════════════════════════════════════════════════
 
-import { JOURS_FERIES, isWorkday } from "@/lib/sial-data";
+import { isWorkday } from "@/lib/sial-data";
 import prisma from "@/lib/prisma";
 
 const DEMI_MIN = 240;
