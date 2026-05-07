@@ -118,6 +118,21 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
   // Sur mobile, les bandeaux secondaires sont collapsés par défaut
   // pour ne pas noyer la liste des tâches.
   const [showCritiques, setShowCritiques] = useState(!mobile);
+
+  // Phase 1-D : reporting des retards (fetch /api/retards au mount).
+  type RetardItem = {
+    commandeId: string; ref_chantier: string | null; client: string;
+    etape: string; datePrevu: string; joursRetard: number;
+    niveauRetard: "warning" | "critical";
+  };
+  const [retards, setRetards] = useState<RetardItem[]>([]);
+  const [showRetards, setShowRetards] = useState(false);
+  useEffect(() => {
+    fetch("/api/retards")
+      .then(r => r.ok ? r.json() : [])
+      .then((data: RetardItem[]) => Array.isArray(data) ? setRetards(data) : setRetards([]))
+      .catch(() => setRetards([]));
+  }, []);
   const [showLivraisons, setShowLivraisons] = useState(!mobile);
   // Refs pour le swipe horizontal entre jours
   const touchStartX = useRef<number | null>(null);
@@ -515,6 +530,26 @@ export default function Aujourdhui({ commandes, stocks: _stocks, onNav }: {
         if (Math.abs(dx) >= 60) navDate(dx < 0 ? 1 : -1);
       } : undefined}
     >
+      {/* Phase 1-D : encart de retards en cours (rouge en haut) */}
+      {retards.length > 0 && (
+        <div style={{ marginBottom: 10, border: `1px solid ${C.red}`, borderRadius: 6, background: C.red + "11", overflow: "hidden" }}>
+          <button onClick={() => setShowRetards(s => !s)}
+            style={{ width: "100%", padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "none", border: "none", cursor: "pointer", color: C.red, fontWeight: 700, fontSize: 13, textAlign: "left" }}>
+            <span>⚠ {retards.length} chantier(s) en retard {retards.some(r => r.niveauRetard === "critical") && "— dont " + retards.filter(r => r.niveauRetard === "critical").length + " critique(s)"}</span>
+            <span style={{ fontSize: 11 }}>{showRetards ? "Masquer ▴" : "Voir détail ▾"}</span>
+          </button>
+          {showRetards && (
+            <div style={{ padding: "0 12px 10px", maxHeight: 240, overflowY: "auto" }}>
+              {retards.map((r, i) => (
+                <div key={i} style={{ padding: "6px 0", borderTop: i > 0 ? `1px solid ${C.red}33` : "none", fontSize: 12, color: r.niveauRetard === "critical" ? C.red : C.orange }}>
+                  <strong>{r.ref_chantier || r.client}</strong> — étape <em>{r.etape}</em> prévue {r.datePrevu} → <strong>+{r.joursRetard}j de retard</strong>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ══ HEADER ═══════════════════════════════════════════════════════════ */}
       <div style={{
         display: "flex", alignItems: "center", gap: mobile ? 8 : 12, marginBottom: mobile ? 10 : 14, flexWrap: "wrap",

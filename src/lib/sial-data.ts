@@ -50,7 +50,13 @@ Object.values(TYPES_MENUISERIE).forEach(tm => {
   tm.profils_total = tm.lmt || 0;
 });
 
-export const T = {
+/**
+ * Phase 1-C : valeurs PAR DÉFAUT des temps unitaires.
+ * `T` est une copie mutable que `applyLearnedT()` peut remplacer
+ * partiellement en lisant la table `Tache` côté serveur.
+ * Les composants client lisent `T` comme avant.
+ */
+export const T_DEFAULTS = {
   coupe_profil:           1,
   ouvrant_coul_prep:      5,
   soudure_cadre:          5,
@@ -70,6 +76,27 @@ export const T = {
   prep_deballage_joints_sem: 480,
   coupe_double_tete_sem:     960,
 };
+
+export const T: Record<string, number> = { ...T_DEFAULTS };
+
+/**
+ * Phase 1-C : applique des temps personnalisés (généralement venus de la
+ * table `Tache`). Mute `T` en place. Idempotent.
+ */
+export function applyCustomT(custom: Record<string, number>) {
+  for (const [k, v] of Object.entries(custom)) {
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) {
+      (T as any)[k] = v;
+    }
+  }
+}
+
+/** Réinitialise `T` aux valeurs par défaut. */
+export function resetT() {
+  for (const k of Object.keys(T_DEFAULTS)) {
+    (T as any)[k] = (T_DEFAULTS as any)[k];
+  }
+}
 
 export interface HsTemps {
   nb_profils?: string | number;
