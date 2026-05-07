@@ -216,10 +216,28 @@ export function specialMultiplier(widthMm: number | null | undefined): number {
 }
 
 /**
+ * Phase 0-A : multiplicateur lié à la hauteur (galandage / coulissant
+ * vertical haut). Au-delà de 3 m la pose est plus longue (2 ops, palan).
+ *   heightMm >= 3500 → ×1.5
+ *   heightMm >= 3000 → ×1.2
+ *   sinon            → ×1
+ */
+export function verticalMultiplier(heightMm: number | null | undefined): number {
+  const h = Number(heightMm) || 0;
+  if (h >= 3500) return 1.5;
+  if (h >= 3000) return 1.2;
+  return 1.0;
+}
+
+/**
  * Détecte si une commande contient une pièce grand format (largeur > 4m
  * pour coulissant ou galandage). Renvoie le multiplicateur le plus grand.
  * Cherche dans les `lignes` un champ `largeur_mm`/`widthMm`/`largeur`
  * applicable à un type coulissant/galandage.
+ *
+ * Phase 0-A : prend aussi en compte `hauteur_mm` (verticalMultiplier).
+ * Le multiplicateur final retourné = max(width × height) car les deux
+ * dimensions cumulent les difficultés.
  */
 export function detectSpecialMultiplier(cmd: { type: string; lignes?: unknown }): number {
   const tm = TYPES_MENUISERIE[cmd.type];
@@ -233,8 +251,24 @@ export function detectSpecialMultiplier(cmd: { type: string; lignes?: unknown })
     const ltm = TYPES_MENUISERIE[lt];
     if (!ltm || (ltm.famille !== "coulissant" && ltm.famille !== "glandage")) continue;
     const w = Number(l?.largeur_mm) || Number(l?.widthMm) || Number(l?.largeur) || 0;
-    const m = specialMultiplier(w);
+    const h = Number(l?.hauteur_mm) || Number(l?.heightMm) || Number(l?.hauteur) || 0;
+    const m = specialMultiplier(w) * verticalMultiplier(h);
     if (m > max) max = m;
+  }
+  return max;
+}
+
+/**
+ * Phase 0-A : exposé pour l'algorithme — récupère le délai laquage le
+ * plus contraignant sur les lignes. 0 si aucune ligne n'a `laquage_externe`.
+ */
+export function detectLaquageDelaiJours(cmd: { lignes?: unknown }): number {
+  const lignes = Array.isArray(cmd.lignes) ? cmd.lignes : [];
+  let max = 0;
+  for (const l of lignes as Array<Record<string, unknown>>) {
+    if (!l?.laquage_externe) continue;
+    const d = parseInt(String(l?.delai_laquage_jours || "5"));
+    if (!isNaN(d) && d > max) max = d;
   }
   return max;
 }

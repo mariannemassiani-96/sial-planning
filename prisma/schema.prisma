@@ -93,6 +93,19 @@ model Commande {
   semaine_vitrage         String?
   semaine_logistique      String?
   semaine_isula           String?
+  // ── Phase 0-A : champs saisie exhaustive ─────────────────────────────
+  /// YYYY-MM-DD — RDV poseur ferme. Prioritaire sur date_livraison_souhaitee.
+  pose_chantier_date          String?
+  /// Si vrai, toutes les phases doivent finir dans la même semaine calendaire.
+  regroupement_camion         Boolean  @default(true)
+  /// Si vrai, on autorise plusieurs vagues de livraison (gros chantier).
+  chantier_split_autorise     Boolean  @default(false)
+  /// Texte libre — ex "test étanchéité au jet d'eau, CEKAL renforcé".
+  controle_qualite_specifique String?
+  /// Notes pose (accès, étage, contraintes site).
+  notes_pose                  String?
+  /// "bas" | "moyen" | "haut" — pondération du chantier dans le critique-ratio.
+  risque_perso                String   @default("bas")
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }
