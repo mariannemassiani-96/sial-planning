@@ -207,11 +207,14 @@ export async function syncCommandeToOrder(commandeId: string): Promise<void> {
 
 /**
  * Phase 1-A : initialise le DAG predecessorIds des tasks d'un order.
- * Convention :
- *   - Au sein d'un même fabItem, chaque task hérite du précédent
- *     (sortOrder n-1).
- *   - V1/V2 SIAL d'un fabItem dépendent en plus de I7 (le dernier I*)
- *     du même fabItem si ISULA présent.
+ *
+ * Conventions :
+ *  - Au sein d'un même fabItem, chaque task hérite du précédent
+ *    (sortOrder n-1) → chaîne linéaire respectant l'ordre des phases.
+ *  - V1/V2 SIAL d'un fabItem dépendent en plus du dernier I* (idéalement I7)
+ *    du même fabItem si ISULA présent.
+ *  - Si l'order a un fabItem dédié au vitrage ISULA (atelier=ISULA), les
+ *    tasks V1/V2 des autres fabItems SIAL dépendent de I7 du fabItem ISULA.
  */
 export async function initOrderDag(orderId: string): Promise<void> {
   const tasks = await prisma.productionTask.findMany({
@@ -227,20 +230,35 @@ export async function initOrderDag(orderId: string): Promise<void> {
     byFabItem.get(t.fabItemId)!.push(t);
   }
 
-  for (const arr of Array.from(byFabItem.values())) {
+  // Détecter les "tasks ISULA finales" (I7 ou dernier I*) cross-fabItems.
+  const isulaTerminalsByFabItem = new Map<string, typeof tasks[number]>();
+  for (const [fabId, arr] of Array.from(byFabItem.entries())) {
+    const isulaTasks = arr.filter(x => x.workPostId.startsWith("I"));
+    if (isulaTasks.length === 0) continue;
+    const i7 = isulaTasks.find(x => x.workPostId === "I7");
+    isulaTerminalsByFabItem.set(fabId, i7 || isulaTasks.sort((a, b) => b.sortOrder - a.sortOrder)[0]);
+  }
+  // Liste plate des terminaux ISULA tous fabItems confondus
+  const allIsulaTerminals = Array.from(isulaTerminalsByFabItem.values());
+
+  for (const [fabId, arr] of Array.from(byFabItem.entries())) {
     // Chaîne linéaire : t[i] dépend de t[i-1]
     for (let i = 0; i < arr.length; i++) {
       const t = arr[i];
       const preds: string[] = [];
       if (i > 0) preds.push(arr[i - 1].id);
 
-      // Cas spécial : V1/V2 SIAL → dépend de I7 (ou dernière étape ISULA)
+      // Cas spécial : V1/V2 SIAL → dépend du I7 (ou dernier I*) le plus
+      // pertinent : d'abord celui du même fabItem, sinon n'importe lequel
+      // de l'order (cas où ISULA est un fabItem séparé).
       if (t.workPostId === "V1" || t.workPostId === "V2") {
-        const lastIsula = arr
-          .filter(x => x.workPostId.startsWith("I"))
-          .sort((a, b) => b.sortOrder - a.sortOrder)[0];
-        if (lastIsula && !preds.includes(lastIsula.id)) {
-          preds.push(lastIsula.id);
+        const sameFabIsula = isulaTerminalsByFabItem.get(fabId);
+        if (sameFabIsula && !preds.includes(sameFabIsula.id)) {
+          preds.push(sameFabIsula.id);
+        } else if (allIsulaTerminals.length > 0) {
+          for (const it of allIsulaTerminals) {
+            if (!preds.includes(it.id)) preds.push(it.id);
+          }
         }
       }
 

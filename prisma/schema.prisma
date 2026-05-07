@@ -484,6 +484,17 @@ model BufferStock {
   quantity  Float      @default(0)
   unit      String
   updatedAt DateTime   @updatedAt
+  // Phase 1-B : traçabilité ISULA → SIAL
+  /// ProductionTask qui a produit ce stock (ex. I7).
+  taskProducerId  String?
+  /// ProductionTask qui consomme ce stock (ex. V1/V2).
+  taskConsumerId  String?
+  /// FabItem source — pour matcher l'UV à la menuiserie destinataire.
+  fabItemSourceId String?
+  /// Quand l'UV est dispo (fin de I7).
+  readyAt         DateTime?
+  /// Quand V1/V2 l'a consommée.
+  consumedAt      DateTime?
   fabOrder  Order?     @relation(fields: [orderId], references: [id])
 }
 
