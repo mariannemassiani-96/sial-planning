@@ -175,6 +175,22 @@ model PlanningAJ {
   updatedAt DateTime @updatedAt
 }
 
+/// Backlog Planning AJ — tâches (étape × chantier × qté) en attente d'être
+/// positionnées dans la grille par le chef d'atelier. Indépendant des
+/// Commandes classiques (l'onglet Planning AJ fonctionne en autonomie).
+model PlanningBacklog {
+  id        String   @id @default(cuid())
+  etape     String                     // Coupe LMT, Renfort, Soudure, ...
+  chantier  String                     // ex "Ranch Algelec", "Paese Novu 133"
+  qte       Int?                       // null si non renseigné
+  note      String?                    // remarques libres
+  ordre     Int      @default(0)       // pour maintenir l'ordre saisi
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ordre])
+}
+
 model Backup {
   id        String   @id @default(cuid())
   data      Json
