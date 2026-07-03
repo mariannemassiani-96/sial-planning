@@ -157,6 +157,24 @@ model PlanningRH {
   updatedAt DateTime @updatedAt
 }
 
+/// Planning AJ — tableau hebdomadaire simple façon Excel du chef d'atelier.
+/// Format `data` (JSON) :
+///   {
+///     "etapes": string[],                       // Coupe LMT, Renfort, ... (customisables)
+///     "chantiers_extra": string[],              // chantiers ad hoc non liés à une Commande
+///     "cells": {
+///       "<Etape>|<jour>": [
+///         { chantier: string, qte_theo: number|"", qte_reel: number|"", note: string, color?: string }
+///       ]
+///     }
+///   }
+/// Clé jour : "lundi" | "mardi" | "mercredi" | "jeudi" | "vendredi"
+model PlanningAJ {
+  semaine   String   @id            // ex "S25-2026" ou "2026-W25"
+  data      Json     @default("{}")
+  updatedAt DateTime @updatedAt
+}
+
 model Backup {
   id        String   @id @default(cuid())
   data      Json
