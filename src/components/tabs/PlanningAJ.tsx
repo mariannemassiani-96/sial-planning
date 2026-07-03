@@ -128,6 +128,11 @@ export default function PlanningAJ(_props: { commandes?: unknown[] } = {}) {
   const [showBacklog, setShowBacklog] = useState(true);
   const [filterEtape, setFilterEtape] = useState<string>("");
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Mini-formulaire inline pour ajouter une tâche au backlog (remplace les 3 prompts)
+  const [newEtape, setNewEtape] = useState<string>("Coupe LMT");
+  const [newChantier, setNewChantier] = useState<string>("");
+  const [newQte, setNewQte] = useState<string>("");
+  const [addingBacklog, setAddingBacklog] = useState(false);
 
   // Liste des semaines à afficher (dans l'ordre)
   const semainesToShow = useMemo(() => {
@@ -269,13 +274,12 @@ export default function PlanningAJ(_props: { commandes?: unknown[] } = {}) {
 
   // ── Actions backlog ──────────────────────────────────────────────────
 
-  const addBacklogItem = async () => {
-    const etape = prompt("Étape (ex : Coupe LMT, Renfort, Vitrage…)")?.trim();
-    if (!etape) return;
-    const chantier = prompt("Chantier / produit (ex : Ranch Algelec)")?.trim();
-    if (!chantier) return;
-    const qteStr = prompt("Quantité (nombre ou laisser vide)")?.trim();
-    const qte = qteStr ? parseInt(qteStr) : null;
+  const submitNewBacklogItem = useCallback(async () => {
+    const etape = newEtape.trim();
+    const chantier = newChantier.trim();
+    if (!etape || !chantier) return;
+    const qte = newQte.trim() ? parseInt(newQte.trim()) : null;
+    setAddingBacklog(true);
     try {
       const r = await fetch("/api/planning-aj/backlog", {
         method: "POST",
@@ -285,9 +289,17 @@ export default function PlanningAJ(_props: { commandes?: unknown[] } = {}) {
       if (r.ok) {
         const item = await r.json();
         setBacklog(prev => [...prev, item]);
-      } else { alert("Erreur création tâche"); }
+        // Reset formulaire mais on GARDE l'étape (pratique pour saisir
+        // plusieurs chantiers avec la même étape à la suite).
+        setNewChantier("");
+        setNewQte("");
+      } else {
+        const err = await r.json().catch(() => ({}));
+        alert(`Erreur : ${err.error || "création tâche"}`);
+      }
     } catch { alert("Erreur réseau"); }
-  };
+    finally { setAddingBacklog(false); }
+  }, [newEtape, newChantier, newQte]);
 
   const removeBacklogItem = async (id: string) => {
     if (!confirm("Supprimer cette tâche du backlog ?")) return;
@@ -417,7 +429,6 @@ export default function PlanningAJ(_props: { commandes?: unknown[] } = {}) {
           </select>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <button onClick={addBacklogItem} style={btnAction}>+ Tâche (backlog)</button>
           <button onClick={() => setShowBacklog(v => !v)} style={btnAction}>
             {showBacklog ? "◀ Masquer" : "▶ Voir"} backlog ({backlog.length})
           </button>
@@ -433,6 +444,56 @@ export default function PlanningAJ(_props: { commandes?: unknown[] } = {}) {
           <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: 8, maxHeight: 800, overflowY: "auto", position: "sticky", top: 10, alignSelf: "start" }}>
             <div style={{ fontSize: 10, color: C.orange, fontWeight: 700, marginBottom: 6, letterSpacing: "0.05em" }}>
               À POSITIONNER ({backlog.length})
+            </div>
+
+            {/* Mini-formulaire d'ajout inline (remplace les 3 prompts). */}
+            <div style={{
+              padding: 6, marginBottom: 8,
+              background: C.s2, border: `1px dashed ${C.cyan}66`, borderRadius: 4,
+            }}>
+              <div style={{ fontSize: 9, color: C.cyan, fontWeight: 700, marginBottom: 4, letterSpacing: "0.05em" }}>
+                + AJOUTER UNE TÂCHE
+              </div>
+              <select value={newEtape}
+                onChange={e => setNewEtape(e.target.value)}
+                style={{
+                  width: "100%", padding: "3px 5px", fontSize: 11, marginBottom: 3,
+                  background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.text,
+                }}>
+                {allEtapes.map(e => <option key={e} value={e}>{e}</option>)}
+              </select>
+              <input type="text" value={newChantier}
+                onChange={e => setNewChantier(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") submitNewBacklogItem(); }}
+                placeholder="Nom chantier"
+                style={{
+                  width: "100%", padding: "3px 5px", fontSize: 11, marginBottom: 3,
+                  background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.text,
+                }} />
+              <div style={{ display: "flex", gap: 3 }}>
+                <input type="number" min={0} value={newQte}
+                  onChange={e => setNewQte(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") submitNewBacklogItem(); }}
+                  placeholder="Qté"
+                  style={{
+                    width: 55, padding: "3px 5px", fontSize: 11,
+                    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.text,
+                  }} />
+                <button onClick={submitNewBacklogItem}
+                  disabled={!newChantier.trim() || addingBacklog}
+                  style={{
+                    flex: 1, padding: "3px 5px", fontSize: 11, fontWeight: 700,
+                    background: newChantier.trim() ? C.cyan : C.s1,
+                    color: newChantier.trim() ? "#000" : C.muted,
+                    border: "none", borderRadius: 3,
+                    cursor: newChantier.trim() ? "pointer" : "not-allowed",
+                  }}>
+                  {addingBacklog ? "…" : "+ Ajouter"}
+                </button>
+              </div>
+              <div style={{ fontSize: 8, color: C.muted, marginTop: 3, fontStyle: "italic" }}>
+                Entrée pour valider. L&apos;étape reste sélectionnée après ajout.
+              </div>
             </div>
 
             {backlog.length > 0 && (
