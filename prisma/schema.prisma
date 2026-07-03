@@ -93,6 +93,19 @@ model Commande {
   semaine_vitrage         String?
   semaine_logistique      String?
   semaine_isula           String?
+  // ── Phase 0-A : champs saisie exhaustive ─────────────────────────────
+  /// YYYY-MM-DD — RDV poseur ferme. Prioritaire sur date_livraison_souhaitee.
+  pose_chantier_date          String?
+  /// Si vrai, toutes les phases doivent finir dans la même semaine calendaire.
+  regroupement_camion         Boolean  @default(true)
+  /// Si vrai, on autorise plusieurs vagues de livraison (gros chantier).
+  chantier_split_autorise     Boolean  @default(false)
+  /// Texte libre — ex "test étanchéité au jet d'eau, CEKAL renforcé".
+  controle_qualite_specifique String?
+  /// Notes pose (accès, étage, contraintes site).
+  notes_pose                  String?
+  /// "bas" | "moyen" | "haut" — pondération du chantier dans le critique-ratio.
+  risque_perso                String   @default("bas")
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }
@@ -141,6 +154,24 @@ model PlanningRH {
   semaine   String   @id
   plan      Json
   valide    Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+}
+
+/// Planning AJ — tableau hebdomadaire simple façon Excel du chef d'atelier.
+/// Format `data` (JSON) :
+///   {
+///     "etapes": string[],                       // Coupe LMT, Renfort, ... (customisables)
+///     "chantiers_extra": string[],              // chantiers ad hoc non liés à une Commande
+///     "cells": {
+///       "<Etape>|<jour>": [
+///         { chantier: string, qte_theo: number|"", qte_reel: number|"", note: string, color?: string }
+///       ]
+///     }
+///   }
+/// Clé jour : "lundi" | "mardi" | "mercredi" | "jeudi" | "vendredi"
+model PlanningAJ {
+  semaine   String   @id            // ex "S25-2026" ou "2026-W25"
+  data      Json     @default("{}")
   updatedAt DateTime @updatedAt
 }
 
@@ -235,6 +266,7 @@ model Operator {
   naissance       String?
   absences        OperatorAbsence[]
   taskAssignments TaskAssignment[]
+  scheduleSlots   ScheduleSlot[]
   skills          OperatorSkill[]
 }
 
@@ -392,10 +424,37 @@ model ProductionTask {
   blockedReason    String?
   sortOrder        Int            @map("sort_order")
   isBlocking       Boolean        @default(false)
+  /// Phase 0-B / 1-A : IDs des tasks qui doivent finir avant celle-ci.
+  predecessorIds   String[]       @default([])
+  /// Phase 0-B : borne basse (jalons matière, fin laquage, etc.).
+  earliestStart    DateTime?
+  /// Phase 0-B : calculé par backward (deadline - tampons aval).
+  latestFinish     DateTime?
+  /// Phase 0-B : mis à jour quand l'algo pose la task.
+  scheduledStart   DateTime?
+  scheduledEnd     DateTime?
   assignments      TaskAssignment[]
   qcChecks         QCCheck[]
+  scheduleSlots    ScheduleSlot[]
   fabItem          FabItem        @relation(fields: [fabItemId], references: [id], onDelete: Cascade)
   workPost         WorkPost       @relation(fields: [workPostId], references: [id])
+}
+
+/// Phase 0-B : un créneau atomique (½ journée) où un opérateur travaille
+/// sur une ProductionTask. Source de vérité pour la grille de planning.
+model ScheduleSlot {
+  id          String         @id @default(cuid())
+  taskId      String
+  operatorId  String
+  date        DateTime       // jour du créneau (00:00 UTC)
+  halfDay     String         // "AM" | "PM"
+  minutes     Int            // minutes effectives (≤ 240)
+  createdAt   DateTime       @default(now())
+  task        ProductionTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  operator    Operator       @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+
+  @@index([date, halfDay])
+  @@unique([taskId, operatorId, date, halfDay])
 }
 
 enum TaskStatus {
@@ -443,6 +502,17 @@ model BufferStock {
   quantity  Float      @default(0)
   unit      String
   updatedAt DateTime   @updatedAt
+  // Phase 1-B : traçabilité ISULA → SIAL
+  /// ProductionTask qui a produit ce stock (ex. I7).
+  taskProducerId  String?
+  /// ProductionTask qui consomme ce stock (ex. V1/V2).
+  taskConsumerId  String?
+  /// FabItem source — pour matcher l'UV à la menuiserie destinataire.
+  fabItemSourceId String?
+  /// Quand l'UV est dispo (fin de I7).
+  readyAt         DateTime?
+  /// Quand V1/V2 l'a consommée.
+  consumedAt      DateTime?
   fabOrder  Order?     @relation(fields: [orderId], references: [id])
 }
 

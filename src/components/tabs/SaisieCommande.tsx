@@ -1,13 +1,16 @@
 "use client";
 import { useState } from "react";
-import { TYPES_MENUISERIE, ZONES, C, hm, fmtDate, calcTempsType, calcCheminCritique, dateDemarrage } from "@/lib/sial-data";
+import { TYPES_MENUISERIE, ZONES, EQUIPE, C, hm, fmtDate, calcTempsType, calcCheminCritique, dateDemarrage } from "@/lib/sial-data";
 import { getRoutage, EtapeRoutage } from "@/lib/routage-production";
+import { emptyLigneCommande, emptyVitrageCommande, normalizeLigne, normalizeVitrage } from "@/types/commande";
 import { H, Card } from "@/components/ui";
 
 const inp = { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, padding: "7px 11px", color: C.text, fontSize: 13, width: "100%", outline: "none" };
 
-const emptyLigne = { type: "ob1_pvc", quantite: 1, coloris: "blanc", largeur_mm: "", hs_nb_profils: "", hs_t_coupe: "", hs_t_montage: "", hs_t_vitrage: "", hs_op_montage: "jp", hs_op_vitrage: "quentin", hs_notes: "" };
-const emptyVitrage = { composition: "", quantite: "1", surface_m2: "", fournisseur: "isula", cmd_passee: false, date_reception: "", position: "", face_exterieure: "", face_interieure: "", couleur_intercalaire: "", epaisseur_intercalaire: "", largeur: "", hauteur: "", forme: "", prix_m2: "", prix_total: "", largeur_origine: "", hauteur_origine: "", surface_m2_origine: "" };
+// Phase 0-A : tous les défauts viennent de src/types/commande.ts pour
+// rester en cohérence avec le reste du code (adapter, algo, BDD).
+const emptyLigne = { ...emptyLigneCommande };
+const emptyVitrage = { ...emptyVitrageCommande };
 const FOURNISSEURS_VITRAGE = [
   { id: "isula",  label: "ISULA VITRAGE" },
   { id: "sigma",  label: "SIGMA" },
@@ -42,6 +45,13 @@ const empty = {
   reliquat_alu: false, reliquat_alu_desc: "", reliquat_alu_date: "",
   reliquat_pvc: false, reliquat_pvc_desc: "", reliquat_pvc_date: "",
   reliquat_accessoires: false, reliquat_accessoires_desc: "", reliquat_accessoires_date: "",
+  // Phase 0-A : nouveaux champs commande ─────────────────────────────────
+  pose_chantier_date: "",
+  regroupement_camion: true,
+  chantier_split_autorise: false,
+  controle_qualite_specifique: "",
+  notes_pose: "",
+  risque_perso: "bas",
   lignes: [{ ...emptyLigne }],
   vitrages: [{ ...emptyVitrage }],
 };
@@ -49,10 +59,11 @@ const empty = {
 type FormType = typeof empty;
 
 function cmdToForm(cmd: any): FormType {
-  const lignes = cmd.lignes?.length > 0 ? cmd.lignes : [];
-  const vitrages = cmd.vitrages?.length > 0
-    ? cmd.vitrages.map((v: any) => ({ composition: v.composition || "", quantite: String(v.quantite || "1"), surface_m2: v.surface_m2 || "", fournisseur: v.fournisseur || "isula", cmd_passee: v.cmd_passee || false, date_reception: v.date_reception || "", position: v.position || "", face_exterieure: v.face_exterieure || "", face_interieure: v.face_interieure || "", couleur_intercalaire: v.couleur_intercalaire || "", epaisseur_intercalaire: v.epaisseur_intercalaire || "", largeur: v.largeur || "", hauteur: v.hauteur || "", forme: v.forme || "", prix_m2: v.prix_m2 || "", prix_total: v.prix_total || "", largeur_origine: v.largeur_origine || "", hauteur_origine: v.hauteur_origine || "", surface_m2_origine: v.surface_m2_origine || "" }))
-    : [];
+  // Phase 0-A : on normalise via normalizeLigne/Vitrage qui complètent
+  // chaque objet avec les nouveaux champs (hauteur_mm, coloris_lot, etc.)
+  // pour que les commandes existantes ne déclenchent pas d'erreur.
+  const lignes = cmd.lignes?.length > 0 ? cmd.lignes.map(normalizeLigne) : [];
+  const vitrages = cmd.vitrages?.length > 0 ? cmd.vitrages.map(normalizeVitrage) : [];
   return {
     num_commande: cmd.num_commande || "", client: cmd.client || "", ref_chantier: cmd.ref_chantier || "",
     zone: cmd.zone || ZONES[0], priorite: cmd.priorite || "normale", type_commande: cmd.type_commande || "", atelier: cmd.atelier || "SIAL", montant_ht: cmd.montant_ht != null ? String(cmd.montant_ht) : "",
@@ -74,6 +85,13 @@ function cmdToForm(cmd: any): FormType {
     reliquat_alu: cmd.reliquat_alu || false, reliquat_alu_desc: cmd.reliquat_alu_desc || "", reliquat_alu_date: cmd.reliquat_alu_date || "",
     reliquat_pvc: cmd.reliquat_pvc || false, reliquat_pvc_desc: cmd.reliquat_pvc_desc || "", reliquat_pvc_date: cmd.reliquat_pvc_date || "",
     reliquat_accessoires: cmd.reliquat_accessoires || false, reliquat_accessoires_desc: cmd.reliquat_accessoires_desc || "", reliquat_accessoires_date: cmd.reliquat_accessoires_date || "",
+    // Phase 0-A — défauts si la commande n'a pas encore les nouveaux champs.
+    pose_chantier_date: cmd.pose_chantier_date || "",
+    regroupement_camion: cmd.regroupement_camion ?? true,
+    chantier_split_autorise: cmd.chantier_split_autorise ?? false,
+    controle_qualite_specifique: cmd.controle_qualite_specifique || "",
+    notes_pose: cmd.notes_pose || "",
+    risque_perso: cmd.risque_perso || "bas",
     lignes, vitrages,
   };
 }
@@ -159,6 +177,10 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
   const setVitrage = (i: number, k: string, v: any) => setF(p => { const v2 = [...p.vitrages]; v2[i] = { ...v2[i], [k]: v }; return { ...p, vitrages: v2 }; });
   const addVitrage = () => setF(p => ({ ...p, vitrages: [...p.vitrages, { ...emptyVitrage }] }));
   const delVitrage = (i: number) => setF(p => ({ ...p, vitrages: p.vitrages.filter((_, j) => j !== i) }));
+
+  // Phase 0-A : panneau "options avancées" déplié par ligne (par index).
+  const [expandedAdv, setExpandedAdv] = useState<Record<number, boolean>>({});
+  const toggleAdv = (i: number) => setExpandedAdv(p => ({ ...p, [i]: !p[i] }));
 
   // Import Pro F2
   const [showF2, setShowF2] = useState(false);
@@ -279,6 +301,51 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
         </div>
       </div>
 
+      {/* Phase 0-A : POSE & TRANSPORT — date pose ferme + politique camion */}
+      <div style={{ padding: 10, background: C.bg, borderRadius: 5, border: `1px solid ${C.border}`, marginBottom: 10 }}>
+        <div style={{ fontSize: 10, color: C.cyan, fontWeight: 700, marginBottom: 8 }}>POSE & TRANSPORT</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>
+              DATE POSE CHANTIER <span style={{ color: C.muted }}>(RDV poseur ferme)</span>
+            </label>
+            <input type="date" style={inp} value={f.pose_chantier_date}
+              onChange={e => set("pose_chantier_date", e.target.value)} />
+            <div style={{ fontSize: 9, color: C.muted, marginTop: 3 }}>
+              Si vide, on utilise la date de livraison souhaitée.
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>REGROUPEMENT CAMION</label>
+            <button type="button" onClick={() => set("regroupement_camion", !f.regroupement_camion)}
+              style={{ width: "100%", padding: "7px 10px", background: f.regroupement_camion ? C.green + "22" : "none",
+                border: `1px solid ${f.regroupement_camion ? C.green : C.border}`, borderRadius: 4,
+                color: f.regroupement_camion ? C.green : C.sec, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+              {f.regroupement_camion ? "✓ Toute la prod dans la même semaine" : "Production étalée possible"}
+            </button>
+          </div>
+          <div>
+            <label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>SPLIT AUTORISÉ</label>
+            <button type="button"
+              disabled={f.regroupement_camion}
+              onClick={() => set("chantier_split_autorise", !f.chantier_split_autorise)}
+              style={{ width: "100%", padding: "7px 10px",
+                background: f.chantier_split_autorise && !f.regroupement_camion ? C.orange + "22" : "none",
+                border: `1px solid ${f.chantier_split_autorise && !f.regroupement_camion ? C.orange : C.border}`, borderRadius: 4,
+                color: f.regroupement_camion ? C.muted : (f.chantier_split_autorise ? C.orange : C.sec),
+                fontSize: 11, fontWeight: 600, cursor: f.regroupement_camion ? "not-allowed" : "pointer",
+                opacity: f.regroupement_camion ? 0.5 : 1 }}>
+              {f.chantier_split_autorise ? "✓ Plusieurs vagues OK" : "Une seule vague"}
+            </button>
+            {f.regroupement_camion && (
+              <div style={{ fontSize: 9, color: C.muted, marginTop: 3 }}>
+                Désactiver « Regroupement camion » pour activer.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div style={{ padding: 10, background: C.bg, borderRadius: 5, border: `1px solid ${C.border}`, marginBottom: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -342,6 +409,102 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
                     <div key={x.k}><label style={{ fontSize: 8, color: C.purple, display: "block", marginBottom: 2 }}>{x.l}</label><input type="number" min={0} style={{ ...inp, fontSize: 11, padding: "4px 6px" }} value={(lg as any)[x.k] || ""} onChange={e => setLigne(i, x.k, e.target.value)} /></div>
                   ))}
                   <div><label style={{ fontSize: 8, color: C.purple, display: "block", marginBottom: 2 }}>Op. vitrage</label><select style={{ ...inp, fontSize: 11, padding: "4px 6px" }} value={lg.hs_op_vitrage || "quentin"} onChange={e => setLigne(i, "hs_op_vitrage", e.target.value)}>{[{ id: "quentin", l: "Quentin" }, { id: "michel", l: "Michel" }, { id: "jf", l: "Jean-François" }, { id: "jp", l: "Jean-Pierre" }, { id: "bruno", l: "Bruno" }].map(o => <option key={o.id} value={o.id}>{o.l}</option>)}</select></div>
+                </div>
+              )}
+              {/* Phase 0-A : Options avancées par ligne — repliable */}
+              {!isIntervLg && (
+                <div style={{ marginTop: 8 }}>
+                  <button type="button" onClick={() => toggleAdv(i)}
+                    style={{ background: "none", border: "none", color: C.cyan, fontSize: 10, fontWeight: 700, cursor: "pointer", padding: 0 }}>
+                    {expandedAdv[i] ? "▾ Masquer options avancées" : "▸ Options avancées (hauteur, laquage, op préféré…)"}
+                  </button>
+                  {expandedAdv[i] && (
+                    <div style={{ marginTop: 6, padding: 8, background: C.bg, borderRadius: 4, border: `1px dashed ${C.border}` }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                        <div>
+                          <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>HAUTEUR (mm)</label>
+                          <input type="number" min={0} step={50} style={{ ...inp, fontSize: 11, padding: "4px 8px" }}
+                            value={lg.hauteur_mm || ""}
+                            onChange={e => setLigne(i, "hauteur_mm", e.target.value)}
+                            placeholder="ex: 2200" />
+                          {parseFloat(lg.hauteur_mm) > 3000 && (
+                            <div style={{ fontSize: 9, color: C.orange, marginTop: 2 }}>⚡ Grand format vertical</div>
+                          )}
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>COLORIS LOT</label>
+                          <input style={{ ...inp, fontSize: 11, padding: "4px 8px" }}
+                            value={lg.coloris_lot || ""}
+                            onChange={e => setLigne(i, "coloris_lot", e.target.value)}
+                            placeholder="ex: Lot RAL7016 Anthracite" />
+                          <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>Pour regrouper les pièces de même coloris en série.</div>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>TAMPON APRÈS (min)</label>
+                          <input type="number" min={0} style={{ ...inp, fontSize: 11, padding: "4px 8px" }}
+                            value={lg.tampon_apres_min || ""}
+                            onChange={e => setLigne(i, "tampon_apres_min", e.target.value)}
+                            placeholder="240 par défaut" />
+                        </div>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr", gap: 8, marginTop: 8, alignItems: "end" }}>
+                        <button type="button" onClick={() => setLigne(i, "laquage_externe", !lg.laquage_externe)}
+                          style={{ padding: "7px 12px", borderRadius: 4,
+                            background: lg.laquage_externe ? C.yellow + "22" : "none",
+                            border: `1px solid ${lg.laquage_externe ? C.yellow : C.border}`,
+                            color: lg.laquage_externe ? C.yellow : C.sec, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                          {lg.laquage_externe ? "✓ Laquage externe" : "Laquage externe"}
+                        </button>
+                        {lg.laquage_externe && (
+                          <div>
+                            <label style={{ fontSize: 9, color: C.yellow, display: "block", marginBottom: 2 }}>DÉLAI LAQUAGE (j ouvrés)</label>
+                            <input type="number" min={1} style={{ ...inp, fontSize: 11, padding: "4px 8px", borderColor: C.yellow + "66" }}
+                              value={lg.delai_laquage_jours || ""}
+                              onChange={e => setLigne(i, "delai_laquage_jours", e.target.value)}
+                              placeholder="ex: 7" />
+                          </div>
+                        )}
+                        <div>
+                          <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>TEMPS SUPPL. MONTAGE (min)</label>
+                          <input type="number" min={0} style={{ ...inp, fontSize: 11, padding: "4px 8px" }}
+                            value={lg.temps_supp_min || ""}
+                            onChange={e => setLigne(i, "temps_supp_min", e.target.value)}
+                            placeholder="ex: 30" />
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 8 }}>
+                        <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>FERRAGE / MÉCANISME SPÉCIAL</label>
+                        <textarea rows={2} style={{ ...inp, fontSize: 11, padding: "4px 8px", resize: "vertical", fontFamily: "inherit" }}
+                          value={lg.ferrage_special || ""}
+                          onChange={e => setLigne(i, "ferrage_special", e.target.value)}
+                          placeholder="ex: motorisation Somfy, oscillo lourd, gâche électrique…" />
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                        <div>
+                          <label style={{ fontSize: 9, color: C.green, display: "block", marginBottom: 2 }}>OPÉRATEUR PRÉFÉRÉ</label>
+                          <select style={{ ...inp, fontSize: 11, padding: "4px 8px", borderColor: C.green + "66" }}
+                            value={lg.operateur_prefere || ""}
+                            onChange={e => setLigne(i, "operateur_prefere", e.target.value)}>
+                            <option value="">— aucun —</option>
+                            {EQUIPE.filter(o => o.id !== lg.operateur_interdit).map(o => (
+                              <option key={o.id} value={o.id}>{o.nom}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 9, color: C.red, display: "block", marginBottom: 2 }}>OPÉRATEUR INTERDIT</label>
+                          <select style={{ ...inp, fontSize: 11, padding: "4px 8px", borderColor: C.red + "66" }}
+                            value={lg.operateur_interdit || ""}
+                            onChange={e => setLigne(i, "operateur_interdit", e.target.value)}>
+                            <option value="">— aucun —</option>
+                            {EQUIPE.filter(o => o.id !== lg.operateur_prefere).map(o => (
+                              <option key={o.id} value={o.id}>{o.nom}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               {isIntervLg && (
@@ -556,6 +719,28 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
                       </div>
                     </div>
                   )}
+                  {/* Phase 0-A : N° BC fournisseur + lien menuiserie destinataire */}
+                  <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                    <div>
+                      <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>N° BC FOURNISSEUR</label>
+                      <input style={{ ...inp, fontSize: 11, padding: "4px 8px" }}
+                        value={v.vitrage_id_ext || ""}
+                        onChange={e => setVitrage(i, "vitrage_id_ext", e.target.value)}
+                        placeholder="ex: BC-ISULA-0234" />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 9, color: C.sec, display: "block", marginBottom: 2 }}>MENUISERIE DESTINATAIRE</label>
+                      <select style={{ ...inp, fontSize: 11, padding: "4px 8px" }}
+                        value={v.ligne_menuiserie_id || ""}
+                        onChange={e => setVitrage(i, "ligne_menuiserie_id", e.target.value)}>
+                        <option value="">— toute la commande —</option>
+                        {f.lignes.map((lg, j) => {
+                          const tm = TYPES_MENUISERIE[lg.type];
+                          return <option key={j} value={String(j)}>Ligne {j + 1} — {tm?.label || lg.type} × {lg.quantite}</option>;
+                        })}
+                      </select>
+                    </div>
+                  </div>
                 </div>
               );
             })}
@@ -785,6 +970,35 @@ export default function SaisieCommande({ onAjouter, commande, onModifier }: { on
             <div style={{ fontSize: 9, color: C.muted }}>La 1ère date sera utilisée comme date de livraison principale.</div>
           </div>
         )}
+      </div>
+
+      {/* Phase 0-A : QUALITÉ & RISQUE — au-dessus du bouton de validation */}
+      <div style={{ padding: 10, background: C.bg, borderRadius: 5, border: `1px solid ${C.border}`, marginBottom: 10 }}>
+        <div style={{ fontSize: 10, color: C.purple, fontWeight: 700, marginBottom: 8 }}>QUALITÉ & RISQUE</div>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr", gap: 10 }}>
+          <div>
+            <label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>CONTRÔLE QUALITÉ SPÉCIFIQUE</label>
+            <textarea rows={2} style={{ ...inp, resize: "vertical", fontFamily: "inherit" }}
+              value={f.controle_qualite_specifique}
+              onChange={e => set("controle_qualite_specifique", e.target.value)}
+              placeholder="ex: test étanchéité au jet d'eau, CEKAL renforcé" />
+          </div>
+          <div>
+            <label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>NOTES POSE</label>
+            <textarea rows={2} style={{ ...inp, resize: "vertical", fontFamily: "inherit" }}
+              value={f.notes_pose}
+              onChange={e => set("notes_pose", e.target.value)}
+              placeholder="accès chantier, étage, contraintes site" />
+          </div>
+          <div>
+            <label style={{ fontSize: 10, color: C.sec, display: "block", marginBottom: 3 }}>RISQUE PERSO</label>
+            <select style={inp} value={f.risque_perso} onChange={e => set("risque_perso", e.target.value)}>
+              <option value="bas">Standard (bas)</option>
+              <option value="moyen">À surveiller (moyen)</option>
+              <option value="haut">Critique (haut)</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <button onClick={submit} style={{ marginTop: 12, width: "100%", padding: "9px 0", background: commande ? C.blue : "#E65100", border: "none", borderRadius: 5, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: "0.06em" }}>

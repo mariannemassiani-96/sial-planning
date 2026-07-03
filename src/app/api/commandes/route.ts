@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { computeAutoSemaines, AUTO_PLANNING_OUTPUTS } from "@/lib/auto-planning";
+import { syncCommandeToOrder } from "@/lib/commande-adapter";
 
 let _columnsOk = false;
 async function ensureColumns() {
@@ -24,11 +25,16 @@ function mapToDb(data: any) {
   // Auto-planning : si les semaines ne sont pas explicitement saisies,
   // on les calcule à partir de la date de livraison et des règles SPEC.
   const autoSem = computeAutoSemaines({
+    // Phase 0-A : on lui passe pose_chantier_date, regroupement_camion
+    // et lignes pour qu'il puisse calculer correctement.
     date_livraison_souhaitee: data.date_livraison_souhaitee,
+    pose_chantier_date: data.pose_chantier_date,
     dates_livraisons: data.dates_livraisons,
     aucune_menuiserie: data.aucune_menuiserie,
     aucun_vitrage: data.aucun_vitrage,
     vitrages: data.vitrages,
+    regroupement_camion: data.regroupement_camion,
+    lignes: data.lignes,
   });
   const sem: Record<string, string | null> = {};
   for (const k of AUTO_PLANNING_OUTPUTS) {
@@ -95,6 +101,13 @@ function mapToDb(data: any) {
     semaine_montage:           sem.semaine_montage,
     semaine_vitrage:           sem.semaine_vitrage,
     semaine_isula:             sem.semaine_isula,
+    // Phase 0-A : nouveaux champs saisie exhaustive
+    pose_chantier_date:          data.pose_chantier_date          || null,
+    regroupement_camion:         data.regroupement_camion          ?? true,
+    chantier_split_autorise:     data.chantier_split_autorise      ?? false,
+    controle_qualite_specifique: data.controle_qualite_specifique || null,
+    notes_pose:                  data.notes_pose                  || null,
+    risque_perso:                data.risque_perso                || "bas",
   };
 }
 
@@ -118,6 +131,9 @@ export async function POST(req: Request) {
   try {
     const data = await req.json();
     const cmd = await prisma.commande.create({ data: mapToDb(data) });
+    // Phase 0-C : projection vers Order/FabItem/ProductionTask. On ne
+    // bloque pas la requête en cas d'échec — le sync est best-effort.
+    syncCommandeToOrder(cmd.id).catch(e => console.error("[sync POST]", e));
     return NextResponse.json(cmd, { status: 201 });
   } catch {
     return NextResponse.json({ error: "Erreur création commande" }, { status: 500 });

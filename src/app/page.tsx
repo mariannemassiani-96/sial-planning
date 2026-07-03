@@ -23,6 +23,7 @@ import PointageJour from "@/components/tabs/PointageJour";
 import AffichageAtelier from "@/components/tabs/AffichageAtelier";
 import PlanningCommandes from "@/components/tabs/PlanningCommandes";
 import PlanningAffectations from "@/components/tabs/PlanningAffectations";
+import PlanningAJ from "@/components/tabs/PlanningAJ";
 import Aujourdhui from "@/components/tabs/Aujourdhui";
 import StatsAdmin from "@/components/tabs/StatsAdmin";
 import ChargeCapacite from "@/components/tabs/ChargeCapacite";
@@ -172,6 +173,7 @@ export default function HomePage() {
     {
       id: "g_planning", l: "📅 Planning",
       tabs: [
+        { id: "planning_aj",  l: "📋 Planning AJ (rapide)" },
         { id: "planning_fab", l: "Hebdo (commandes & affectations)" },
         { id: "charge",       l: "Charge 8 sem." },
         { id: "dashboard",    l: `Suivi & crise${retards > 0 ? ` (${retards})` : ""}` },
@@ -416,6 +418,8 @@ export default function HomePage() {
               </div>
             )}
             {ong === "aujourdhui" && <Aujourdhui commandes={commandes} stocks={stocks} onNav={setOng} />}
+            {/* Planning AJ — grille hebdo simple façon Excel avec drag&drop */}
+            {ong === "planning_aj" && <PlanningAJ commandes={commandes as any} />}
             {/* Planning hebdo : Commandes + Affectations en sous-onglets internes
                 conservés (gros composant unique avec son onglet interne). */}
             {ong === "planning_fab" && (

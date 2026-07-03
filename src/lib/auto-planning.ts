@@ -56,6 +56,9 @@ interface DateLivraison {
 }
 
 function pickEarliestDeliveryDate(cmd: AutoPlanningInput): string | null {
+  // Phase 0-A : pose_chantier_date prime sur date_livraison_souhaitee.
+  // C'est le RDV poseur ferme qui pilote le backward, pas la livraison camion.
+  if (cmd.pose_chantier_date) return cmd.pose_chantier_date;
   if (cmd.date_livraison_souhaitee) return cmd.date_livraison_souhaitee;
   const arr = cmd.dates_livraisons;
   if (!Array.isArray(arr)) return null;
@@ -66,12 +69,30 @@ function pickEarliestDeliveryDate(cmd: AutoPlanningInput): string | null {
   return dates[0] || null;
 }
 
+/** Phase 0-A : détecte si une commande a au moins une ligne avec laquage externe. */
+function detectLaquageDelaiJours(cmd: AutoPlanningInput): number {
+  const lignes = Array.isArray(cmd.lignes) ? cmd.lignes : [];
+  let max = 0;
+  for (const l of lignes as Array<Record<string, unknown>>) {
+    if (!l?.laquage_externe) continue;
+    const d = parseInt(String(l?.delai_laquage_jours || "5"));
+    if (!isNaN(d) && d > max) max = d;
+  }
+  return max;
+}
+
 export interface AutoPlanningInput {
   date_livraison_souhaitee?: string | null;
+  /** Phase 0-A : RDV poseur ferme — prioritaire sur date_livraison_souhaitee. */
+  pose_chantier_date?: string | null;
   dates_livraisons?: unknown;
   aucune_menuiserie?: boolean;
   aucun_vitrage?: boolean;
   vitrages?: unknown;
+  /** Phase 0-A : si vrai, on essaie de garder toutes les phases la même semaine. */
+  regroupement_camion?: boolean;
+  /** Phase 0-A : lignes (pour détection laquage externe). */
+  lignes?: unknown;
 }
 
 export interface AutoPlanningResult {
@@ -108,8 +129,24 @@ export function computeAutoSemaines(cmd: AutoPlanningInput): AutoPlanningResult 
 
   const semaine_vitrage = cmd.aucun_vitrage ? null : addWeeks(livMonday, -1);
   const baseForMontage = semaine_vitrage || semaine_logistique;
-  const semaine_montage = addWeeks(baseForMontage, -1);
-  const semaine_coupe = addWeeks(semaine_montage, -1);
+  let semaine_montage = addWeeks(baseForMontage, -1);
+
+  // Phase 0-A : si regroupement_camion, on essaie de mettre montage + vitrage
+  // dans la même semaine que la logistique (impossible si ISULA ou si le
+  // chantier est trop chargé — ce n'est qu'une indication).
+  if (cmd.regroupement_camion && !cmd.aucun_vitrage) {
+    semaine_montage = baseForMontage;
+  }
+
+  let semaine_coupe = addWeeks(semaine_montage, -1);
+
+  // Phase 0-A : si laquage externe, on recule la coupe d'autant de jours
+  // ouvrés que `delai_laquage_jours` (arrondi à la semaine sup).
+  const laqDelai = detectLaquageDelaiJours(cmd);
+  if (laqDelai > 0) {
+    const semExtra = Math.max(1, Math.ceil(laqDelai / 5));
+    semaine_coupe = addWeeks(semaine_coupe, -semExtra);
+  }
 
   let semaine_isula: string | null = null;
   if (!cmd.aucun_vitrage && hasIsulaVitrage(cmd.vitrages)) {
@@ -131,10 +168,13 @@ export function computeAutoSemaines(cmd: AutoPlanningInput): AutoPlanningResult 
  */
 export const AUTO_PLANNING_TRIGGERS = [
   "date_livraison_souhaitee",
+  "pose_chantier_date",
   "dates_livraisons",
   "aucune_menuiserie",
   "aucun_vitrage",
   "vitrages",
+  "regroupement_camion",
+  "lignes",
 ] as const;
 
 /**
@@ -149,3 +189,103 @@ export const AUTO_PLANNING_OUTPUTS = [
   "semaine_vitrage",
   "semaine_isula",
 ] as const;
+
+// ═══════════════════════════════════════════════════════════════════════
+// Phase 2-B : Heijunka — lissage des tâches Frappes sur la semaine.
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface HeijunkaSlot {
+  /** id du slot (ex. "F2|2026-05-08|AM") */
+  key: string;
+  postId: string;
+  date: string;        // YYYY-MM-DD
+  halfDay: "AM" | "PM";
+  /** Charge actuelle du créneau en minutes. */
+  loadedMin: number;
+  /** Capacité maximale du créneau en minutes (poste × demi). */
+  capacityMin: number;
+  /** Tâches Frappes posées sur ce slot, avec id task et minutes. */
+  frappesTasks: Array<{ taskId: string; minutes: number; predecessorIds?: string[]; }>;
+}
+
+/**
+ * Phase 2-B : déplace les tâches "Frappes" (postes F1/F2/F3/M1/M2/M3)
+ * des demi-journées surchargées (>90%) vers les sous-chargées (<70%)
+ * de la même semaine. Respecte les predecessorIds (on ne déplace pas
+ * une tâche dont le prédécesseur est posé après le créneau cible).
+ *
+ * Cette fonction est PURE : elle prend l'état des slots en entrée et
+ * retourne les ré-allocations à appliquer. C'est à l'appelant de les
+ * persister (ScheduleSlot UPDATE ou cellLoad recalc).
+ */
+export interface HeijunkaMove {
+  taskId: string;
+  fromKey: string;
+  toKey: string;
+}
+
+export function heijunkaRebalance(
+  weekSlots: HeijunkaSlot[],
+  /** Indice qui dit pour chaque taskId la liste de prédécesseurs (et leurs slots) */
+  predecessorSlotByTask?: Record<string, string[]>,
+): HeijunkaMove[] {
+  const moves: HeijunkaMove[] = [];
+  if (weekSlots.length === 0) return moves;
+
+  // Indexer slots par poste pour cibler les Frappes.
+  const slotsByPost = new Map<string, HeijunkaSlot[]>();
+  for (const s of weekSlots) {
+    if (!slotsByPost.has(s.postId)) slotsByPost.set(s.postId, []);
+    slotsByPost.get(s.postId)!.push(s);
+  }
+
+  const FRAPPES_POSTS = ["F1", "F2", "F3", "M1", "M2", "M3"];
+
+  for (const post of FRAPPES_POSTS) {
+    const arr = slotsByPost.get(post);
+    if (!arr || arr.length < 2) continue;
+
+    // Répéter jusqu'à stabilité (max 5 itérations pour borner)
+    for (let iter = 0; iter < 5; iter++) {
+      arr.sort((a, b) => a.date.localeCompare(b.date) || a.halfDay.localeCompare(b.halfDay));
+      const overloaded = arr.filter(s => s.loadedMin / s.capacityMin > 0.9);
+      const underloaded = arr.filter(s => s.loadedMin / s.capacityMin < 0.7);
+      if (overloaded.length === 0 || underloaded.length === 0) break;
+
+      let didMove = false;
+      for (const src of overloaded) {
+        // On essaie de déplacer la tâche la plus petite d'abord pour minimiser
+        // la fragmentation et garder la plus grosse au plus tôt.
+        const candidates = [...src.frappesTasks].sort((a, b) => a.minutes - b.minutes);
+        for (const cand of candidates) {
+          // Vérifier predecessorSlot (si défini) : on ne peut pas déplacer
+          // avant les preds. On compare les keys lexicographiquement —
+          // weekSlots fournit `date|halfDay` triable.
+          const predSlots = predecessorSlotByTask?.[cand.taskId] || [];
+          for (const dst of underloaded) {
+            if (dst === src) continue;
+            const room = dst.capacityMin - dst.loadedMin;
+            if (room < cand.minutes) continue;
+            // Si pred posé après dst, on ne peut pas reculer (on ne pose
+            // pas avant le prédécesseur).
+            const predTooLate = predSlots.some(pk => pk > dst.key);
+            if (predTooLate) continue;
+
+            // Effectuer le déplacement
+            moves.push({ taskId: cand.taskId, fromKey: src.key, toKey: dst.key });
+            src.loadedMin -= cand.minutes;
+            dst.loadedMin += cand.minutes;
+            src.frappesTasks = src.frappesTasks.filter(t => t.taskId !== cand.taskId);
+            dst.frappesTasks.push(cand);
+            didMove = true;
+            break;
+          }
+          if (didMove) break;
+        }
+      }
+      if (!didMove) break;
+    }
+  }
+
+  return moves;
+}

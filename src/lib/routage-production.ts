@@ -326,5 +326,30 @@ export function getRoutage(
     etapes.push({ postId: pid, label: lbl, phase: "vitrage", estimatedMin: Math.round(temps.par_poste.vitrage_ov * rVitrage) });
   }
 
+  // ── Phase 2-A : Étapes finales 7 SIAL : U1 (déjà entre coupe et montage),
+  //    P1 (avant assemblage), CQ1 (contrôle qualité final), EM1 (emballage).
+  //    On les ajoute UNIQUEMENT pour les commandes standard (pas HS ni
+  //    intervention) pour préserver la compatibilité ascendante.
+  //    Valeurs par défaut basées sur la quantité, calibrables via Tache BDD.
+  if (!isHS && tm.famille !== "intervention" && quantite > 0) {
+    // U1 : usinage / fraisage. Inséré juste après la coupe pour les ALU.
+    // Pour le PVC pur, l'usinage est déjà couvert par la soudure → on saute.
+    if (!isPVC && temps.par_poste.coupe > 0) {
+      const u1Min = Math.max(10, Math.round(quantite * 3 * rCoupe));
+      etapes.push({ postId: "U1", label: "Usinage", phase: "coupe", estimatedMin: u1Min });
+    }
+    // P1 : préparation ferrures. Avant F2/M1/M2/M3.
+    if (temps.par_poste.frappes > 0 || temps.par_poste.coulissant > 0) {
+      const p1Min = Math.max(15, Math.round(quantite * 4 * rFrappes));
+      etapes.push({ postId: "P1", label: "Prépa ferrures", phase: "montage", estimatedMin: p1Min });
+    }
+    // CQ1 : contrôle qualité final dédié (séparé du contrôle F3).
+    const cq1Min = Math.max(10, Math.round(quantite * 3));
+    etapes.push({ postId: "CQ1", label: "Contrôle final", phase: "logistique", estimatedMin: cq1Min });
+    // EM1 : emballage / palettisation.
+    const em1Min = Math.max(15, Math.round(quantite * 5));
+    etapes.push({ postId: "EM1", label: "Emballage", phase: "logistique", estimatedMin: em1Min });
+  }
+
   return etapes.filter(e => e.estimatedMin > 0);
 }

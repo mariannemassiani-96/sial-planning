@@ -687,6 +687,36 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
     saveAff(newAff);
   }, [aff, saveAff]);
 
+  // Phase 0-B : appel à l'algo backward (POST /api/scheduling/backward).
+  // Conserve l'ancien autoAssign en parallèle — pas de remplacement forcé.
+  const runBackwardSchedule = useCallback(async () => {
+    try {
+      const res = await fetch("/api/scheduling/backward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Échec planning backward : ${err.error || res.statusText}`);
+        return;
+      }
+      const data = await res.json();
+      const results = (data?.results || []) as Array<{ orderId: string; fullyPlaced: string[]; partiallyPlaced: any[]; notPlaced: any[] }>;
+      const totalChantiers = results.reduce((s, r) => s + r.fullyPlaced.length + r.partiallyPlaced.length + r.notPlaced.length, 0);
+      // Réutiliser le modal existant (AutoAssignReport) pour afficher un résumé.
+      setAutoAssignReport({
+        totalChantiers,
+        fullyPlaced: results.flatMap(r => r.fullyPlaced),
+        partiallyPlaced: results.flatMap(r => r.partiallyPlaced),
+        notPlaced: results.flatMap(r => r.notPlaced),
+        opUsage: [], // l'algo backward ne renvoie pas opUsage pour l'instant
+      });
+    } catch (e) {
+      alert(`Erreur planning backward : ${String(e)}`);
+    }
+  }, []);
+
   // ── Proposition automatique ──
   // Algorithme par chantier (séquentiel) : pour chaque chantier, placer ses étapes
   // de routage dans l'ordre (coupe → montage → vitrage → palette) avec tampon.
@@ -728,7 +758,8 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       if (a.statut === "livre" || a.statut === "terminee" || a.statut === "annulee") continue;
       const label = a.ref_chantier || a.client || "";
       if (!label) continue;
-      const deadline = a.date_livraison_souhaitee || "9999-12-31";
+      // Phase 0-A : pose_chantier_date prime sur date_livraison_souhaitee.
+      const deadline = a.pose_chantier_date || a.date_livraison_souhaitee || "9999-12-31";
       const priority = prioMap[a.priorite] ?? 2;
       // Récupérer toutes les étapes via postWork (qui agrège chantier × poste)
       const cmdEtapes: Etape[] = [];
@@ -814,6 +845,20 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       const isMonolithic = postIsMonolithic(et.postId);
       const isIsulaPhase = et.phase === "isula";
 
+      // Phase 0-A : récupérer la commande + les contraintes de ligne pour
+      // appliquer operateur_prefere / operateur_interdit / hauteur_mm /
+      // tampon_apres_min. La ligne est identifiée comme la première ligne
+      // dont le `type` matche les étapes générées par getRoutage.
+      const cmd = commandes.find(c => String((c as any).id) === et.cmdId) as any;
+      const lignes: Array<Record<string, unknown>> = Array.isArray(cmd?.lignes) ? cmd.lignes : [];
+      // Heuristique : si la commande a une seule ligne, on prend celle-ci.
+      // Sinon on prend la 1re — c'est imparfait mais sans plus d'infos
+      // c'est le mieux qu'on puisse faire sans changer le schéma Etape.
+      const ligneCmd = lignes[0] || ({} as Record<string, unknown>);
+      const opPrefId = String(ligneCmd.operateur_prefere || "");
+      const opInterditId = String(ligneCmd.operateur_interdit || "");
+      const hauteurMm = parseFloat(String(ligneCmd.hauteur_mm || "0")) || 0;
+
       // Identifier les ops compétents (poste exact, ou fallback phase)
       let competentOps = ops.filter(op => op.competentPosts.includes(et.postId));
       if (competentOps.length === 0 && allowPhaseFallback) {
@@ -825,6 +870,12 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
           });
         }
       }
+
+      // Phase 0-A : exclure l'opérateur interdit
+      if (opInterditId) {
+        competentOps = competentOps.filter(op => op.id !== opInterditId);
+      }
+
       if (competentOps.length === 0) {
         return { placed: false, partial: false, raison: `aucun opérateur compétent sur ${et.postId}` };
       }
@@ -834,6 +885,10 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
       const decision = chooseNbOps(et.postId, et.strategy, levels.length > 0 ? levels : 2);
       let nbPers = isMonolithic ? 1 : decision.nbProducers;
       if (et.postId === "C3" && et.minutes > DEMI_MIN * 4 && !isMonolithic) nbPers = Math.max(nbPers, 3);
+      // Phase 0-A : grand format vertical (>3 m) sur montage = 2 ops minimum
+      if (hauteurMm > 3000 && et.phase === "montage" && !isMonolithic) {
+        nbPers = Math.max(nbPers, 2);
+      }
       const maxPersPoste = postMaxPers(et.postId);
       if (maxPersPoste) nbPers = Math.min(nbPers, maxPersPoste);
       nbPers = Math.max(1, nbPers);
@@ -843,11 +898,13 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
 
       // Tampon avec phases précédentes
       const ch = progress[et.chantier] || { lastSlotIdxByPhase: {}, placedPosts: new Set<string>() };
+      // Phase 0-A : tampon custom si la ligne a `tampon_apres_min` renseigné.
+      const tamponCustom = parseInt(String(ligneCmd.tampon_apres_min || "0")) || 0;
       let earliestSlot = 0;
       for (const [ph, slotIdx] of Object.entries(ch.lastSlotIdxByPhase)) {
         if ((phaseOrderMap[ph] ?? 9) < (phaseOrderMap[et.phase] ?? 9)) {
           // phase précédente → tampon en demi-journées
-          const tamponMin = postTamponAfter(et.postId);
+          const tamponMin = tamponCustom > 0 ? tamponCustom : postTamponAfter(et.postId);
           const tamponDemi = Math.max(1, Math.ceil(tamponMin / DEMI_MIN));
           earliestSlot = Math.max(earliestSlot, slotIdx + tamponDemi);
         } else if (ph === et.phase) {
@@ -892,10 +949,14 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
             const skill = (op.skillLevels[et.postId] || 0) / 3;
             const habit = postHabits[op.nom] || 0;
             const brain = brainScores[op.nom]?.[et.postId] || 0;
+            // Phase 0-A : si la commande a un opérateur préféré sur cette
+            // ligne, on lui colle un bonus de +0.5 pour qu'il soit choisi
+            // en priorité (même si son skill est légèrement inférieur).
+            const prefBonus = opPrefId && op.id === opPrefId ? 0.5 : 0;
             // Bonus inverse à l'utilisation : pousse les ops sous-utilisés
             const cap = opCapa[op.nom];
             const useRatio = cap && cap.capacity > 0 ? 1 - cap.remaining / cap.capacity : 0;
-            return { op, score: skill * 0.35 + brain * 0.25 + habit * 0.2 - useRatio * 0.2 };
+            return { op, score: skill * 0.35 + brain * 0.25 + habit * 0.2 - useRatio * 0.2 + prefBonus };
           })
           .sort((a, b) => b.score - a.score);
 
@@ -1784,7 +1845,10 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <button onClick={autoAssign} style={{ padding: "8px 16px", background: C.orange, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-            Proposition auto
+            Proposition auto (semaines)
+          </button>
+          <button onClick={runBackwardSchedule} style={{ padding: "8px 16px", background: C.cyan, border: "none", borderRadius: 4, color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+            Planifier backward (créneaux)
           </button>
           <button onClick={clearAll} style={{ padding: "6px 16px", background: C.s2, border: `1px solid ${C.border}`, borderRadius: 4, color: C.sec, fontSize: 11, cursor: "pointer" }}>
             Tout effacer
@@ -1951,6 +2015,9 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 6 }}>
                 {autoAssignReport.opUsage.map(o => {
                   const barColor = o.pct < 50 ? C.muted : o.pct < 80 ? C.green : o.pct < 100 ? C.orange : C.red;
+                  // Phase 2-C : fenêtre mobile = minutes restantes
+                  const remainMin = Math.max(0, o.capacityMin - o.usedMin);
+                  const remainColor = remainMin > 240 ? C.green : remainMin >= 60 ? C.orange : C.red;
                   return (
                     <div key={o.nom} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "6px 8px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1963,6 +2030,17 @@ export default function PlanningAffectations({ commandes, viewWeek, onPatch, onW
                       <div style={{ fontSize: 9, color: C.muted }}>
                         {hm(o.usedMin)} / {hm(o.capacityMin)}
                       </div>
+                      {/* Phase 2-C : fenêtre mobile en minutes restantes */}
+                      {o.capacityMin > 0 && (
+                        <div style={{ marginTop: 3 }}>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: remainColor }}>
+                            Disponible : {hm(remainMin)}
+                          </div>
+                          <div style={{ height: 3, background: C.s2, borderRadius: 2, overflow: "hidden", marginTop: 2 }}>
+                            <div style={{ width: `${Math.min(100, (remainMin / o.capacityMin) * 100)}%`, height: "100%", background: remainColor }} />
+                          </div>
+                        </div>
+                      )}
                       {o.postsUsed.length > 0 && (
                         <div style={{ fontSize: 8, color: C.sec, marginTop: 2 }}>
                           {o.postsUsed.join(", ")}
